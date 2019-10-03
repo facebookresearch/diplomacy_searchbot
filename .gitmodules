@@ -1,0 +1,3 @@
+[submodule "thirdparty/github/diplomacy/research"]
+	path = thirdparty/github/diplomacy/research
+	url = https://github.com/diplomacy/research

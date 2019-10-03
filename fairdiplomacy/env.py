@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import diplomacy
 
 from agents.random_agent import RandomAgent
+from agents.mila_sl_agent import MilaSLAgent
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
@@ -55,7 +56,7 @@ class Env:
                 if loc in self.game.get_orderable_locations(power)
             }
 
-            orders = agent.get_orders(self.game.get_state(), possible_orders)
+            orders = agent.get_orders(self.game, power)
             self.game.set_orders(power, orders)
             logging.info("Set orders {} {}".format(power, orders))
 
@@ -77,7 +78,17 @@ class Env:
 
 
 if __name__ == "__main__":
-    env = Env([RandomAgent() for _ in range(7)])
+    env = Env(
+        {
+            "ITALY": MilaSLAgent(),
+            "ENGLAND": RandomAgent(),
+            "FRANCE": RandomAgent(),
+            "GERMANY": RandomAgent(),
+            "AUSTRIA": RandomAgent(),
+            "RUSSIA": RandomAgent(),
+            "TURKEY": RandomAgent(),
+        }
+    )
     results = env.process_all_turns()
     logging.info("Game over! Results: {}".format(results))
     env.save("game.json")
