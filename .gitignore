@@ -1,4 +1,7 @@
+*.log
 *.pyc
+*.swn
+*.swo
 *.swp
 
 __pycache__

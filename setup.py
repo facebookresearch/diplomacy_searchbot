@@ -37,9 +37,11 @@ setup(
     packages=find_packages(),
     install_requires=[
         "black",
-        "ipdb",
         "diplomacy==1.1.1",
+        "ipdb",
+        "joblib",
         "torch==1.2",
+        "tqdm",
         "tornado>=5.0",  # for diplomacy_research
         "protobuf==3.6.1",  # for diplomacy_research
         "pyyaml",  # for diplomacy_research
