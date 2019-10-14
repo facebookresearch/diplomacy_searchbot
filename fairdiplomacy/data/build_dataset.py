@@ -264,7 +264,9 @@ def set_phase_orders(game, phase_orders):
                             power, order, possible_orders
                         )
                         logging.getLogger("p").error(error_msg)
-                        raise ValueError(error_msg)
+                        err = ValueError(error_msg)
+                        err.partial_game = game
+                        raise err
 
         # ensure that each order is valid
         for order in orders:
@@ -349,8 +351,12 @@ def process_and_save_game(game_id, db_path):
     logging.info("About to process game {}".format(game_id))
     try:
         game = process_game(db, game_id, log_path=log_path)
-    except Exception:
+    except Exception as err:
         logging.exception("Exception processing game {}".format(game_id))
+        if hasattr(err, "partial_game"):
+            partial_save_path = save_path + ".partial"
+            diplomacy.utils.export.to_saved_game_format(err.partial_game, partial_save_path)
+            logging.info("Saved partial game to {}".format(partial_save_path))
         return
 
     # Save json file
