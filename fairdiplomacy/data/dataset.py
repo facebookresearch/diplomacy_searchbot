@@ -1,4 +1,5 @@
 import diplomacy
+import logging
 import numpy as np
 import torch
 
@@ -21,6 +22,10 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.game_json_paths)
 
+
+def collate_fn(items):
+    # Items is a list of 5-tuples, one tuple from each dataset
+    return tuple(torch.cat(tensors) for tensors in zip(*items))
 
 def encode_game(game):
     """Return five tensors:
@@ -57,7 +62,12 @@ def encode_game(game):
             x_power[i, power_idx] = 1
             x_season[i, season_idx] = 1
             for order in orders_by_power[power]:
-                action_idx = smarter_order_index(order)
+                try:
+                    action_idx = smarter_order_index(order)
+                except ValueError:
+                    # Skip i += 1, so this row is overwritten
+                    logging.warn("Order \"{}\" not in vocab".format(order))
+                    continue
                 y_actions[i, action_idx] = 1
 
             i += 1
@@ -66,7 +76,10 @@ def encode_game(game):
         if phase.endswith("M"):
             prev_orders_np = prev_orders_to_np(state, orders_by_power)
 
-    return x_board_state, x_prev_orders, x_power, x_season, y_actions
+    if i != L:
+        logging.warn("Skipped {} bad orders this game".format(L - i))
+
+    return x_board_state[:i], x_prev_orders[:i], x_power[:i], x_season[:i], y_actions[:i]
 
 
 def smarter_order_index(order):
