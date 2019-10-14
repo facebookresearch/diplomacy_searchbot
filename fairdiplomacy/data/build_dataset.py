@@ -383,8 +383,7 @@ if __name__ == "__main__":
     os.makedirs(args.out_dir, exist_ok=True)
 
     db = sqlite3.connect(args.db_path)
-    # good_game_ids = list(find_good_games(db))
-    good_game_ids = [3232, 3587, 3533, 3269, 3614, 3402, 3198, 3589, 3606]
+    good_game_ids = list(find_good_games(db))
     logging.info("Found {} good game ids".format(len(good_game_ids)))
 
     joblib.Parallel(n_jobs=-1, verbose=1)(
