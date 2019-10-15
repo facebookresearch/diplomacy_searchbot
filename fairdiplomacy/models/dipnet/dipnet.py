@@ -150,7 +150,8 @@ class GraphConv(nn.Module):
         x -> (B, 81, in_size)
         returns (B, 81, out_size)
         """
-        return self.W(torch.matmul(self.A, x))
+        Ax = torch.matmul(self.A, x)
+        return self.W(Ax)
 
 
 class FiLM(nn.Module):

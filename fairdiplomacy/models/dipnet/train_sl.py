@@ -5,13 +5,14 @@ import os
 import random
 import torch
 
-import fairdiplomacy
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX
-from dipnet import DipNet
-from order_vocabulary import get_order_vocabulary
+from .dipnet import DipNet
+from .order_vocabulary import get_order_vocabulary
 
 random.seed(0)
+torch.manual_seed(0)
+
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
@@ -22,6 +23,21 @@ POWER_EMB_SIZE = 7
 SEASON_EMB_SIZE = 3
 NUM_ENCODER_BLOCKS = 16
 ORDER_VOCABULARY = get_order_vocabulary()
+
+
+def new_model():
+    A = torch.from_numpy(ADJACENCY_MATRIX).float()
+    return DipNet(
+        BOARD_STATE_SIZE,
+        PREV_ORDERS_SIZE,
+        INTER_EMB_SIZE,
+        POWER_EMB_SIZE,
+        SEASON_EMB_SIZE,
+        NUM_ENCODER_BLOCKS,
+        A,
+        len(ORDER_VOCABULARY),
+    )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -41,19 +57,8 @@ if __name__ == "__main__":
     )
     logging.info("Using device {}".format(device))
 
-
     logging.info("Init model...")
-    A = torch.from_numpy(ADJACENCY_MATRIX).float().to(device)
-    net = DipNet(
-        BOARD_STATE_SIZE,
-        PREV_ORDERS_SIZE,
-        INTER_EMB_SIZE,
-        POWER_EMB_SIZE,
-        SEASON_EMB_SIZE,
-        NUM_ENCODER_BLOCKS,
-        A,
-        len(ORDER_VOCABULARY),
-    ).to(device)
+    net = new_model().to(device)
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)

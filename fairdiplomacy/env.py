@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 import diplomacy
 
 from agents.random_agent import RandomAgent
-from agents.mila_sl_agent import MilaSLAgent
+
+# from agents.mila_sl_agent import MilaSLAgent
+from agents.dipnet_agent import DipnetAgent
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
@@ -39,8 +41,6 @@ class Env:
     def process_turn(self, timeout=10):
         logging.info("process_turn {}".format(self.game.phase))
 
-        all_possible_orders = self.game.get_all_possible_orders()
-
         # TODO: this code is faster but harder to debug, leave it for now
         #
         # self.thread_pool_submit(agent.get_orders, self.game, possible_orders)
@@ -50,12 +50,6 @@ class Env:
         # }
 
         for power, agent in self.agents.items():
-            possible_orders = {
-                loc: orders
-                for loc, orders in all_possible_orders.items()
-                if loc in self.game.get_orderable_locations(power)
-            }
-
             orders = agent.get_orders(self.game, power)
             self.game.set_orders(power, orders)
             logging.info("Set orders {} {}".format(power, orders))
@@ -80,7 +74,7 @@ class Env:
 if __name__ == "__main__":
     env = Env(
         {
-            "ITALY": MilaSLAgent(),
+            "ITALY": DipnetAgent("models/dipnet/dipnet_state.pth"),
             "ENGLAND": RandomAgent(),
             "FRANCE": RandomAgent(),
             "GERMANY": RandomAgent(),

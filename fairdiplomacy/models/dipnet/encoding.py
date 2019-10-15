@@ -10,7 +10,7 @@ def board_state_to_np(state):
 
     See section 4.1 and Figure 2 of the MILA paper for an explanation.
     """
-    enc = np.zeros((len(LOCS), 35))
+    enc = np.zeros((len(LOCS), 35), dtype=np.float32)
 
     # encode unit type (0-2) and unit power (3-10)
     enc[:, 2] = 1  # set all to None type
@@ -92,7 +92,7 @@ def prev_orders_to_np(state, orders_by_power):
 
     See section 4.1 and Figure 2 of the MILA paper for an explanation.
     """
-    enc = np.zeros((len(LOCS), 40))
+    enc = np.zeros((len(LOCS), 40), dtype=np.float32)
 
     # pre-set None previous order unit type (2), power (10), order type (15),
     # source power (23), destination power (31), and supply owner (39)
