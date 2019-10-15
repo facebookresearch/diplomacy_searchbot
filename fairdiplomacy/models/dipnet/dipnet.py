@@ -57,7 +57,7 @@ class DipNetEncoder(nn.Module):
         super().__init__()
 
         # board state blocks
-        self.board_blocks = []
+        self.board_blocks = nn.ModuleList()
         self.board_blocks.append(
             DipNetBlock(
                 board_state_size,
@@ -81,7 +81,7 @@ class DipNetEncoder(nn.Module):
             )
 
         # prev orders blocks
-        self.prev_orders_blocks = []
+        self.prev_orders_blocks = nn.ModuleList()
         self.prev_orders_blocks.append(
             DipNetBlock(
                 prev_orders_size,
@@ -169,9 +169,4 @@ class FiLM(nn.Module):
         mod_emb = torch.cat([power_emb, season_emb], -1)
         gamma = self.W_gamma(mod_emb).unsqueeze(1)
         beta = self.W_beta(mod_emb).unsqueeze(1)
-        try:
-            return gamma * x + beta
-        except Exception:
-            import ipdb
-
-            ipdb.set_trace()
+        return gamma * x + beta

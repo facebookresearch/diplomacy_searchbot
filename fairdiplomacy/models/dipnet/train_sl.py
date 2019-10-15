@@ -27,17 +27,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True, help="Path to dir containing game.json files")
     parser.add_argument("--num-dataloader-workers", type=int, default=8, help="# Dataloader procs")
-    parser.add_argument("--batch-size", type=int, default=8, help="How many GAMES (not moves)")
+    parser.add_argument("--batch-size", type=int, default=2, help="How many GAMES (not moves)")
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--model-out", help="Path to save the model")
+    parser.add_argument("--cpu", action="store_true", help="Use CPU even if GPU is present")
     parser.add_argument(
         "--val-set-pct", type=float, default=0.05, help="Percentage of games to use as val set"
     )
     args = parser.parse_args()
 
-    A = torch.from_numpy(ADJACENCY_MATRIX).float()
+    device = (
+        torch.device("cuda") if torch.cuda.is_available() and not args.cpu else torch.device("cpu")
+    )
+    logging.info("Using device {}".format(device))
+
 
     logging.info("Init model...")
+    A = torch.from_numpy(ADJACENCY_MATRIX).float().to(device)
     net = DipNet(
         BOARD_STATE_SIZE,
         PREV_ORDERS_SIZE,
@@ -47,7 +53,7 @@ if __name__ == "__main__":
         NUM_ENCODER_BLOCKS,
         A,
         len(ORDER_VOCABULARY),
-    )
+    ).to(device)
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
@@ -74,6 +80,7 @@ if __name__ == "__main__":
     while True:
         for batch_i, batch in enumerate(train_set_loader):
             logging.info("Loading batch {}".format(batch_i))
+            batch = tuple(t.to(device) for t in batch)
             x_state, x_orders, x_power, x_season, y_actions = batch
             logging.info("Starting batch {} of len {}".format(batch_i, len(x_state)))
 
@@ -85,13 +92,14 @@ if __name__ == "__main__":
 
             logging.info("batch {} loss={}".format(batch_i, loss))
 
-            if args.model_out:
-                logging.info("Saving model to {}".format(args.model_out))
-                torch.save(model, args.model_out)
-
-            if batch_i % 10 == 0:
+            if batch_i % 50 == 0:
                 # TODO: the entire val set
-                x_state, x_orders, x_power, x_season, y_actions = next(iter(val_set_loader))
+                batch = next(iter(val_set_loader))
+                x_state, x_orders, x_power, x_season, y_actions = [t.to(device) for t in batch]
                 y_guess = net(x_state, x_orders, x_power, x_season)
                 loss = loss_fn(y_guess, y_actions)
                 logging.info("Validation loss={}".format(loss))
+
+                if args.model_out:
+                    logging.info("Saving model to {}".format(args.model_out))
+                    torch.save(net, args.model_out)
