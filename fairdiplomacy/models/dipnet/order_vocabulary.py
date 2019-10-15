@@ -4,7 +4,20 @@ https://github.com/diplomacy/research/blob/master/diplomacy_research/models/stat
 from diplomacy import Map
 
 
+_ORDER_VOCABULARY = None
+
+
 def get_order_vocabulary():
+    global _ORDER_VOCABULARY
+
+    if _ORDER_VOCABULARY is not None:
+        return _ORDER_VOCABULARY
+
+    _ORDER_VOCABULARY = _get_order_vocabulary()
+    return _ORDER_VOCABULARY
+
+
+def _get_order_vocabulary():
     """ Computes the list of all valid orders on the standard map
         :return: A sorted list of all valid orders on the standard map
     """
