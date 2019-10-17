@@ -61,6 +61,14 @@ Log in as admin/password, and use "Load a game from disk" in the top-right to vi
 
 ![Instructions for visualizing a game](https://github.com/diplomacy/diplomacy/blob/master/docs/images/visualize_game.png)
 
+
+# Playing Against the MILA Bot
+
+After [opening the visualizer](#visualizing-a-saved-game), create a new standard game with 1 human user. Then run
+```
+python thirdparty/github/diplomacy/research/diplomacy_research/scripts/launch_bot.py
+```
+
 # What's included so far
 
 An implementation of MILA's DipNet [https://arxiv.org/abs/1909.02128](https://arxiv.org/abs/1909.02128) is in progress at [models/dipnet/train_sl.py](https://github.com/fairinternal/fairdiplomacy/blob/master/fairdiplomacy/models/dipnet/train_sl.py)
