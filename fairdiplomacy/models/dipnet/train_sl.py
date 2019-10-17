@@ -39,6 +39,30 @@ def new_model(device="cpu"):
     ).to(device)
 
 
+from collections import defaultdict
+ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
+for idx, order in enumerate(ORDER_VOCABULARY):
+    unit = order[:5]
+    ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx) 
+
+
+def calculate_accuracy(y_guess, y_truth):
+    right, wrong = 0, 0
+
+    for i in range(y_guess.shape[0]):
+        truth_orders = [ORDER_VOCABULARY[idx] for idx in torch.nonzero(y_truth[i, :])]
+        for truth_order in truth_orders:
+            unit = truth_order[:5]  # e.g. "A VIE"
+            possible_order_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit]
+            possible_order_scores = y_guess[i, possible_order_idxs]
+            guess_order_idx = possible_order_idxs[torch.argmax(possible_order_scores)]
+            if y_truth[i, guess_order_idx] == 1:
+                right += 1
+            else:
+                wrong += 1
+    return right / (right + wrong)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True, help="Path to dir containing game.json files")
@@ -48,7 +72,7 @@ if __name__ == "__main__":
     parser.add_argument("--model-out", help="Path to save the model")
     parser.add_argument("--cpu", action="store_true", help="Use CPU even if GPU is present")
     parser.add_argument(
-        "--val-set-pct", type=float, default=0.05, help="Percentage of games to use as val set"
+        "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     args = parser.parse_args()
 
@@ -99,14 +123,23 @@ if __name__ == "__main__":
 
             logging.info("batch {} loss={}".format(batch_i, loss))
 
-            if batch_i % 50 == 0:
-                # TODO: the entire val set
-                batch = next(iter(val_set_loader))
-                x_state, x_orders, x_power, x_season, y_actions = [t.to(device) for t in batch]
-                y_guess = net(x_state, x_orders, x_power, x_season)
-                loss = loss_fn(y_guess, y_actions)
-                logging.info("Validation loss={}".format(loss))
+            # Compute validation accuracy
+            if batch_i % 1000 == 0:
+                logging.info("Calculating val loss...")
+                net.eval()
+                losses, batch_sizes, accuracies = [], [], []
+                for batch in val_set_loader:
+                    x_state, x_orders, x_power, x_season, y_actions = [t.to(device) for t in batch]
+                    y_guess = net(x_state, x_orders, x_power, x_season)
+                    losses.append(loss_fn(y_guess, y_actions).detach().cpu())
+                    batch_sizes.append(len(y_actions))
+                    accuracies.append(calculate_accuracy(y_guess, y_actions))
+                batch_sizes = [b / sum(batch_sizes) for b in batch_sizes]
+                val_loss = sum(l * s for (l, s) in zip(losses, batch_sizes))
+                val_accuracy = sum(a * s for (a, s) in zip(accuracies, batch_sizes))
+                logging.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
+                net.train()
 
                 if args.model_out:
                     logging.info("Saving model to {}".format(args.model_out))
-                    torch.save(net, args.model_out)
+                    torch.save(net.state_dict(), args.model_out)

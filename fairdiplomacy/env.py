@@ -7,6 +7,7 @@ import diplomacy
 from agents.random_agent import RandomAgent
 
 from agents.mila_sl_agent import MilaSLAgent
+from agents.dipnet_agent import DipnetAgent
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
@@ -71,15 +72,17 @@ class Env:
 
 
 if __name__ == "__main__":
+    mila_sl_agent = MilaSLAgent()
+    dipnet_agent = DipnetAgent("models/dipnet/dipnet_state.pth")
     env = Env(
         {
-            "ITALY": MilaSLAgent(),
-            "ENGLAND": RandomAgent(),
-            "FRANCE": RandomAgent(),
-            "GERMANY": RandomAgent(),
-            "AUSTRIA": RandomAgent(),
-            "RUSSIA": RandomAgent(),
-            "TURKEY": RandomAgent(),
+            "ITALY": dipnet_agent,
+            "ENGLAND": mila_sl_agent,
+            "FRANCE": mila_sl_agent,
+            "GERMANY": mila_sl_agent,
+            "AUSTRIA": mila_sl_agent,
+            "RUSSIA": mila_sl_agent,
+            "TURKEY": mila_sl_agent,
         }
     )
     results = env.process_all_turns()
