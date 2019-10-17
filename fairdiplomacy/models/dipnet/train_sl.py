@@ -7,8 +7,8 @@ import torch
 
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX
-from .dipnet import DipNet
-from .order_vocabulary import get_order_vocabulary
+from fairdiplomacy.models.dipnet.dipnet import DipNet
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
 
 random.seed(0)
 torch.manual_seed(0)
@@ -25,8 +25,8 @@ NUM_ENCODER_BLOCKS = 16
 ORDER_VOCABULARY = get_order_vocabulary()
 
 
-def new_model():
-    A = torch.from_numpy(ADJACENCY_MATRIX).float()
+def new_model(device="cpu"):
+    A = torch.from_numpy(ADJACENCY_MATRIX).float().to(device)
     return DipNet(
         BOARD_STATE_SIZE,
         PREV_ORDERS_SIZE,
@@ -36,14 +36,14 @@ def new_model():
         NUM_ENCODER_BLOCKS,
         A,
         len(ORDER_VOCABULARY),
-    )
+    ).to(device)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True, help="Path to dir containing game.json files")
     parser.add_argument("--num-dataloader-workers", type=int, default=8, help="# Dataloader procs")
-    parser.add_argument("--batch-size", type=int, default=2, help="How many GAMES (not moves)")
+    parser.add_argument("--batch-size", type=int, default=128, help="How many phases")
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--model-out", help="Path to save the model")
     parser.add_argument("--cpu", action="store_true", help="Use CPU even if GPU is present")
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     logging.info("Using device {}".format(device))
 
     logging.info("Init model...")
-    net = new_model().to(device)
+    net = new_model(device)
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
@@ -79,7 +79,9 @@ if __name__ == "__main__":
         pin_memory=True,
     )
     val_set_loader = torch.utils.data.DataLoader(
-        val_set, batch_size=args.batch_size, collate_fn=collate_fn, pin_memory=True
+        val_set, batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        pin_memory=True
     )
 
     while True:
