@@ -27,8 +27,6 @@ cd fairdiplomacy
 python env.py
 ```
 
-Note: this will currently fail unless there is a writeable `/Tmp` dir, due to a hard-coded path in MILA's `diplomacy_research` repo. Get around this for now by running `sudo ln -sf /tmp /Tmp`, but soon we will fork `diplomacy_research` and find a better solution.
-
 This will run the MILA supervised learning agent against six random agents, and save the results to `game.json`. The code [in env.py](https://github.com/fairinternal/fairdiplomacy/blob/master/fairdiplomacy/env.py#L74-L87) that implements this is shown here:
 
 ```
