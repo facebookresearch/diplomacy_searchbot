@@ -17,7 +17,9 @@ ORDER_VOCABULARY = get_order_vocabulary()
 class DipnetAgent(BaseAgent):
     def __init__(self, model_pth):
         self.model = new_model()
-        self.model.load_state_dict(torch.load(model_pth, map_location=torch.device("cpu")))
+        self.model.load_state_dict(
+            torch.load(model_pth, map_location=torch.device("cpu"))
+        )
         self.model.eval()
 
     def get_orders(self, game, power):
@@ -32,12 +34,8 @@ class DipnetAgent(BaseAgent):
         orders = []
         all_possible_orders = game.get_all_possible_orders()
         for loc in game.get_orderable_locations(power):
-            loc_possible_orders = all_possible_orders[loc]
-
-            # FIXME: ensure WAIVE is in vocab, and remove this
-            loc_possible_orders = [x for x in loc_possible_orders if x != "WAIVE"]
-
-            idxs = [smarter_order_index(order) for order in loc_possible_orders]
+            loc_possible_orders, idxs = filter_orders_in_vocab(all_possible_orders[loc])
+            assert len(loc_possible_orders) == len(idxs)
             order_scores = torch.Tensor([scores[0, idx] for idx in idxs])
             order_probs = torch.nn.functional.softmax(order_scores).numpy()
             for order, score, prob in sorted(
@@ -62,11 +60,13 @@ class DipnetAgent(BaseAgent):
 
         try:
             last_move_orders = [
-                orders for phase, orders in game.order_history.items() if str(phase).endswith("M")
+                orders
+                for phase, orders in game.order_history.items()
+                if str(phase).endswith("M")
             ][-1]
-            x_prev_orders = torch.from_numpy(prev_orders_to_np(state, last_move_orders)).unsqueeze(
-                0
-            )
+            x_prev_orders = torch.from_numpy(
+                prev_orders_to_np(state, last_move_orders)
+            ).unsqueeze(0)
         except IndexError:
             x_prev_orders = torch.zeros(1, 81, 40)
 
@@ -76,8 +76,23 @@ class DipnetAgent(BaseAgent):
         return x_board_state, x_prev_orders, x_season
 
 
+def filter_orders_in_vocab(orders):
+    """Return the subset of orders that are found in the vocab, and their idxs"""
+    ret, idxs = [], []
+    for order in orders:
+        try:
+            idx = smarter_order_index(order)
+            ret.append(order)
+            idxs.append(idx)
+        except ValueError:
+            continue
+    return ret, idxs
+
+
 if __name__ == "__main__":
-    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+    logging.basicConfig(
+        format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG
+    )
 
     agent = DipnetAgent(
         os.path.join(os.path.dirname(__file__), "../models/dipnet/dipnet_state.pth")
