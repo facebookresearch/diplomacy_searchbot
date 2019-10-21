@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import torch
+from collections import defaultdict
 
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX
@@ -25,6 +26,12 @@ NUM_ENCODER_BLOCKS = 16
 ORDER_VOCABULARY = get_order_vocabulary()
 
 
+ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
+for idx, order in enumerate(ORDER_VOCABULARY):
+    unit = order[:5]
+    ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
+
+
 def new_model(device="cpu"):
     A = torch.from_numpy(ADJACENCY_MATRIX).float().to(device)
     return DipNet(
@@ -37,14 +44,6 @@ def new_model(device="cpu"):
         A,
         len(ORDER_VOCABULARY),
     ).to(device)
-
-
-from collections import defaultdict
-
-ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
-for idx, order in enumerate(ORDER_VOCABULARY):
-    unit = order[:5]
-    ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
 
 
 def calculate_accuracy(y_guess, y_truth):
