@@ -18,7 +18,7 @@ class DipnetAgent(BaseAgent):
     def __init__(self, model_pth):
         self.model = new_model()
         self.model.load_state_dict(
-            torch.load(model_pth, map_location=torch.device("cpu"))
+            torch.load(model_pth, map_location=torch.device("cpu"))["model"]
         )
         self.model.eval()
 
@@ -60,13 +60,11 @@ class DipnetAgent(BaseAgent):
 
         try:
             last_move_orders = [
-                orders
-                for phase, orders in game.order_history.items()
-                if str(phase).endswith("M")
+                orders for phase, orders in game.order_history.items() if str(phase).endswith("M")
             ][-1]
-            x_prev_orders = torch.from_numpy(
-                prev_orders_to_np(state, last_move_orders)
-            ).unsqueeze(0)
+            x_prev_orders = torch.from_numpy(prev_orders_to_np(state, last_move_orders)).unsqueeze(
+                0
+            )
         except IndexError:
             x_prev_orders = torch.zeros(1, 81, 40)
 
@@ -90,9 +88,7 @@ def filter_orders_in_vocab(orders):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG
-    )
+    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
     agent = DipnetAgent(
         os.path.join(os.path.dirname(__file__), "../models/dipnet/dipnet_state.pth")

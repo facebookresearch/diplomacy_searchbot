@@ -40,10 +40,11 @@ def new_model(device="cpu"):
 
 
 from collections import defaultdict
+
 ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
 for idx, order in enumerate(ORDER_VOCABULARY):
     unit = order[:5]
-    ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx) 
+    ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
 
 
 def calculate_accuracy(y_guess, y_truth):
@@ -69,23 +70,34 @@ if __name__ == "__main__":
     parser.add_argument("--num-dataloader-workers", type=int, default=8, help="# Dataloader procs")
     parser.add_argument("--batch-size", type=int, default=128, help="How many phases")
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
-    parser.add_argument("--model-out", help="Path to save the model")
+    parser.add_argument("--checkpoint", help="Path to load/save the model")
     parser.add_argument("--cpu", action="store_true", help="Use CPU even if GPU is present")
     parser.add_argument(
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     args = parser.parse_args()
+    logging.info("Args: {}".format(args))
 
     device = (
         torch.device("cuda") if torch.cuda.is_available() and not args.cpu else torch.device("cpu")
     )
     logging.info("Using device {}".format(device))
 
+    if os.path.isfile(args.checkpoint):
+        logging.info("Loading checkpoint at {}".format(args.checkpoint))
+        checkpoint = torch.load(args.checkpoint)
+    else:
+        checkpoint = None
+
     logging.info("Init model...")
     net = new_model(device)
+    if checkpoint:
+        net.load_state_dict(checkpoint["model"])
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
+    if checkpoint:
+        optim.load_state_dict(checkpoint["optim"])
 
     game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
     assert len(game_jsons) > 0
@@ -103,17 +115,17 @@ if __name__ == "__main__":
         pin_memory=True,
     )
     val_set_loader = torch.utils.data.DataLoader(
-        val_set, batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        pin_memory=True
+        val_set, batch_size=args.batch_size, collate_fn=collate_fn, pin_memory=True
     )
 
-    while True:
+    for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 100):
         for batch_i, batch in enumerate(train_set_loader):
-            logging.info("Loading batch {}".format(batch_i))
+            logging.info("Loading epoch {} batch {}".format(epoch, batch_i))
             batch = tuple(t.to(device) for t in batch)
             x_state, x_orders, x_power, x_season, y_actions = batch
-            logging.info("Starting batch {} of len {}".format(batch_i, len(x_state)))
+            logging.info(
+                "Starting epoch {} batch {} of len {}".format(epoch, batch_i, len(x_state))
+            )
 
             optim.zero_grad()
             y_guess = net(x_state, x_orders, x_power, x_season)
@@ -121,25 +133,36 @@ if __name__ == "__main__":
             loss.backward()
             optim.step()
 
-            logging.info("batch {} loss={}".format(batch_i, loss))
+            logging.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
 
             # Compute validation accuracy
             if batch_i % 1000 == 0:
                 logging.info("Calculating val loss...")
-                net.eval()
-                losses, batch_sizes, accuracies = [], [], []
-                for batch in val_set_loader:
-                    x_state, x_orders, x_power, x_season, y_actions = [t.to(device) for t in batch]
-                    y_guess = net(x_state, x_orders, x_power, x_season)
-                    losses.append(loss_fn(y_guess, y_actions).detach().cpu())
-                    batch_sizes.append(len(y_actions))
-                    accuracies.append(calculate_accuracy(y_guess, y_actions))
-                batch_sizes = [b / sum(batch_sizes) for b in batch_sizes]
-                val_loss = sum(l * s for (l, s) in zip(losses, batch_sizes))
-                val_accuracy = sum(a * s for (a, s) in zip(accuracies, batch_sizes))
-                logging.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
-                net.train()
+                with torch.no_grad():
+                    net.eval()
+                    losses, batch_sizes, accuracies = [], [], []
+                    for batch in val_set_loader:
+                        x_state, x_orders, x_power, x_season, y_actions = [
+                            t.to(device) for t in batch
+                        ]
+                        y_guess = net(x_state, x_orders, x_power, x_season)
+                        losses.append(loss_fn(y_guess, y_actions).detach().cpu())
+                        batch_sizes.append(len(y_actions))
+                        accuracies.append(calculate_accuracy(y_guess, y_actions))
+                    batch_sizes = [b / sum(batch_sizes) for b in batch_sizes]
+                    val_loss = sum(l * s for (l, s) in zip(losses, batch_sizes))
+                    val_accuracy = sum(a * s for (a, s) in zip(accuracies, batch_sizes))
+                    logging.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
+                    net.train()
 
-                if args.model_out:
-                    logging.info("Saving model to {}".format(args.model_out))
-                    torch.save(net.state_dict(), args.model_out)
+                if args.checkpoint:
+                    logging.info("Saving checkpoint to {}".format(args.checkpoint))
+                    torch.save(
+                        {
+                            "model": net.state_dict(),
+                            "optim": optim.state_dict(),
+                            "epoch": epoch,
+                            "val_accuracy": val_accuracy,
+                        },
+                        args.checkpoint,
+                    )
