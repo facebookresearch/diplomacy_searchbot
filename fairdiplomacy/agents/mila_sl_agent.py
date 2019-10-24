@@ -15,7 +15,8 @@ from fairdiplomacy.agents.base_agent import BaseAgent
 
 
 class MilaSLAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self, temperature=0.1):
+        self.temperature = temperature
         self.q_in = queue.Queue()
         self.q_out = queue.Queue()
         self.thread = threading.Thread(
@@ -35,7 +36,7 @@ def thread_main(q_in, q_out):
         player = DipNetSLPlayer()
         while True:
             game, power = q_in.get()
-            orders = yield player.get_orders(game, power)
+            orders = yield player.get_orders(game, power, temperature=temperature)
             q_out.put(orders)
 
     asyncio.set_event_loop_policy(AnyThreadEventLoopPolicy())
@@ -45,5 +46,4 @@ def thread_main(q_in, q_out):
 if __name__ == "__main__":
     agent = MilaSLAgent()
     game = diplomacy.Game()
-    orders = agent.get_orders(game, "ITALY")
-    print(orders)
+    print(agent.get_orders(game, "ITALY"))
