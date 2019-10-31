@@ -16,11 +16,10 @@ from fairdiplomacy.agents.base_agent import BaseAgent
 
 class MilaSLAgent(BaseAgent):
     def __init__(self, temperature=0.1):
-        self.temperature = temperature
         self.q_in = queue.Queue()
         self.q_out = queue.Queue()
         self.thread = threading.Thread(
-            target=thread_main, args=(self.q_in, self.q_out), daemon=True
+            target=thread_main, args=(self.q_in, self.q_out, temperature), daemon=True
         )
         self.thread.start()
 
@@ -30,7 +29,7 @@ class MilaSLAgent(BaseAgent):
         return orders
 
 
-def thread_main(q_in, q_out):
+def thread_main(q_in, q_out, temperature):
     @gen.coroutine
     def coroutine():
         player = DipNetSLPlayer()
