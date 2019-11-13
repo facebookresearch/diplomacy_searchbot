@@ -1,32 +1,42 @@
 import argparse
-import joblib
+from concurrent.futures import ProcessPoolExecutor
+from tabulate import tabulate
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
-
 from fairdiplomacy.agents.dipnet_agent import DipnetAgent
 from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
 
 
-def run_1v6_trial(agent_a, agent_b, agent_a_power):
-    """Run a trial of 1x agent_a vs. 6x agent_b
+def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power):
+    """Run a trial of 1x agent_one vs. 6x agent_six
 
     Arguments:
-    - agent_a/b: fairdiplomacy.agents.BaseAgent inheritors
-    - agent_a_power: the power to assign agent_a (the other 6 will be agent_b)
+    - agent_one/six_arg: fairdiplomacy.agents.BaseAgent inheritor class, or (class, [args])
+    - agent_one_power: the power to assign agent_one (the other 6 will be agent_six)
 
-    Returns "a" if agent_a wins, or "b" if one of the agent_b powers wins, or "draw"
+    Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
-    env = Env(
-        {power: agent_a if power == agent_a_power else agent_b for power in POWERS}
-    )
+    if type(agent_one_arg) == type:
+        agent_one = agent_one_arg()
+    else:
+        cls, args = agent_one_arg
+        agent_one = cls(*args)
+
+    if type(agent_six_arg) == type:
+        agent_six = agent_six_arg()
+    else:
+        cls, args = agent_six_arg
+        agent_six = cls(*args)
+
+    env = Env({power: agent_one if power == agent_one else agent_six for power in POWERS})
     scores = env.process_all_turns()
 
     if all(s < 18 for s in scores.values()):
         return "draw"
 
     winning_power = max(scores, key=scores.get)
-    return "a" if winning_power == agent_a_power else "b"
+    return "one" if winning_power == agent_one_power else "six"
 
 
 if __name__ == "__main__":
@@ -36,26 +46,47 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.agent_a.lower() == "mila":
-        agent_a = MilaSLAgent()
+        agent_a = MilaSLAgent
     else:
-        agent_a = DipnetAgent(args.agent_a)
+        agent_a = (DipnetAgent, args.agent_a)
 
     if args.agent_b.lower() == "mila":
-        agent_b = MilaSLAgent()
+        agent_b = MilaSLAgent
     else:
-        agent_b = DipnetAgent(args.agent_b)
+        agent_b = (DipnetAgent, args.agent_b)
 
-    # Run trials (parallel)
-    # results = joblib.Parallel(n_jobs=len(POWERS))(
-    #     joblib.delayed(run_1v6_trial)(agent_a, agent_b, agent_a_power)
-    #     for agent_a_power in POWERS
-    # )
+    pool = ProcessPoolExecutor(14)
 
-    results = {
-        agent_a_power: run_1v6_trial(agent_a, agent_b, agent_a_power)
+    # run 1A vs. 6B
+    results_1a6b = {
+        agent_a_power: pool.submit(run_1v6_trial, agent_a, agent_b, agent_a_power)
         for agent_a_power in POWERS
     }
 
-    from pprint import pprint
+    # run 6A vs. 1B
+    results_6a1b = {
+        agent_b_power: pool.submit(run_1v6_trial, agent_b, agent_a, agent_b_power)
+        for agent_b_power in POWERS
+    }
 
-    pprint(results)
+    # wait for results
+    results_1a6b = {k: v.result() for k, v in results_1a6b.items()}
+    results_6a1b = {k: v.result() for k, v in results_6a1b.items()}
+
+    # pretty table with results
+    winner_1a6b = []
+    winner_6a1b = []
+    for p in POWERS:
+        if results_1a6b[p] == "draw":
+            winner_1a6b.append("DRAW")
+        else:
+            winner_1a6b.append("A" if results_1a6b[p] == "one" else "B")
+
+        if results_6a1b[p] == "draw":
+            winner_6a1b.append("DRAW")
+        else:
+            winner_6a1b.append("B" if results_6a1b[p] == "one" else "A")
+
+    print("AGENT A = {}".format(args.agent_a))
+    print("AGENT B = {}".format(args.agent_b))
+    print(tabulate(zip(POWERS, winner_1a6b, winner_6a1b), headers=["", "1A vs. 6B", "6A vs. 1B"]))

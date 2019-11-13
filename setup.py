@@ -42,6 +42,7 @@ setup(
         "joblib",
         "torch==1.2",
         "tqdm",
+        "tabulate",
         "tornado>=5.0",  # for diplomacy_research
         "protobuf==3.6.1",  # for diplomacy_research
         "pyyaml",  # for diplomacy_research

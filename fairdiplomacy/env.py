@@ -72,17 +72,17 @@ class Env:
 
 
 if __name__ == "__main__":
-    mila_sl_agent = MilaSLAgent()
-    dipnet_agent = DipnetAgent("models/dipnet/dipnet_state.pth")
+    # mila_sl_agent = MilaSLAgent()
+    dipnet_agent = DipnetAgent("/checkpoint/jsgray/dipnet.pth")
     env = Env(
         {
             "ITALY": dipnet_agent,
-            "ENGLAND": mila_sl_agent,
-            "FRANCE": mila_sl_agent,
-            "GERMANY": mila_sl_agent,
-            "AUSTRIA": mila_sl_agent,
-            "RUSSIA": mila_sl_agent,
-            "TURKEY": mila_sl_agent,
+            "ENGLAND": dipnet_agent,
+            "FRANCE": dipnet_agent,
+            "GERMANY": dipnet_agent,
+            "AUSTRIA": dipnet_agent,
+            "RUSSIA": dipnet_agent,
+            "TURKEY": dipnet_agent,
         }
     )
     results = env.process_all_turns()
