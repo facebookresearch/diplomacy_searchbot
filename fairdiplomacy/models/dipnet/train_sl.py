@@ -159,7 +159,6 @@ def main_subproc(
     train_set = Dataset(train_game_jsons, train_game_json_lengths)
     val_set = Dataset(val_game_jsons, val_game_json_lengths)
     train_set_sampler = DistributedSampler(train_set)
-    val_set_sampler = DistributedSampler(val_set)
     train_set_loader = torch.utils.data.DataLoader(
         train_set,
         num_workers=args.num_dataloader_workers,
@@ -174,7 +173,6 @@ def main_subproc(
         batch_size=args.batch_size,
         collate_fn=collate_fn,
         pin_memory=True,
-        sampler=val_set_sampler,
     )
 
     for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 100):
