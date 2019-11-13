@@ -4,20 +4,25 @@ import numpy as np
 import torch
 
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
-from fairdiplomacy.models.consts import SEASONS, POWERS
+from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
-from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
+from fairdiplomacy.models.dipnet.standard_topo_locs import STANDARD_TOPO_LOCS
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, game_json_paths):
+    def __init__(self, game_json_paths, game_json_lengths=None):
         self.game_json_paths = game_json_paths
 
-        logging.info("Calculating dataset size...")
-        self.game_json_lengths = get_all_game_lengths(game_json_paths)
+        if game_json_lengths is not None:
+            self.game_json_lengths = game_json_lengths
+        else:
+            logging.info("Calculating dataset size...")
+            self.game_json_lengths = get_all_game_lengths(game_json_paths)
+
         self.len = sum(self.game_json_lengths)
         self.cumsum = np.cumsum(self.game_json_lengths)
 
@@ -27,20 +32,28 @@ class Dataset(torch.utils.data.Dataset):
 
         path = self.game_json_paths[game_idx]
         game = diplomacy.utils.export.load_saved_games_from_disk(path)[0]
-        return encode_phase(game, phase_idx)
+        try:
+            return encode_phase(game, phase_idx)
+        except Exception:
+            logging.exception(
+                "Skipping dataset game_idx={} path={} phase_idx={}".format(
+                    game_idx, path, phase_idx
+                )
+            )
+            return None
 
     def __len__(self):
         return self.len
 
 
-def encode_phase(game, phase_idx):
+def encode_phase(game, phase_idx, only_winners=True):
     """Return five tensors:
 
     board_state: shape=(7, 81, 35)
     prev_orders: shape=(7, 81, 40)
     power: shape=(7, 7)
     season: shape=(7, 3)
-    actions: shape=(7, 13030)
+    actions: shape=(7, 17) int order idxs
     """
     phase = str(list(game.state_history.keys())[phase_idx])
 
@@ -56,8 +69,9 @@ def encode_phase(game, phase_idx):
         if i < phase_idx and str(p).endswith("M")
     ]
     if len(prev_move_phases) > 0:
+        move_phase = prev_move_phases[-1]
         x_prev_orders = prev_orders_to_np(
-            game.state_history[phase], game.order_history[prev_move_phases[-1]]
+            game.state_history[move_phase], game.order_history[move_phase]
         )
         x_prev_orders = torch.from_numpy(x_prev_orders).repeat(len(POWERS), 1, 1)
     else:
@@ -72,72 +86,34 @@ def encode_phase(game, phase_idx):
     x_season[:, season_idx] = 1
 
     # encode actions
-    y_actions = torch.zeros(len(POWERS), len(ORDER_VOCABULARY))
+    y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int64).fill_(EOS_IDX)
     for power_i, power in enumerate(POWERS):
-        for order in game.order_history[phase][power]:
+        orders = game.order_history[phase].get(power, [])
+        order_idxs = []
+        for order in orders:
             try:
-                action_idx = smarter_order_index(order)
+                order_idxs.append(smarter_order_index(order))
             except ValueError:
-                logging.warn('Order "{}" not in vocab'.format(order))
+                # logging.warn(
+                #     'Order "{}" not in vocab, game_id={} phase_idx={} phase={}'.format(
+                #         order, game.game_id, phase_idx, phase
+                #     )
+                # )
                 continue
-            y_actions[power_i, action_idx] = 1
 
-    return x_board_state, x_prev_orders, x_power, x_season, y_actions
+        # sort by topo order
+        order_idxs.sort(key=lambda idx: STANDARD_TOPO_LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
+        for i, order_idx in enumerate(order_idxs):
+            y_actions[power_i, i] = order_idx
 
-
-def encode_game(game):
-    """Return five tensors:
-
-    board_state: shape=(L, 81, 35)
-    prev_orders: shape=(L, 81, 40)
-    power: shape=(L, 7)
-    season: shape=(L, 3)
-    actions: shape=(L, 13030)
-
-    where L is the number of actions in the game
-    """
-    L = len(game.state_history) * len(POWERS)
-
-    # return values
-    x_board_state = torch.zeros(L, 81, 35)
-    x_prev_orders = torch.zeros(L, 81, 40)
-    x_power = torch.zeros(L, 7)
-    x_season = torch.zeros(L, 3)
-    y_actions = torch.zeros(L, len(ORDER_VOCABULARY))
-
-    i = 0
-    prev_orders_np = np.zeros((81, 40))
-    for phase, state in game.state_history.items():
-        phase = str(phase)
-        orders_by_power = game.order_history[phase]
-        state_np = board_state_to_np(state)
-        season_idx = [s[0] for s in SEASONS].index(phase[0])
-
-        for power_idx, power in enumerate(POWERS):
-            # set values in returned tensors
-            x_board_state[i, :, :] = torch.from_numpy(state_np)
-            x_prev_orders[i, :, :] = torch.from_numpy(prev_orders_np)
-            x_power[i, power_idx] = 1
-            x_season[i, season_idx] = 1
-            for order in orders_by_power[power]:
-                try:
-                    action_idx = smarter_order_index(order)
-                except ValueError:
-                    # Skip i += 1, so this row is overwritten
-                    logging.warn('Order "{}" not in vocab'.format(order))
-                    continue
-                y_actions[i, action_idx] = 1
-
-            i += 1
-
-        # TODO: does MILA condition on last move orders, or last orders of any kind?
-        if phase.endswith("M"):
-            prev_orders_np = prev_orders_to_np(state, orders_by_power)
-
-    if i != L:
-        logging.warn("Skipped {} bad orders this game".format(L - i))
-
-    return x_board_state[:i], x_prev_orders[:i], x_power[:i], x_season[:i], y_actions[:i]
+    if only_winners:
+        final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
+        winner_idxs = [i for i, power in enumerate(POWERS) if final_score.get(power, 0) > 0]
+        return tuple(
+            t[winner_idxs] for t in (x_board_state, x_prev_orders, x_power, x_season, y_actions)
+        )
+    else:
+        return x_board_state, x_prev_orders, x_power, x_season, y_actions
 
 
 def smarter_order_index(order):
@@ -150,8 +126,14 @@ def smarter_order_index(order):
 
 
 def collate_fn(items):
-    # Items is a list of 5-tuples, one tuple from each dataset
-    return tuple(torch.cat(tensors) for tensors in zip(*items))
+    # items is a list of 5-tuples, one tuple from each dataset
+    # lsts is a 5-tuple of lists of tensors
+    lsts = zip(*(x for x in items if x is not None))
+    try:
+        return tuple(torch.cat(lst, dim=0) for lst in lsts)
+    except:
+        logging.exception([tuple(t.shape for t in item) for item in items])
+        raise
 
 
 if __name__ == "__main__":

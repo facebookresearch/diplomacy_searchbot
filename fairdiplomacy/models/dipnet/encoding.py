@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 
 import diplomacy
@@ -101,56 +102,61 @@ def prev_orders_to_np(state, orders_by_power):
     # encode phase previous orders
     for power, orders in orders_by_power.items():
         for order in orders:
-            unit_type, loc, order_type, *rest = order.split()
-            loc_idx = LOCS.index(loc)
+            try:
+                unit_type, loc, order_type, *rest = order.split()
+                loc_idx = LOCS.index(loc)
 
-            # set unit type (0-2)
-            unit_type_idx = 0 + ["A", "F"].index(unit_type.replace("*", ""))
-            enc[loc_idx, unit_type_idx] = 1
-            enc[loc_idx, 2] = 0
+                # set unit type (0-2)
+                unit_type_idx = 0 + ["A", "F"].index(unit_type.replace("*", ""))
+                enc[loc_idx, unit_type_idx] = 1
+                enc[loc_idx, 2] = 0
 
-            # set issuing power (3-10)
-            power_idx = 3 + POWERS.index(power)
-            enc[loc_idx, power_idx] = 1
-            enc[loc_idx, 10] = 0
+                # set issuing power (3-10)
+                power_idx = 3 + POWERS.index(power)
+                enc[loc_idx, power_idx] = 1
+                enc[loc_idx, 10] = 0
 
-            # set order type (10-15)
-            order_type_idx = 10 + ["H", "-", "S", "C"].index(order_type)
-            enc[loc_idx, order_type_idx] = 1
-            enc[loc_idx, 15] = 0
+                # set order type (10-15)
+                order_type_idx = 10 + ["H", "-", "S", "C"].index(order_type)
+                enc[loc_idx, order_type_idx] = 1
+                enc[loc_idx, 15] = 0
 
-            # set source location power (16-23) for support holds, support moves, and convoys
-            if order_type == "S" or order_type == "C":
-                source_loc = rest[1]
-                source_loc_power = get_power_at_loc(state, source_loc)
-                if source_loc_power is not None:
-                    power_idx = 16 + POWERS.index(source_loc_power)
-                    enc[loc_idx, power_idx] = 1
-                    enc[loc_idx, 23] = 0
+                # set source location power (16-23) for support holds, support moves, and convoys
+                if order_type == "S" or order_type == "C":
+                    source_loc = rest[1]
+                    source_loc_power = get_power_at_loc(state, source_loc)
+                    if source_loc_power is not None:
+                        power_idx = 16 + POWERS.index(source_loc_power)
+                        enc[loc_idx, power_idx] = 1
+                        enc[loc_idx, 23] = 0
 
-            # set destination location power (24-31) and supply center power
-            # (32-39) for moves, support moves, and convoys
-            if (
-                order_type == "-"
-                or order_type == "C"
-                or (order_type == "S" and len(rest) > 2 and rest[2] == "-")
-            ):  # support move
+                # set destination location power (24-31) and supply center power
+                # (32-39) for moves, support moves, and convoys
+                if (
+                    order_type == "-"
+                    or order_type == "C"
+                    or (order_type == "S" and len(rest) > 2 and rest[2] == "-")
+                ):  # support move
 
-                dest_loc = rest[-1]
+                    dest_loc = rest[-1]
 
-                # set destination location power (24-31)
-                dest_loc_power = get_power_at_loc(state, dest_loc)
-                if dest_loc_power is not None:
-                    power_idx = 24 + POWERS.index(dest_loc_power)
-                    enc[loc_idx, power_idx] = 1
-                    enc[loc_idx, 31] = 0
+                    # set destination location power (24-31)
+                    dest_loc_power = get_power_at_loc(state, dest_loc)
+                    if dest_loc_power is not None:
+                        power_idx = 24 + POWERS.index(dest_loc_power)
+                        enc[loc_idx, power_idx] = 1
+                        enc[loc_idx, 31] = 0
 
-                # set destination supply center owner (32-39)
-                dest_supply_power = get_supply_center_power(state, dest_loc)
-                if dest_supply_power is not None:
-                    power_idx = 32 + POWERS.index(dest_loc_power)
-                    enc[loc_idx, power_idx] = 1
-                    enc[loc_idx, 39] = 0
+                    # set destination supply center owner (32-39)
+                    dest_supply_power = get_supply_center_power(state, dest_loc)
+                    if dest_supply_power is not None:
+                        power_idx = 32 + POWERS.index(dest_loc_power)
+                        enc[loc_idx, power_idx] = 1
+                        enc[loc_idx, 39] = 0
+
+            except Exception:
+                logging.exception("Can't encode bad order: {}".format(order))
+                continue
 
     return enc
 

@@ -1,10 +1,15 @@
 """
 https://github.com/diplomacy/research/blob/master/diplomacy_research/models/state_space.py
 """
+from collections import defaultdict
+
 from diplomacy import Map
 
 
+EOS_TOKEN = "<EOS>"
+EOS_IDX = 0
 _ORDER_VOCABULARY = None
+_ORDER_VOCABULARY_IDXS_BY_UNIT = None
 
 
 def get_order_vocabulary():
@@ -13,8 +18,22 @@ def get_order_vocabulary():
     if _ORDER_VOCABULARY is not None:
         return _ORDER_VOCABULARY
 
-    _ORDER_VOCABULARY = _get_order_vocabulary()
+    _ORDER_VOCABULARY = [EOS_TOKEN] + _get_order_vocabulary()
     return _ORDER_VOCABULARY
+
+
+def get_order_vocabulary_idxs_by_unit():
+    global _ORDER_VOCABULARY_IDXS_BY_UNIT
+
+    if _ORDER_VOCABULARY_IDXS_BY_UNIT is not None:
+        return _ORDER_VOCABULARY_IDXS_BY_UNIT
+
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
+    for idx, order in enumerate(get_order_vocabulary()):
+        unit = order[:5]
+        _ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(_ORDER_VOCABULARY_IDXS_BY_UNIT)
+    return _ORDER_VOCABULARY_IDXS_BY_UNIT
 
 
 def _get_order_vocabulary():

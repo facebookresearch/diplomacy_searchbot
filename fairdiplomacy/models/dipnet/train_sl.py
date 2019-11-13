@@ -1,18 +1,21 @@
 import argparse
+import atexit
 import glob
 import logging
 import os
 import random
 import torch
-from collections import defaultdict
+from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, collate_fn
+from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX
 from fairdiplomacy.models.dipnet.dipnet import DipNet
-from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
-
-random.seed(0)
-torch.manual_seed(0)
+from fairdiplomacy.models.dipnet.order_vocabulary import (
+    get_order_vocabulary,
+    get_order_vocabulary_idxs_by_unit,
+    EOS_IDX,
+)
 
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
@@ -23,17 +26,15 @@ INTER_EMB_SIZE = 120
 POWER_EMB_SIZE = 7
 SEASON_EMB_SIZE = 3
 NUM_ENCODER_BLOCKS = 16
+LSTM_SIZE = 200
+ORDER_EMB_SIZE = 80
+
 ORDER_VOCABULARY = get_order_vocabulary()
+ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
 
 
-ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
-for idx, order in enumerate(ORDER_VOCABULARY):
-    unit = order[:5]
-    ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
-
-
-def new_model(device="cpu"):
-    A = torch.from_numpy(ADJACENCY_MATRIX).float().to(device)
+def new_model():
+    A = torch.from_numpy(ADJACENCY_MATRIX).float()
     return DipNet(
         BOARD_STATE_SIZE,
         PREV_ORDERS_SIZE,
@@ -43,125 +44,252 @@ def new_model(device="cpu"):
         NUM_ENCODER_BLOCKS,
         A,
         len(ORDER_VOCABULARY),
-    ).to(device)
-
-
-def calculate_accuracy(y_guess, y_truth):
-    right, wrong = 0, 0
-
-    for i in range(y_guess.shape[0]):
-        truth_orders = [ORDER_VOCABULARY[idx] for idx in torch.nonzero(y_truth[i, :])]
-        for truth_order in truth_orders:
-            unit = truth_order[:5]  # e.g. "A VIE"
-            possible_order_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit]
-            possible_order_scores = y_guess[i, possible_order_idxs]
-            guess_order_idx = possible_order_idxs[torch.argmax(possible_order_scores)]
-            if y_truth[i, guess_order_idx] == 1:
-                right += 1
-            else:
-                wrong += 1
-    return right / (right + wrong)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True, help="Path to dir containing game.json files")
-    parser.add_argument("--num-dataloader-workers", type=int, default=8, help="# Dataloader procs")
-    parser.add_argument("--batch-size", type=int, default=128, help="How many phases")
-    parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
-    parser.add_argument("--checkpoint", help="Path to load/save the model")
-    parser.add_argument("--cpu", action="store_true", help="Use CPU even if GPU is present")
-    parser.add_argument(
-        "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
+        LSTM_SIZE,
+        ORDER_EMB_SIZE,
     )
-    args = parser.parse_args()
-    logging.info("Args: {}".format(args))
 
-    device = (
-        torch.device("cuda") if torch.cuda.is_available() and not args.cpu else torch.device("cpu")
+
+def process_batch(net, batch, loss_fn):
+    """Calculate a forward pass on a batch
+
+    Returns:
+    - loss: the output of loss_fn(logits, targets)
+    - order_idxs: [B, S] LongTensor of sampled order idxs
+    """
+    x_state, x_orders, x_power, x_season, y_actions = batch
+
+    # order masks [B, 17, 13k], 1 iff a valid order else 0
+    logging.debug("hi mom start build mask")
+    order_mask = build_order_mask(y_actions)
+    logging.debug("hi mom stop build mask, shape={}".format(order_mask.shape))
+
+    # forward pass
+    order_idxs, order_scores = net(x_state, x_orders, x_power, x_season, order_mask)
+
+    # reshape and mask out <EOS> tokens from sequences
+    y_actions = y_actions.to(next(net.parameters()).device)
+    y_actions = y_actions[:, : order_idxs.shape[1]].reshape(-1)  # [B * S]
+    order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
+    order_scores = order_scores[y_actions != EOS_IDX]
+    y_actions = y_actions[y_actions != EOS_IDX]
+
+    # calculate loss
+    return loss_fn(order_scores, y_actions), order_idxs
+
+
+def build_order_mask(y_actions):
+    """Build a mask of valid possible actions given a ground truth sequence
+
+    Arguments:
+    - y_actions: [B, 17] LongTensor of order idxs
+
+    Returns:
+    - [B, S, 13k] BoolTensor mask, 0 < S <= 17, where idx [b, s, x] == True if
+      ORDER_VOCABULARY[x] is an order originating from the same unit as y_actions[b, s]
+    """
+    order_mask = torch.zeros(
+        y_actions.shape[0], y_actions.shape[1], len(ORDER_VOCABULARY), dtype=torch.bool
     )
-    logging.info("Using device {}".format(device))
+    for step in range(order_mask.shape[1]):
+        if (y_actions[:, step] == EOS_IDX).all():
+            break
+        for b in range(order_mask.shape[0]):
+            order_idx = y_actions[b, step]
+            if order_idx == EOS_IDX:
+                continue
+            order = ORDER_VOCABULARY[order_idx]
+            unit = " ".join(order.split()[:2])
+            try:
+                valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit]
+            except KeyError:
+                valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit.split("/")[0]]
+            order_mask[b, step, valid_idxs] = 1
 
-    if os.path.isfile(args.checkpoint):
+    return order_mask[:, :step, :]
+
+
+def calculate_accuracy(order_idxs, y_truth):
+    y_truth = y_truth[: (order_idxs.shape[0]), : (order_idxs.shape[1])].to(order_idxs.device)
+    mask = y_truth != EOS_IDX
+    return torch.mean((y_truth[mask] == order_idxs[mask]).float())
+
+
+def main_subproc(
+    rank,
+    world_size,
+    args,
+    train_game_jsons,
+    train_game_json_lengths,
+    val_game_jsons,
+    val_game_json_lengths,
+):
+    # distributed training setup
+    mp_setup(rank, world_size)
+    atexit.register(mp_cleanup)
+    torch.cuda.set_device(rank)
+
+    # load checkpoint if specified
+    if args.checkpoint and os.path.isfile(args.checkpoint):
         logging.info("Loading checkpoint at {}".format(args.checkpoint))
-        checkpoint = torch.load(args.checkpoint)
+        checkpoint = torch.load(args.checkpoint, map_location=rank)
     else:
         checkpoint = None
 
+    # create model, from checkpoint if specified
     logging.info("Init model...")
-    net = new_model(device)
+    net = new_model()
     if checkpoint:
-        net.load_state_dict(checkpoint["model"])
+        logging.debug("net.load_state_dict")
+        net.load_state_dict(checkpoint["model"], strict=False)
 
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    # send model to GPU
+    logging.debug("net.cuda({})".format(rank))
+    net.cuda(rank)
+    logging.debug("net {} DistributedDataParallel".format(rank))
+    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank])
+    logging.debug("net {} DistributedDataParallel done".format(rank))
+
+    # create optimizer, from checkpoint if specified
+    loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
     if checkpoint:
         optim.load_state_dict(checkpoint["optim"])
 
-    game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
-    assert len(game_jsons) > 0
-    logging.info("Found dataset of {} games...".format(len(game_jsons)))
-    val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
-    train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
-    train_set = Dataset(train_game_jsons)
-    val_set = Dataset(val_game_jsons)
+    # Create datasets / loaders
+    train_set = Dataset(train_game_jsons, train_game_json_lengths)
+    val_set = Dataset(val_game_jsons, val_game_json_lengths)
+    train_set_sampler = DistributedSampler(train_set)
+    val_set_sampler = DistributedSampler(val_set)
     train_set_loader = torch.utils.data.DataLoader(
         train_set,
-        shuffle=True,
         num_workers=args.num_dataloader_workers,
         batch_size=args.batch_size,
         collate_fn=collate_fn,
         pin_memory=True,
+        sampler=train_set_sampler,
     )
     val_set_loader = torch.utils.data.DataLoader(
-        val_set, batch_size=args.batch_size, collate_fn=collate_fn, pin_memory=True
+        val_set,
+        num_workers=args.num_dataloader_workers,
+        batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        pin_memory=True,
+        sampler=val_set_sampler,
     )
 
     for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 100):
-        for batch_i, batch in enumerate(train_set_loader):
-            logging.info("Loading epoch {} batch {}".format(epoch, batch_i))
-            batch = tuple(t.to(device) for t in batch)
-            x_state, x_orders, x_power, x_season, y_actions = batch
-            logging.info(
-                "Starting epoch {} batch {} of len {}".format(epoch, batch_i, len(x_state))
-            )
+        train_set_sampler.set_epoch(epoch)
 
+        for batch_i, batch in enumerate(train_set_loader):
+            # check batch is not empty
+            if (batch[-1] == EOS_IDX).all():
+                logging.warning("Skipping empty epoch {} batch {}".format(epoch, batch_i))
+                continue
+
+            # learn
+            logging.info("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
-            y_guess = net(x_state, x_orders, x_power, x_season)
-            loss = loss_fn(y_guess, y_actions)
+            losses, _ = process_batch(net, batch, loss_fn)
+            loss = torch.mean(losses)
+            logging.debug("hi mom start backward")
             loss.backward()
             optim.step()
-
             logging.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
 
-            # Compute validation accuracy
-            if batch_i % 1000 == 0:
+            # calculate validation loss/accuracy
+            if (epoch * len(train_set_loader) + batch_i) % 1000 == 0:
                 logging.info("Calculating val loss...")
                 with torch.no_grad():
                     net.eval()
-                    losses, batch_sizes, accuracies = [], [], []
+                    batch_losses, batch_accuracies = [], []
                     for batch in val_set_loader:
-                        x_state, x_orders, x_power, x_season, y_actions = [
-                            t.to(device) for t in batch
-                        ]
-                        y_guess = net(x_state, x_orders, x_power, x_season)
-                        losses.append(loss_fn(y_guess, y_actions).detach().cpu())
-                        batch_sizes.append(len(y_actions))
-                        accuracies.append(calculate_accuracy(y_guess, y_actions))
-                    batch_sizes = [b / sum(batch_sizes) for b in batch_sizes]
-                    val_loss = sum(l * s for (l, s) in zip(losses, batch_sizes))
-                    val_accuracy = sum(a * s for (a, s) in zip(accuracies, batch_sizes))
+                        _, _, _, _, y_actions = batch
+                        losses, order_idxs = process_batch(net, batch, loss_fn)
+                        batch_losses.append(losses)
+                        batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
+
+                    val_losses = torch.cat(batch_losses)
+                    val_loss = torch.mean(val_losses)
+                    weights = [len(l) / len(val_losses) for l in batch_losses]
+                    val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
                     logging.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
                     net.train()
 
-                if args.checkpoint:
+                # save model
+                if args.checkpoint and rank == 0:
                     logging.info("Saving checkpoint to {}".format(args.checkpoint))
                     torch.save(
                         {
                             "model": net.state_dict(),
                             "optim": optim.state_dict(),
                             "epoch": epoch,
+                            "batch_i": batch_i,
                             "val_accuracy": val_accuracy,
                         },
                         args.checkpoint,
                     )
+
+
+def mp_setup(rank, world_size):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12356"
+    torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.manual_seed(0)
+    random.seed(0)
+
+
+def mp_cleanup():
+    torch.distributed.destroy_process_group()
+
+
+if __name__ == "__main__":
+    random.seed(0)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", required=True, help="Path to dir containing game.json files")
+    parser.add_argument(
+        "--num-dataloader-workers", type=int, default=32, help="# Dataloader procs"
+    )
+    parser.add_argument("--batch-size", type=int, default=200, help="Batch size per GPU")
+    parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
+    parser.add_argument("--checkpoint", help="Path to load/save the model")
+    parser.add_argument(
+        "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
+    )
+    args = parser.parse_args()
+    logging.info("Args: {}".format(args))
+
+    n_gpus = torch.cuda.device_count()
+    logging.info("Using {} GPUs".format(n_gpus))
+
+    # search for data and create train/val splits
+    game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
+    assert len(game_jsons) > 0
+    logging.info("Found dataset of {} games...".format(len(game_jsons)))
+    val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
+    train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
+
+    # Calculate dataset sizes
+    logging.info("Calculating dataset sizes")
+    train_game_json_lengths = get_all_game_lengths(train_game_jsons)
+    val_game_json_lengths = get_all_game_lengths(val_game_jsons)
+
+    # required when using multithreaded DataLoader
+    try:
+        torch.multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        pass
+
+    torch.multiprocessing.spawn(
+        main_subproc,
+        nprocs=n_gpus,
+        args=(
+            n_gpus,
+            args,
+            train_game_jsons,
+            train_game_json_lengths,
+            val_game_jsons,
+            val_game_json_lengths,
+        ),
+    )
+
