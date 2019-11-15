@@ -8,15 +8,43 @@ logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=log
 
 
 class ModelServer:
-    def __init__(self, model, port, max_batch_size, max_batch_latency):
+    DEFAULT_PORT = 24565
+    DEFAULT_MAX_BATCH_LATENCY = 0.1
+
+    def __init__(
+        self,
+        model,
+        max_batch_size,
+        max_batch_latency=DEFAULT_MAX_BATCH_LATENCY,
+        port=DEFAULT_PORT,
+        output_transform=None,
+    ):
+        """A minimal TCP server serving pytorch models via a simple pickle protocol.
+        Handles batching and single-GPU usage.
+
+        Protocol: All payloads are pickled python objects preceded by the
+        payload length as a 64-bit unsigned int in python-default endianness,
+        e.g. struct.pack("Q", ...)
+
+        Request payload: a tuple or list of input pytorch tensors to pass to model
+        Response payload: output_transform(model(*x))
+
+        Arguments:
+        - model: a pytorch model
+        - max_batch_size: flush buffer if sum of request batch sizes >= max_batch_size
+        - max_batch_latency: flush buffer if any request has waited this long
+        - port: to listen for TCP connections
+        - output_transform: Optionally, a function applied to the model output before returning
+        """
         self.model = model
         self.port = port
         self.max_batch_size = max_batch_size
         self.max_batch_latency = max_batch_latency
+        self.output_transform = output_transform
 
-        self.current_batch = None
-        self.current_batch_sizes = []
-        self.current_batch_futures = []
+        self.buf_batch = None
+        self.buf_batch_sizes = []
+        self.buf_batch_futures = []
         self.timeout_flush_task = None
 
     def start(self):
@@ -50,13 +78,13 @@ class ModelServer:
                     "{} is bigger than max size of {}".format(batch_size, self.max_batch_size)
                 )
 
-            if sum(self.current_batch_sizes) + batch_size > self.max_batch_size:
-                self.flush_current_batch()
+            if sum(self.buf_batch_sizes) + batch_size > self.max_batch_size:
+                self.flush_buf_batch()
 
-            future = self.append_to_current_batch(batch)
+            future = self.append_to_buf_batch(batch)
 
-            if sum(self.current_batch_sizes) == self.max_batch_size:
-                self.flush_current_batch()
+            if sum(self.buf_batch_sizes) == self.max_batch_size:
+                self.flush_buf_batch()
 
             result = await future
 
@@ -65,48 +93,49 @@ class ModelServer:
             writer.write(result_pickled)
             await writer.drain()
 
-    def append_to_current_batch(self, batch) -> asyncio.Future:
-        if self.current_batch is None:
-            self.current_batch = batch
+    def append_to_buf_batch(self, batch) -> asyncio.Future:
+        if self.buf_batch is None:
+            self.buf_batch = batch
             assert self.timeout_flush_task is None
             self.timeout_flush_task = asyncio.create_task(self.scheduled_timeout_flush())
         else:
-            self.current_batch = tuple(
-                torch.cat([cur, x]) for cur, x in zip(self.current_batch, batch)
-            )
+            self.buf_batch = tuple(torch.cat([cur, x]) for cur, x in zip(self.buf_batch, batch))
 
-        self.current_batch_sizes.append(batch[0].shape[0])
+        self.buf_batch_sizes.append(batch[0].shape[0])
 
         future = asyncio.get_running_loop().create_future()
-        self.current_batch_futures.append(future)
+        self.buf_batch_futures.append(future)
         return future
 
-    def flush_current_batch(self):
-        logging.debug("Flushing current batch, sizes {}".format(self.current_batch_sizes))
+    def flush_buf_batch(self):
+        logging.debug("Flushing buf batch, sizes {}".format(self.buf_batch_sizes))
 
         if self.timeout_flush_task is not None:
             self.timeout_flush_task.cancel()
             self.timeout_flush_task = None
 
         with torch.no_grad():
-            y = self.model(*self.current_batch)
+            y = self.model(*self.buf_batch)  # TODO: possible to do async?
+
+        if self.output_transform is not None:
+            y = self.output_transform(y)
 
         i = 0
-        for size, future in zip(self.current_batch_sizes, self.current_batch_futures):
+        for size, future in zip(self.buf_batch_sizes, self.buf_batch_futures):
             batch_y = tuple(t[i : (i + size)] for t in y)
             future.set_result(batch_y)
             i += size
 
-        self.current_batch = None
-        self.current_batch_sizes = []
-        self.current_batch_futures = []
+        self.buf_batch = None
+        self.buf_batch_sizes = []
+        self.buf_batch_futures = []
 
     async def scheduled_timeout_flush(self):
         try:
             await asyncio.sleep(self.max_batch_latency)
             logging.debug("Scheduled flush!")
             self.timeout_flush_task = None
-            self.flush_current_batch()
+            self.flush_buf_batch()
         except asyncio.CancelledError:
             pass
 
@@ -136,5 +165,10 @@ if __name__ == "__main__":
     model.load_state_dict(state_dict)
     model.eval()
 
-    model_server = ModelServer(model, PORT, MAX_BATCH_SIZE, MAX_BATCH_LATENCY)
+    # return only order_idxs, not order_scores
+    output_transform = lambda y: y[:1]
+
+    model_server = ModelServer(
+        model, MAX_BATCH_SIZE, MAX_BATCH_LATENCY, output_transform=output_transform
+    )
     model_server.start()
