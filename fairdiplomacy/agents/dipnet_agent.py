@@ -22,75 +22,87 @@ class DipnetAgent(BaseAgent):
         self.model.eval()
 
     def get_orders(self, game, power):
-        # Get network inputs
-        x_board_state, x_prev_orders, x_season = self.encode_state(game)
-        x_power = torch.zeros(1, 7)
-        x_power[0, POWERS.index(power)] = 1
-        order_mask, seq_len = self.get_order_mask(game, power)
+        inputs = encode_inputs(game, power)
+        order_idxs, _ = self.model(*inputs)
+        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :seq_len]]  # FIXME: remove seq_len
 
-        # Forward pass
-        order_idxs, _ = self.model(x_board_state, x_prev_orders, x_power, x_season, order_mask)
-        return [ORDER_VOCABULARY[idx] for idx in order_idxs[:seq_len]]
 
-    def encode_state(self, game):
-        """Returns a 3-tuple of tensors:
+def encode_inputs(game, power):
+    """Return a 5-tuple of tensors
 
-        x_board_state: shape=(1, 81, 35)
-        x_prev_orders: shape=(1, 81, 40)
-        x_season: shape=(1, 3)
-        """
-        state = game.get_state()
-        x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
+    x_board_state: shape=(1, 81, 35)
+    x_prev_orders: shape=(1, 81, 40)
+    x_season: shape=(1, 3)
+    x_power: shape=(1, 7)
+    x_order_mask: shape=[1, 17, 13k], dtype=bool
+    """
+    x_board_state, x_prev_orders, x_season = encode_state(game)
+    x_power = torch.zeros(1, 7)
+    x_power[0, POWERS.index(power)] = 1
+    order_mask, seq_len = get_order_mask(game, power)
+    return (x_board_state, x_prev_orders, x_season, x_power, order_mask[:, :seq_len, :])
 
-        try:
-            last_move_phase, last_move_orders = [
-                (phase, orders)
-                for phase, orders in game.order_history.items()
-                if str(phase).endswith("M")
-            ][-1]
-            last_move_state = game.state_history[last_move_phase]
-            x_prev_orders = torch.from_numpy(
-                prev_orders_to_np(last_move_state, last_move_orders)
-            ).unsqueeze(0)
-        except IndexError:
-            x_prev_orders = torch.zeros(1, 81, 40)
 
-        x_season = torch.zeros(1, 3)
-        x_season[0, SEASONS.index(game.phase.split()[0])] = 1
+def encode_state(game):
+    """Returns a 3-tuple of tensors:
 
-        return x_board_state, x_prev_orders, x_season
+    x_board_state: shape=(1, 81, 35)
+    x_prev_orders: shape=(1, 81, 40)
+    x_season: shape=(1, 3)
+    """
+    state = game.get_state()
+    x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
 
-    def get_order_mask(self, game, power):
-        """Return a boolean mask of valid orders
+    try:
+        last_move_phase, last_move_orders = [
+            (phase, orders)
+            for phase, orders in game.order_history.items()
+            if str(phase).endswith("M")
+        ][-1]
+        last_move_state = game.state_history[last_move_phase]
+        x_prev_orders = torch.from_numpy(
+            prev_orders_to_np(last_move_state, last_move_orders)
+        ).unsqueeze(0)
+    except IndexError:
+        x_prev_orders = torch.zeros(1, 81, 40)
 
-        Returns:
-        - a [17, 1, 13k] bool tensor
-        - the actual lengh of the sequence == the number of orders to submit, <= 17
-        """
-        orderable_locs = sorted(game.get_orderable_locations(power), key=STANDARD_TOPO_LOCS.index)
-        all_possible_orders = game.get_all_possible_orders()
-        power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
-        n_builds = game.get_state()["builds"][power]["count"]
-        order_mask = torch.zeros(MAX_SEQ_LEN, 1, len(ORDER_VOCABULARY), dtype=torch.bool)
+    x_season = torch.zeros(1, 3)
+    x_season[0, SEASONS.index(game.phase.split()[0])] = 1
 
-        if n_builds > 0:
-            # build phase: all possible build orders, up to the number of allowed builds
-            _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-            order_mask[:n_builds, 0, order_idxs] = 1
-            return order_mask, n_builds
+    return x_board_state, x_prev_orders, x_season
 
-        if n_builds < 0:
-            # disbands: all possible disband orders, up to the number of required disbands
-            n_disbands = -n_builds
-            _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-            order_mask[:n_disbands, 0, order_idxs] = 1
-            return order_mask, n_disbands
 
-        # move phase: iterate through orderable_locs in topo order
-        for i, loc in enumerate(orderable_locs):
-            orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
-            order_mask[i, 0, order_idxs] = 1
-        return order_mask, len(orderable_locs)
+def get_order_mask(game, power):
+    """Return a boolean mask of valid orders
+
+    Returns:
+    - a [1, 17, 13k] bool tensor
+    - the actual lengh of the sequence == the number of orders to submit, <= 17
+    """
+    orderable_locs = sorted(game.get_orderable_locations(power), key=STANDARD_TOPO_LOCS.index)
+    all_possible_orders = game.get_all_possible_orders()
+    power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
+    n_builds = game.get_state()["builds"][power]["count"]
+    order_mask = torch.zeros(1, MAX_SEQ_LEN, len(ORDER_VOCABULARY), dtype=torch.bool)
+
+    if n_builds > 0:
+        # build phase: all possible build orders, up to the number of allowed builds
+        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
+        order_mask[0, :n_builds, order_idxs] = 1
+        return order_mask, n_builds
+
+    if n_builds < 0:
+        # disbands: all possible disband orders, up to the number of required disbands
+        n_disbands = -n_builds
+        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
+        order_mask[0, :n_disbands, order_idxs] = 1
+        return order_mask, n_disbands
+
+    # move phase: iterate through orderable_locs in topo order
+    for i, loc in enumerate(orderable_locs):
+        orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
+        order_mask[0, i, order_idxs] = 1
+    return order_mask, len(orderable_locs)
 
 
 def filter_orders_in_vocab(orders):

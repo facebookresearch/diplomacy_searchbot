@@ -29,32 +29,41 @@ class ModelServer:
             await server.serve_forever()
 
     async def handle_conn(self, reader, writer):
-        raw_size = struct.unpack("Q", await reader.read(8))[0]
-        raw = await reader.read(raw_size)
-        batch = pickle.loads(raw)
-        batch_size = batch[0].shape[0]
-        logging.debug("Got batch of size {}".format(batch_size))
+        while True:
+            try:
+                raw_size_enc = await reader.readexactly(8)
+                if raw_size_enc == b"":
+                    return
+            except ConnectionResetError:
+                return
+            except asyncio.streams.IncompleteReadError:
+                return
 
-        if batch_size > self.max_batch_size:
-            raise RuntimeError(
-                "{} is bigger than max size of {}".format(batch_size, self.max_batch_size)
-            )
+            raw_size = struct.unpack("Q", raw_size_enc)[0]
+            raw = await reader.readexactly(raw_size)
+            batch = pickle.loads(raw)
+            batch_size = batch[0].shape[0]
+            logging.debug("Got batch of size {}".format(batch_size))
 
-        if sum(self.current_batch_sizes) + batch_size > self.max_batch_size:
-            self.flush_current_batch()
+            if batch_size > self.max_batch_size:
+                raise RuntimeError(
+                    "{} is bigger than max size of {}".format(batch_size, self.max_batch_size)
+                )
 
-        future = self.append_to_current_batch(batch)
+            if sum(self.current_batch_sizes) + batch_size > self.max_batch_size:
+                self.flush_current_batch()
 
-        if sum(self.current_batch_sizes) == self.max_batch_size:
-            self.flush_current_batch()
+            future = self.append_to_current_batch(batch)
 
-        result = await future
+            if sum(self.current_batch_sizes) == self.max_batch_size:
+                self.flush_current_batch()
 
-        result_pickled = pickle.dumps(result)
-        writer.write(struct.pack("Q", len(result_pickled)))
-        writer.write(result_pickled)
-        await writer.drain()
-        writer.close()
+            result = await future
+
+            result_pickled = pickle.dumps(result)
+            writer.write(struct.pack("Q", len(result_pickled)))
+            writer.write(result_pickled)
+            await writer.drain()
 
     def append_to_current_batch(self, batch) -> asyncio.Future:
         if self.current_batch is None:
@@ -79,7 +88,8 @@ class ModelServer:
             self.timeout_flush_task.cancel()
             self.timeout_flush_task = None
 
-        y = self.model(*self.current_batch)
+        with torch.no_grad():
+            y = self.model(*self.current_batch)
 
         i = 0
         for size, future in zip(self.current_batch_sizes, self.current_batch_futures):
@@ -111,17 +121,20 @@ class SquareModel(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    # from fairdiplomacy.models.dipnet.train_sl import new_model
+    from fairdiplomacy.models.dipnet.train_sl import new_model
 
     MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
     PORT = 24565
-    MAX_BATCH_SIZE = 8
-    MAX_BATCH_LATENCY = 0.1
+    MAX_BATCH_SIZE = 1000
+    MAX_BATCH_LATENCY = 0.05
 
-    # model = new_model()
-    # model.load_state_dict(torch.load(MODEL_PTH, map_location="cuda")["model"])
-    # model.eval()
-    model = SquareModel().to("cuda")
+    model = new_model()
+    state_dict = {
+        (k[len("module.") :] if k.startswith("module.") else k): v
+        for k, v in torch.load(MODEL_PTH, map_location="cuda")["model"].items()
+    }
+    model.load_state_dict(state_dict)
+    model.eval()
 
     model_server = ModelServer(model, PORT, MAX_BATCH_SIZE, MAX_BATCH_LATENCY)
     model_server.start()
