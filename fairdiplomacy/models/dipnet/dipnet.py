@@ -36,7 +36,7 @@ class DipNet(nn.Module):
         self.lstm = nn.LSTM(2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True)
         self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
 
-    def forward(self, x_bo, x_po, power_emb, season_emb, order_masks):
+    def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=0.1):
         """
         Arguments:
         - x_bo: shape [B, 81, 35]
@@ -44,6 +44,7 @@ class DipNet(nn.Module):
         - power_emb: shape [B, 7]
         - season_emb: shape [B, 3]
         - order_masks: shape [B, S, 13k]
+        - temperature: softmax temp, lower = more deterministic
 
         Returns:
         - order_idxs [B, S]: idx of sampled orders
@@ -83,7 +84,7 @@ class DipNet(nn.Module):
             # that row will be masked out later, so it doesn't matter
             order_mask[~torch.any(order_mask, dim=1)] = 1
             order_scores[~order_mask] = float("-inf")
-            order_idxs = Categorical(logits=order_scores).sample()
+            order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
             order_emb = self.order_embedding(order_idxs).squeeze(1)
         logging.debug("hi mom stop decoding")
