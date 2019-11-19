@@ -1,3 +1,4 @@
+import os
 import diplomacy
 import logging
 import torch
@@ -34,7 +35,7 @@ def encode_inputs(game, power):
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
     x_power: shape=(1, 7)
-    x_order_mask: shape=[1, 17, 13k], dtype=bool
+    x_order_mask: shape=[1, S, 13k], dtype=bool, 0 < S <= 17
     """
     x_board_state, x_prev_orders, x_season = encode_state(game)
     x_power = torch.zeros(1, 7)

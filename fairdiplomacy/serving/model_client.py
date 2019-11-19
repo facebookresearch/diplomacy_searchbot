@@ -2,15 +2,27 @@ import diplomacy
 import pickle
 import socket
 import struct
+import time
 from collections import Counter
 
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, ORDER_VOCABULARY
+from .model_server import ModelServer
 
 
 class ModelClient:
-    def __init__(self, port):
+    def __init__(self, port=ModelServer.DEFAULT_PORT, connect_timeout=5):
         self.s = socket.socket()
-        self.s.connect(("localhost", port))
+
+        # try to connect for up to "connect_timeout" seconds
+        for _ in range(int(connect_timeout / 0.05)):
+            try:
+                self.s.connect(("localhost", port))
+                break
+            except ConnectionRefusedError as e:
+                err = e
+                time.sleep(0.05)
+        else:
+            raise err
 
     def synchronous_request(self, x):
         enc = pickle.dumps(x)
@@ -30,13 +42,13 @@ class ModelClient:
 class DipnetModelClient(ModelClient):
     def get_orders(self, game, power, temperature=1.0):
         x = encode_inputs(game, power)
-        order_idxs, _ = self.synchronous_request(x + [temperature])
+        order_idxs, = self.synchronous_request(x + [temperature])
         return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :]]
 
     def get_repeat_orders(self, game, power, n=100, temperature=1.0):
         x = encode_inputs(game, power)
         x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
-        order_idxs, _ = self.synchronous_request(x + [temperature])
+        order_idxs, = self.synchronous_request(x + [temperature])
         return Counter(tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :]) for i in range(n))
 
 

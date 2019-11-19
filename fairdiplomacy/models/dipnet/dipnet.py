@@ -44,7 +44,8 @@ class DipNet(nn.Module):
         - power_emb: shape [B, 7]
         - season_emb: shape [B, 3]
         - order_masks: shape [B, S, 13k]
-        - temperature: softmax temp, lower = more deterministic
+        - temperature: softmax temp, lower = more deterministic; must be either
+          a float or a tensor of shape [B, 1]
 
         Returns:
         - order_idxs [B, S]: idx of sampled orders

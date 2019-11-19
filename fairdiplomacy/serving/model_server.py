@@ -18,6 +18,7 @@ class ModelServer:
         max_batch_latency=DEFAULT_MAX_BATCH_LATENCY,
         port=DEFAULT_PORT,
         output_transform=None,
+        seed=None,
     ):
         """A minimal TCP server serving pytorch models via a simple pickle protocol.
         Handles batching and single-GPU usage.
@@ -35,6 +36,7 @@ class ModelServer:
         - max_batch_latency: flush buffer if any request has waited this long
         - port: to listen for TCP connections
         - output_transform: Optionally, a function applied to the model output before returning
+        - seed: if not None, call torch.manual_seed(seed)
         """
         self.model = model
         self.port = port
@@ -47,6 +49,9 @@ class ModelServer:
         self.buf_batch_futures = []
         self.timeout_flush_task = None
 
+        if seed is not None:
+            torch.manual_seed(seed)
+
     def start(self):
         asyncio.run(self.serve_forever())
 
@@ -57,6 +62,7 @@ class ModelServer:
             await server.serve_forever()
 
     async def handle_conn(self, reader, writer):
+        logging.debug("New incoming conn")
         while True:
             try:
                 raw_size_enc = await reader.readexactly(8)
@@ -99,7 +105,14 @@ class ModelServer:
             assert self.timeout_flush_task is None
             self.timeout_flush_task = asyncio.create_task(self.scheduled_timeout_flush())
         else:
-            self.buf_batch = tuple(torch.cat([cur, x]) for cur, x in zip(self.buf_batch, batch))
+            try:
+                self.buf_batch = tuple(
+                    torch.cat([cur, x]) for cur, x in zip(self.buf_batch, batch)
+                )
+            except:
+                import ipdb
+
+                ipdb.set_trace()
 
         self.buf_batch_sizes.append(batch[0].shape[0])
 
@@ -140,35 +153,20 @@ class ModelServer:
             pass
 
 
-class SquareModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.tensor = torch.zeros(1)
-
-    def forward(self, x, y):
-        return torch.pow(x + self.tensor, 2), torch.pow(y + self.tensor, 2)
-
-
 if __name__ == "__main__":
-    from fairdiplomacy.models.dipnet.train_sl import new_model
+    from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 
     MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
     PORT = 24565
     MAX_BATCH_SIZE = 1000
     MAX_BATCH_LATENCY = 0.05
 
-    model = new_model()
-    state_dict = {
-        (k[len("module.") :] if k.startswith("module.") else k): v
-        for k, v in torch.load(MODEL_PTH, map_location="cuda")["model"].items()
-    }
-    model.load_state_dict(state_dict)
-    model.eval()
+    model = load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True)
 
     # return only order_idxs, not order_scores
     output_transform = lambda y: y[:1]
 
     model_server = ModelServer(
-        model, MAX_BATCH_SIZE, MAX_BATCH_LATENCY, output_transform=output_transform
+        model, MAX_BATCH_SIZE, MAX_BATCH_LATENCY, output_transform=output_transform, seed=0
     )
     model_server.start()
