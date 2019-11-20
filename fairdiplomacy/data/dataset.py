@@ -11,6 +11,7 @@ from fairdiplomacy.models.dipnet.standard_topo_locs import STANDARD_TOPO_LOCS
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
+ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULARY)}
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -93,7 +94,7 @@ def encode_phase(game, phase_idx, only_winners=True):
         for order in orders:
             try:
                 order_idxs.append(smarter_order_index(order))
-            except ValueError:
+            except KeyError:
                 # logging.warn(
                 #     'Order "{}" not in vocab, game_id={} phase_idx={} phase={}'.format(
                 #         order, game.game_id, phase_idx, phase
@@ -118,11 +119,11 @@ def encode_phase(game, phase_idx, only_winners=True):
 
 def smarter_order_index(order):
     try:
-        return ORDER_VOCABULARY.index(order)
-    except ValueError:
+        return ORDER_VOCABULARY_TO_IDX[order]
+    except KeyError:
         for suffix in ["/NC", "/EC", "/SC", "/WC"]:
             order = order.replace(suffix, "")
-        return ORDER_VOCABULARY.index(order)
+        return ORDER_VOCABULARY_TO_IDX[order]
 
 
 def collate_fn(items):

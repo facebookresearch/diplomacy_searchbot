@@ -114,7 +114,7 @@ def filter_orders_in_vocab(orders):
             idx = smarter_order_index(order)
             ret.append(order)
             idxs.append(idx)
-        except ValueError:
+        except KeyError:
             continue
     return ret, idxs
 
