@@ -1,8 +1,9 @@
-import os
-import signal
 import faulthandler
 import logging
+import os
+import signal
 import torch
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 from multiprocessing import Process, set_start_method
@@ -20,7 +21,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_procs=4,
+        n_procs=1,
         get_orders_timeout=5,
         max_batch_size=1000,
         max_batch_latency=0.05,
@@ -45,16 +46,43 @@ class SimpleSearchDipnetAgent(BaseAgent):
         plausible_orders = self.get_plausible_orders(game, power)
         logging.info("Plausible orders: {}".format(plausible_orders))
 
+        ROLLOUTS_PER_ORDER = 5
+
         game_json = to_saved_game_format(game)
         futures = [
-            self.proc_pool.submit(self.do_rollout, game_json, {power: orders})
+            (orders, self.proc_pool.submit(self.do_rollout, game_json, {power: orders}))
             for orders in plausible_orders
+            for _ in range(ROLLOUTS_PER_ORDER)
         ]
-        results = [f.result() for f in futures]
-        logging.info("Rollout results: {}".format(results))
+        results = [(orders, f.result()) for (orders, f) in futures]
 
-        _, order = max((result[power], order) for result, order in zip(results, plausible_orders))
-        return order
+        return self.best_order_from_results(results, power)
+
+    @classmethod
+    def best_order_from_results(cls, results, power) -> List[str]:
+        """Given a set of rollout results, choose the move to play
+
+        Arguments:
+        - results: Tuple[orders, all_scores], where
+            -> orders: a complete set of orders, e.g. ("A ROM H", "F NAP - ION", "A VEN H")
+            -> all_scores: Dict[power, supply count], e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
+        - power: the power making the orders, e.g. "ITALY"
+
+        Returns:
+        - the "orders" with the highest average score
+        """
+        order_scores = Counter()
+        order_counts = Counter()
+
+        for orders, all_scores in results:
+            order_scores[orders] += all_scores[power]
+            order_counts[orders] += 1
+
+        order_avg_score = {
+            orders: order_scores[orders] / order_counts[orders] for orders in order_scores
+        }
+        logging.info("order_avg_score: {}".format(order_avg_score))
+        return max(order_avg_score.items(), key=lambda kv: kv[1])[0]
 
     @classmethod
     def do_model_request(cls, model_client, x, temperature=1.0) -> List[Tuple[str]]:
@@ -164,9 +192,10 @@ if __name__ == "__main__":
     import diplomacy
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+    logging.info("PID: {}".format(os.getpid()))
 
     MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
     game = diplomacy.Game()
 
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
-    print(agent.get_orders(game, "ITALY"))
+    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
