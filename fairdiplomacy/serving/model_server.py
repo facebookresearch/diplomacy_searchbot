@@ -2,6 +2,7 @@ import asyncio
 import logging
 import pickle
 import struct
+import time
 import torch
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
@@ -19,6 +20,7 @@ class ModelServer:
         port=DEFAULT_PORT,
         output_transform=None,
         seed=None,
+        log_stats_every=5,
     ):
         """A minimal TCP server serving pytorch models via a simple pickle protocol.
         Handles batching and single-GPU usage.
@@ -37,17 +39,21 @@ class ModelServer:
         - port: to listen for TCP connections
         - output_transform: Optionally, a function applied to the model output before returning
         - seed: if not None, call torch.manual_seed(seed)
+        - log_stats_every: period in seconds to log perf stats
         """
         self.model = model
         self.port = port
         self.max_batch_size = max_batch_size
         self.max_batch_latency = max_batch_latency
         self.output_transform = output_transform
+        self.log_stats_every = log_stats_every
 
         self.buf_batch = None
         self.buf_batch_sizes = []
         self.buf_batch_futures = []
         self.timeout_flush_task = None
+
+        self.stat_throughput_numerator = 0
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -56,13 +62,13 @@ class ModelServer:
         asyncio.run(self.serve_forever())
 
     async def serve_forever(self):
+        asyncio.create_task(self.do_log_stats_every(self.log_stats_every))
         logging.info("Listening on port {}".format(self.port))
         server = await asyncio.start_server(self.handle_conn, "localhost", self.port)
         async with server:
             await server.serve_forever()
 
     async def handle_conn(self, reader, writer):
-        logging.debug("New incoming conn")
         while True:
             try:
                 raw_size_enc = await reader.readexactly(8)
@@ -77,7 +83,6 @@ class ModelServer:
             raw = await reader.readexactly(raw_size)
             batch = pickle.loads(raw)
             batch_size = batch[0].shape[0]
-            logging.debug("Got batch of size {}".format(batch_size))
 
             if batch_size > self.max_batch_size:
                 raise RuntimeError(
@@ -105,14 +110,7 @@ class ModelServer:
             assert self.timeout_flush_task is None
             self.timeout_flush_task = asyncio.create_task(self.scheduled_timeout_flush())
         else:
-            try:
-                self.buf_batch = tuple(
-                    torch.cat([cur, x]) for cur, x in zip(self.buf_batch, batch)
-                )
-            except:
-                import ipdb
-
-                ipdb.set_trace()
+            self.buf_batch = tuple(torch.cat([cur, x]) for cur, x in zip(self.buf_batch, batch))
 
         self.buf_batch_sizes.append(batch[0].shape[0])
 
@@ -141,6 +139,7 @@ class ModelServer:
             future.set_result(batch_y)
             i += size
 
+        self.stat_throughput_numerator += i
         self.buf_batch = None
         self.buf_batch_sizes = []
         self.buf_batch_futures = []
@@ -148,11 +147,25 @@ class ModelServer:
     async def scheduled_timeout_flush(self):
         try:
             await asyncio.sleep(self.max_batch_latency)
-            logging.debug("Scheduled flush!")
             self.timeout_flush_task = None
             self.flush_buf_batch()
         except asyncio.CancelledError:
             pass
+
+    async def do_log_stats_every(self, period):
+        last_logged_time = time.time()
+        while True:
+            await asyncio.sleep(period)
+            now = time.time()
+            logging.info(
+                "Throughput: {} / {} = {}".format(
+                    self.stat_throughput_numerator,
+                    now - last_logged_time,
+                    self.stat_throughput_numerator / (now - last_logged_time),
+                )
+            )
+            self.stat_throughput_numerator = 0
+            last_logged_time = now
 
 
 if __name__ == "__main__":
@@ -161,7 +174,7 @@ if __name__ == "__main__":
     MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
     PORT = 24565
     MAX_BATCH_SIZE = 1000
-    MAX_BATCH_LATENCY = 0.05
+    MAX_BATCH_LATENCY = 0.01
 
     model = load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True).cuda()
 
