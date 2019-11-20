@@ -55,7 +55,6 @@ class DipNet(nn.Module):
 
         self.lstm.flatten_parameters()
 
-        logging.debug("hi mom start forward pass")
         enc = self.encoder(x_bo, x_po, power_emb, season_emb)  # [B, 81, 240]
         avg_enc = torch.mean(enc, dim=1, keepdim=False)  # [B, enc_size]
 
@@ -71,7 +70,6 @@ class DipNet(nn.Module):
         all_order_idxs = []
         all_order_scores = []
 
-        logging.debug("hi mom start decoding")
         for step in range(order_masks.shape[1]):
             order_mask = order_masks[:, step, :]  # [B, 13k]
             lstm_input = torch.cat((avg_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
@@ -88,7 +86,6 @@ class DipNet(nn.Module):
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
             order_emb = self.order_embedding(order_idxs).squeeze(1)
-        logging.debug("hi mom stop decoding")
 
         return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 
