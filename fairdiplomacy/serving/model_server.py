@@ -128,10 +128,12 @@ class ModelServer:
             self.timeout_flush_task = None
 
         with torch.no_grad():
-            y = self.model(*self.buf_batch)  # TODO: possible to do async?
+            y = self.model(*[t.to("cuda") for t in self.buf_batch])  # TODO: possible to do async?
 
         if self.output_transform is not None:
             y = self.output_transform(y)
+
+        y = tuple(t.to("cpu") for t in y)
 
         i = 0
         for size, future in zip(self.buf_batch_sizes, self.buf_batch_futures):
@@ -161,7 +163,7 @@ if __name__ == "__main__":
     MAX_BATCH_SIZE = 1000
     MAX_BATCH_LATENCY = 0.05
 
-    model = load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True)
+    model = load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True).cuda()
 
     # return only order_idxs, not order_scores
     output_transform = lambda y: y[:1]
