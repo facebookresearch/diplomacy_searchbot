@@ -135,8 +135,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
             logging.debug("hi mom rollout {} phase {}".format(orig_order, game.phase))
 
             # get orders
+            all_possible_orders = game.get_all_possible_orders()
             other_powers = [p for p in game.powers if p not in set_orders_dict]
-            xs: List[Tuple] = [encode_inputs(game, p) for p in other_powers]
+            xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for p in other_powers]
             padded_mask_seqs, seq_lens = cat_pad_sequences(
                 [x[-1] for x in xs], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
             )

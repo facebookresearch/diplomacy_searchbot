@@ -28,7 +28,7 @@ class DipnetAgent(BaseAgent):
         return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :seq_len]]  # FIXME: remove seq_len
 
 
-def encode_inputs(game, power):
+def encode_inputs(game, power, all_possible_orders=None):
     """Return a 5-tuple of tensors
 
     x_board_state: shape=(1, 81, 35)
@@ -40,7 +40,7 @@ def encode_inputs(game, power):
     x_board_state, x_prev_orders, x_season = encode_state(game)
     x_power = torch.zeros(1, 7)
     x_power[0, POWERS.index(power)] = 1
-    order_mask, seq_len = get_order_mask(game, power)
+    order_mask, seq_len = get_order_mask(game, power, all_possible_orders)
     return (x_board_state, x_prev_orders, x_season, x_power, order_mask[:, :seq_len, :])
 
 
@@ -73,7 +73,7 @@ def encode_state(game):
     return x_board_state, x_prev_orders, x_season
 
 
-def get_order_mask(game, power):
+def get_order_mask(game, power, all_possible_orders=None):
     """Return a boolean mask of valid orders
 
     Returns:
@@ -81,7 +81,8 @@ def get_order_mask(game, power):
     - the actual lengh of the sequence == the number of orders to submit, <= 17
     """
     orderable_locs = sorted(game.get_orderable_locations(power), key=STANDARD_TOPO_LOCS.index)
-    all_possible_orders = game.get_all_possible_orders()
+    if all_possible_orders is None:
+        all_possible_orders = game.get_all_possible_orders()
     power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
     n_builds = game.get_state()["builds"][power]["count"]
     order_mask = torch.zeros(1, MAX_SEQ_LEN, len(ORDER_VOCABULARY), dtype=torch.bool)
