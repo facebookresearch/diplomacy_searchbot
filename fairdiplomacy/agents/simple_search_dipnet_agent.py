@@ -21,14 +21,14 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_procs=1,
+        n_procs=40,
         get_orders_timeout=5,
         max_batch_size=1000,
         max_batch_latency=0.05,
     ):
         super().__init__()
 
-        set_start_method("spawn")
+        set_start_method("forkserver")
 
         # load model and launch server in separate process
         # model = load_dipnet_model(model_path, map_location="cuda", eval=True)
@@ -122,8 +122,10 @@ class SimpleSearchDipnetAgent(BaseAgent):
         """
         logging.info("hi mom new proc {} -- {}".format(set_orders_dict, os.getpid()))
         faulthandler.register(signal.SIGUSR1)
+        torch.set_num_threads(1)
 
         game = from_saved_game_format(game_json)
+
         model_client = ModelClient()
         orig_order = [v for v in set_orders_dict.values()][0]
 
