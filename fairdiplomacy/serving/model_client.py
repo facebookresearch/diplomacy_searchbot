@@ -37,23 +37,3 @@ class ModelClient:
         while len(r) < size:
             r += self.s.recv(min(4096, size - len(r)))
         return r
-
-
-class DipnetModelClient(ModelClient):
-    def get_orders(self, game, power, temperature=1.0):
-        x = encode_inputs(game, power)
-        order_idxs, = self.synchronous_request(x + [temperature])
-        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :]]
-
-    def get_repeat_orders(self, game, power, n=100, temperature=1.0):
-        x = encode_inputs(game, power)
-        x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
-        order_idxs, = self.synchronous_request(x + [temperature])
-        return Counter(tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :]) for i in range(n))
-
-
-if __name__ == "__main__":
-    game = diplomacy.Game()
-    client = DipnetModelClient(24565)
-    orders = client.get_repeat_orders(game, "ITALY", temperature=0.1)
-    print(orders)
