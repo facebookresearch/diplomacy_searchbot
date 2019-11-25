@@ -48,7 +48,7 @@ class ModelServer:
         self.output_transform = output_transform
         self.log_stats_every = log_stats_every
 
-        self.buf_batch = None
+        self.buf_batch = []
         self.buf_batch_sizes = []
         self.buf_batch_futures = []
         self.timeout_flush_task = None
@@ -105,13 +105,11 @@ class ModelServer:
             await writer.drain()
 
     def append_to_buf_batch(self, batch) -> asyncio.Future:
-        if self.buf_batch is None:
-            self.buf_batch = batch
+        if len(self.buf_batch) == 0:
             assert self.timeout_flush_task is None
             self.timeout_flush_task = asyncio.create_task(self.scheduled_timeout_flush())
-        else:
-            self.buf_batch = tuple(torch.cat([cur, x]) for cur, x in zip(self.buf_batch, batch))
 
+        self.buf_batch.append(batch)
         self.buf_batch_sizes.append(batch[0].shape[0])
 
         future = asyncio.get_running_loop().create_future()
@@ -126,7 +124,8 @@ class ModelServer:
             self.timeout_flush_task = None
 
         with torch.no_grad():
-            y = self.model(*[t.to("cuda") for t in self.buf_batch])  # TODO: possible to do async?
+            xs = [torch.cat(ts).to("cuda") for ts in zip(*self.buf_batch)]
+            y = self.model(*xs)  # TODO: possible to do async?
 
         if self.output_transform is not None:
             y = self.output_transform(y)
@@ -140,7 +139,7 @@ class ModelServer:
             i += size
 
         self.stat_throughput_numerator += i
-        self.buf_batch = None
+        self.buf_batch = []
         self.buf_batch_sizes = []
         self.buf_batch_futures = []
 
