@@ -168,19 +168,26 @@ class ModelServer:
 
 
 if __name__ == "__main__":
+    import argparse
     from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=ModelServer.DEFAULT_PORT)
+    parser.add_argument("--max-batch-latency", type=float, default=0.01)
+    args = parser.parse_args()
+
     MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
-    PORT = 24565
     MAX_BATCH_SIZE = 1000
-    MAX_BATCH_LATENCY = 0.01
 
     model = load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True).cuda()
 
-    # return only order_idxs, not order_scores
-    output_transform = lambda y: y[:1]
-
     model_server = ModelServer(
-        model, MAX_BATCH_SIZE, MAX_BATCH_LATENCY, output_transform=output_transform, seed=0
+        model,
+        MAX_BATCH_SIZE,
+        args.max_batch_latency,
+        port=args.port,
+        output_transform=lambda y: y[:1], # return only order_idxs, not order_scores
+        seed=0,
     )
     model_server.start()
