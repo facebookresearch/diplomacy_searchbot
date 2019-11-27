@@ -14,13 +14,14 @@ class ModelServer:
 
     def __init__(
         self,
-        model,
+        load_model_fn,
         max_batch_size,
         max_batch_latency=DEFAULT_MAX_BATCH_LATENCY,
         port=DEFAULT_PORT,
         output_transform=None,
         seed=None,
         log_stats_every=5,
+        start=False,
     ):
         """A minimal TCP server serving pytorch models via a simple pickle protocol.
         Handles batching and single-GPU usage.
@@ -33,15 +34,16 @@ class ModelServer:
         Response payload: output_transform(model(*x))
 
         Arguments:
-        - model: a pytorch model
+        - load_model_fn: function called with no args, must return a pytorch model
         - max_batch_size: flush buffer if sum of request batch sizes >= max_batch_size
         - max_batch_latency: flush buffer if any request has waited this long
         - port: to listen for TCP connections
         - output_transform: Optionally, a function applied to the model output before returning
         - seed: if not None, call torch.manual_seed(seed)
         - log_stats_every: period in seconds to log perf stats
+        - if start is True, call start() after __init__()
         """
-        self.model = model
+        self.model = load_model_fn()
         self.port = port
         self.max_batch_size = max_batch_size
         self.max_batch_latency = max_batch_latency
@@ -57,6 +59,9 @@ class ModelServer:
 
         if seed is not None:
             torch.manual_seed(seed)
+
+        if start:
+            self.start()
 
     def start(self):
         asyncio.run(self.serve_forever())
@@ -171,7 +176,6 @@ if __name__ == "__main__":
     import argparse
     from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=ModelServer.DEFAULT_PORT)
     parser.add_argument("--max-batch-latency", type=float, default=0.01)
@@ -180,14 +184,15 @@ if __name__ == "__main__":
     MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
     MAX_BATCH_SIZE = 1000
 
-    model = load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True).cuda()
+    def load_model():
+        return load_dipnet_model(MODEL_PTH, map_location="cuda", eval=True).cuda()
 
     model_server = ModelServer(
-        model,
+        load_model,
         MAX_BATCH_SIZE,
         args.max_batch_latency,
         port=args.port,
-        output_transform=lambda y: y[:1], # return only order_idxs, not order_scores
+        output_transform=lambda y: y[:1],  # return only order_idxs, not order_scores
         seed=0,
     )
     model_server.start()

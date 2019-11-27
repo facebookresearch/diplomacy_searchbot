@@ -7,6 +7,7 @@ from collections import Counter
 
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, ORDER_VOCABULARY
 from .model_server import ModelServer
+from .recv_exactly import recv_exactly
 
 
 class ModelClient:
@@ -33,7 +34,4 @@ class ModelClient:
         return pickle.loads(resp_enc)
 
     def recv_exactly(self, size):
-        r = b""
-        while len(r) < size:
-            r += self.s.recv(min(4096, size - len(r)))
-        return r
+        return recv_exactly(self.s, size)

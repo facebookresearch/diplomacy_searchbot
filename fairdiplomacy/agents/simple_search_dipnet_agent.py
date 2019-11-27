@@ -1,12 +1,14 @@
 import faulthandler
+import itertools
 import logging
 import os
+import random
 import signal
 import torch
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
-from multiprocessing import Process, set_start_method
+from multiprocessing import Process, set_start_method, get_context
 from typing import List, Tuple, Set, Dict
 
 from fairdiplomacy.agents.base_agent import BaseAgent
@@ -21,38 +23,61 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_procs=40,
-        get_orders_timeout=5,
+        n_rollout_procs=80,
+        n_server_procs=4,
         max_batch_size=1000,
-        max_batch_latency=0.05,
+        max_batch_latency=0.005,
+        rollouts_per_plausible_order=10,
     ):
         super().__init__()
 
-        set_start_method("forkserver")
+        self.rollouts_per_plausible_order = rollouts_per_plausible_order
+        self.server_ports = list(
+            range(ModelServer.DEFAULT_PORT, ModelServer.DEFAULT_PORT + n_server_procs)
+        )
 
         # load model and launch server in separate process
-        # model = load_dipnet_model(model_path, map_location="cuda", eval=True)
-        # Process(
-        #     target=ModelServer(
-        #         model, max_batch_size, max_batch_latency, output_transform=lambda y: y[:1]
-        #     ).start,
-        #     daemon=True,
-        # ).start()
+        def load_model():
+            return load_dipnet_model(model_path, map_location="cuda", eval=True).cuda()
 
+        for port in self.server_ports:
+            logging.info("Launching server on port {}".format(port))
+            get_context("fork").Process(
+                target=ModelServer,
+                kwargs=dict(
+                    load_model_fn=load_model,
+                    max_batch_size=max_batch_size,
+                    max_batch_latency=max_batch_latency,
+                    port=port,
+                    output_transform=model_output_transform,
+                    seed=0,
+                    start=True,
+                ),
+                daemon=True,
+            ).start()
+            logging.info("Launched server on port {}".format(port))
+
+        self.proc_pool = ProcessPoolExecutor(n_rollout_procs, mp_context=get_context("spawn"))
         self.model_client = ModelClient()
-        self.proc_pool = ProcessPoolExecutor(n_procs)
 
     def get_orders(self, game, power) -> List[str]:
         plausible_orders = self.get_plausible_orders(game, power)
         logging.info("Plausible orders: {}".format(plausible_orders))
 
-        ROLLOUTS_PER_ORDER = 5
-
         game_json = to_saved_game_format(game)
+        port_iterator = itertools.cycle(self.server_ports)
         futures = [
-            (orders, self.proc_pool.submit(self.do_rollout, game_json, {power: orders}))
+            (
+                orders,
+                self.proc_pool.submit(
+                    self.do_rollout,
+                    game_json,
+                    {power: orders},
+                    model_server_port=next(port_iterator),  # round robin server assignment
+                ),
+            )
             for orders in plausible_orders
-            for _ in range(ROLLOUTS_PER_ORDER)
+            for _ in range(self.rollouts_per_plausible_order)
         ]
         results = [(orders, f.result()) for (orders, f) in futures]
 
@@ -108,7 +133,13 @@ class SimpleSearchDipnetAgent(BaseAgent):
         return set(self.do_model_request(self.model_client, x, temperature))
 
     @classmethod
-    def do_rollout(cls, game_json, set_orders_dict={}, temperature=0.05) -> Dict[str, int]:
+    def do_rollout(
+        cls,
+        game_json,
+        set_orders_dict={},
+        temperature=0.05,
+        model_server_port=ModelServer.DEFAULT_PORT,
+    ) -> Dict[str, int]:
         """Complete game, optionally setting orders for the current turn
 
         This method can safely be called in a subprocess
@@ -117,6 +148,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
+        - model_server_port: port on which the batching model server is listening
 
         Returns a Dict[power, final supply count]
         """
@@ -126,7 +158,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         game = from_saved_game_format(game_json)
 
-        model_client = ModelClient()
+        model_client = ModelClient(port=model_server_port)
         orig_order = [v for v in set_orders_dict.values()][0]
 
         # set orders if specified
@@ -134,8 +166,6 @@ class SimpleSearchDipnetAgent(BaseAgent):
             game.set_orders(power, list(orders))
 
         while not game.is_game_done:
-            logging.debug("hi mom rollout {} phase {}".format(orig_order, game.phase))
-
             # get orders
             all_possible_orders = game.get_all_possible_orders()
             other_powers = [p for p in game.powers if p not in set_orders_dict]
@@ -156,7 +186,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         # return supply counts for each power
         result = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        logging.info("hi mom result {}".format(result))
+        logging.info("hi mom pid {} result {}".format(os.getpid(), result))
         return result
 
 
@@ -189,6 +219,11 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
         for t in tensors
     ]
     return torch.cat(padded, dim=0), seq_lens
+
+
+def model_output_transform(y):
+    # return only order_idxs, not order_scores
+    return y[:1]
 
 
 if __name__ == "__main__":
