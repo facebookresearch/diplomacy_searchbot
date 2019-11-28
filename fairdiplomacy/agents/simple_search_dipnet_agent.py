@@ -1,3 +1,4 @@
+import copy
 import faulthandler
 import itertools
 import logging
@@ -74,6 +75,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
                     game_json,
                     {power: orders},
                     model_server_port=next(port_iterator),  # round robin server assignment
+                    early_exit_after_no_change=5,
                 ),
             )
             for orders in plausible_orders
@@ -139,6 +141,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         set_orders_dict={},
         temperature=0.05,
         model_server_port=ModelServer.DEFAULT_PORT,
+        early_exit_after_no_change=None,
     ) -> Dict[str, int]:
         """Complete game, optionally setting orders for the current turn
 
@@ -149,6 +152,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
         - model_server_port: port on which the batching model server is listening
+        - early_exit_after_no_change: int, end rollout early if game state is unchanged after # turns
 
         Returns a Dict[power, final supply count]
         """
@@ -160,6 +164,11 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         model_client = ModelClient(port=model_server_port)
         orig_order = [v for v in set_orders_dict.values()][0]
+
+        # keep track of state to see if we should exit early
+        if early_exit_after_no_change is not None:
+            last_units = copy.deepcopy(game.get_state()["units"])
+            last_units_n_turns = 0
 
         # set orders if specified
         for power, orders in set_orders_dict.items():
@@ -180,6 +189,17 @@ class SimpleSearchDipnetAgent(BaseAgent):
             for other_power, other_orders, seq_len in zip(other_powers, batch_orders, seq_lens):
                 game.set_orders(other_power, list(other_orders[:seq_len]))
             game.process()
+
+            # should we exit early?
+            if early_exit_after_no_change is not None:
+                if game.get_state()["units"] == last_units:
+                    last_units_n_turns += 1
+                    if last_units_n_turns >= early_exit_after_no_change:
+                        logging.info("Early exiting rollout in phase {}".format(game.phase))
+                        break
+                else:
+                    last_units = copy.deepcopy(game.get_state()["units"])
+                    last_units_n_turns = 0
 
             # clear set_orders_dict
             set_orders_dict = {}
