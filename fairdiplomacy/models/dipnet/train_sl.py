@@ -131,7 +131,7 @@ def main_subproc(
     # load checkpoint if specified
     if args.checkpoint and os.path.isfile(args.checkpoint):
         logging.info("Loading checkpoint at {}".format(args.checkpoint))
-        checkpoint = torch.load(args.checkpoint, map_location=rank)
+        checkpoint = torch.load(args.checkpoint, map_location='cuda:{}'.format(rank))
     else:
         checkpoint = None
 
