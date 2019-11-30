@@ -87,6 +87,11 @@ class DipNet(nn.Module):
             all_order_idxs.append(order_idxs)
             order_emb = self.order_embedding(order_idxs).squeeze(1)
 
+            # Mask out chosen actions in future steps to prevent the same
+            # order from occuring twice in a single turn
+            for b, order_idx in enumerate(order_idxs):
+                order_masks[b, step:, order_idx] = 0
+
         return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 
 
