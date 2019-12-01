@@ -7,25 +7,24 @@ from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import smarter_order_index
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
+from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
-from fairdiplomacy.models.dipnet.train_sl import new_model
 from fairdiplomacy.models.dipnet.standard_topo_locs import STANDARD_TOPO_LOCS
+from fairdiplomacy.models.dipnet.train_sl import new_model
 
 ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class DipnetAgent(BaseAgent):
     def __init__(self, model_pth):
-        self.model = new_model()
-        self.model.load_state_dict(
-            torch.load(model_pth, map_location=torch.device("cpu"))["model"]
-        )
-        self.model.eval()
+        self.model = load_dipnet_model(model_pth, map_location="cpu", eval=True)
 
-    def get_orders(self, game, power):
+    def get_orders(self, game, power, temperature=0.1):
+        if len(game.get_orderable_locations(power)) == 0:
+            return []
         inputs = encode_inputs(game, power)
-        order_idxs, _ = self.model(*inputs)
-        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :seq_len]]  # FIXME: remove seq_len
+        order_idxs, _ = self.model(*inputs, temperature=temperature)
+        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :]]
 
 
 def encode_inputs(game, power, all_possible_orders=None):
