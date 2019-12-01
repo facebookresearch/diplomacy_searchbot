@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.distributions.categorical import Categorical
-import logging
 
 
 class DipNet(nn.Module):
@@ -20,8 +19,6 @@ class DipNet(nn.Module):
         order_emb_size,  # 80
     ):
         super().__init__()
-        self.lstm_size = lstm_size
-        self.order_emb_size = order_emb_size
 
         self.encoder = DipNetEncoder(
             board_state_size,
@@ -32,9 +29,10 @@ class DipNet(nn.Module):
             num_blocks,
             A,
         )
-        self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
-        self.lstm = nn.LSTM(2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True)
-        self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
+
+        self.decoder = LSTMDipNetDecoder(
+            inter_emb_size, orders_vocab_size, lstm_size, order_emb_size
+        )
 
     def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=0.1):
         """
@@ -51,12 +49,23 @@ class DipNet(nn.Module):
         - order_idxs [B, S]: idx of sampled orders
         - order_scores [B, S, 13k]: masked pre-softmax logits of each order
         """
-        device = next(self.parameters()).device
-
-        self.lstm.flatten_parameters()
-
         enc = self.encoder(x_bo, x_po, power_emb, season_emb)  # [B, 81, 240]
         avg_enc = torch.mean(enc, dim=1, keepdim=False)  # [B, enc_size]
+        return self.decoder(avg_enc, order_masks, temperature=temperature)
+
+
+class LSTMDipNetDecoder(nn.Module):
+    def __init__(self, inter_emb_size, orders_vocab_size, lstm_size, order_emb_size):
+        super().__init__()
+        self.lstm_size = lstm_size
+        self.order_emb_size = order_emb_size
+        self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
+        self.lstm = nn.LSTM(2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True)
+        self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
+
+    def forward(self, enc, order_masks, temperature=0.1):
+        device = next(self.parameters()).device
+        self.lstm.flatten_parameters()
 
         hidden = (
             torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
@@ -72,7 +81,7 @@ class DipNet(nn.Module):
 
         for step in range(order_masks.shape[1]):
             order_mask = order_masks[:, step, :]  # [B, 13k]
-            lstm_input = torch.cat((avg_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
+            lstm_input = torch.cat((enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
             out, hidden = self.lstm(lstm_input, hidden)
             order_scores = self.lstm_out_linear(out.squeeze(1))  # [B, 13k]
             all_order_scores.append(order_scores)
