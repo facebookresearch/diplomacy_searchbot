@@ -9,5 +9,5 @@ rsync -avz \
     --exclude fairdiplomacy/data/mila_dataset/ \
     ../../../ $TMPDIR
 
-sbatch $TMPDIR/fairdiplomacy/models/dipnet/train_sl_sbatch.sh
+PYTHONPATH=$TMPDIR sbatch $TMPDIR/fairdiplomacy/models/dipnet/train_sl_sbatch.sh
 echo $TMPDIR
