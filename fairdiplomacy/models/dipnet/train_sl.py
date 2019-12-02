@@ -18,7 +18,11 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
 )
 
 
-logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
+logger.addHandler(handler)
 
 BOARD_STATE_SIZE = 35
 PREV_ORDERS_SIZE = 40
@@ -59,9 +63,9 @@ def process_batch(net, batch, loss_fn):
     x_state, x_orders, x_power, x_season, y_actions = batch
 
     # order masks [B, 17, 13k], 1 iff a valid order else 0
-    logging.debug("hi mom start build mask")
+    logger.debug("hi mom start build mask")
     order_mask = build_order_mask(y_actions)
-    logging.debug("hi mom stop build mask, shape={}".format(order_mask.shape))
+    logger.debug("hi mom stop build mask, shape={}".format(order_mask.shape))
 
     # forward pass
     order_idxs, order_scores = net(x_state, x_orders, x_power, x_season, order_mask)
@@ -130,24 +134,24 @@ def main_subproc(
 
     # load checkpoint if specified
     if args.checkpoint and os.path.isfile(args.checkpoint):
-        logging.info("Loading checkpoint at {}".format(args.checkpoint))
+        logger.info("Loading checkpoint at {}".format(args.checkpoint))
         checkpoint = torch.load(args.checkpoint, map_location="cuda:{}".format(rank))
     else:
         checkpoint = None
 
     # create model, from checkpoint if specified
-    logging.info("Init model...")
+    logger.info("Init model...")
     net = new_model()
     if checkpoint:
-        logging.debug("net.load_state_dict")
+        logger.debug("net.load_state_dict")
         net.load_state_dict(checkpoint["model"], strict=False)
 
     # send model to GPU
-    logging.debug("net.cuda({})".format(rank))
+    logger.debug("net.cuda({})".format(rank))
     net.cuda(rank)
-    logging.debug("net {} DistributedDataParallel".format(rank))
+    logger.debug("net {} DistributedDataParallel".format(rank))
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank])
-    logging.debug("net {} DistributedDataParallel done".format(rank))
+    logger.debug("net {} DistributedDataParallel done".format(rank))
 
     # create optimizer, from checkpoint if specified
     loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
@@ -181,22 +185,22 @@ def main_subproc(
         for batch_i, batch in enumerate(train_set_loader):
             # check batch is not empty
             if (batch[-1] == EOS_IDX).all():
-                logging.warning("Skipping empty epoch {} batch {}".format(epoch, batch_i))
+                logger.warning("Skipping empty epoch {} batch {}".format(epoch, batch_i))
                 continue
 
             # learn
-            logging.info("Starting epoch {} batch {}".format(epoch, batch_i))
+            logger.info("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
             losses, _ = process_batch(net, batch, loss_fn)
             loss = torch.mean(losses)
-            logging.debug("hi mom start backward")
+            logger.debug("hi mom start backward")
             loss.backward()
             optim.step()
-            logging.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
+            logger.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
 
             # calculate validation loss/accuracy
             if (epoch * len(train_set_loader) + batch_i) % 1000 == 0:
-                logging.info("Calculating val loss...")
+                logger.info("Calculating val loss...")
                 with torch.no_grad():
                     net.eval()
                     batch_losses, batch_accuracies = [], []
@@ -210,12 +214,12 @@ def main_subproc(
                     val_loss = torch.mean(val_losses)
                     weights = [len(l) / len(val_losses) for l in batch_losses]
                     val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
-                    logging.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
+                    logger.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
                     net.train()
 
                 # save model
                 if args.checkpoint and rank == 0:
-                    logging.info("Saving checkpoint to {}".format(args.checkpoint))
+                    logger.info("Saving checkpoint to {}".format(args.checkpoint))
                     torch.save(
                         {
                             "model": net.state_dict(),
@@ -255,20 +259,20 @@ if __name__ == "__main__":
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     args = parser.parse_args()
-    logging.warning("Args: {}".format(args))
+    logger.warning("Args: {}".format(args))
 
     n_gpus = torch.cuda.device_count()
-    logging.info("Using {} GPUs".format(n_gpus))
+    logger.info("Using {} GPUs".format(n_gpus))
 
     # search for data and create train/val splits
     game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
     assert len(game_jsons) > 0
-    logging.info("Found dataset of {} games...".format(len(game_jsons)))
+    logger.info("Found dataset of {} games...".format(len(game_jsons)))
     val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
     train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
 
     # Calculate dataset sizes
-    logging.info("Calculating dataset sizes")
+    logger.info("Calculating dataset sizes")
     train_game_json_lengths = get_all_game_lengths(train_game_jsons)
     val_game_json_lengths = get_all_game_lengths(val_game_jsons)
 
