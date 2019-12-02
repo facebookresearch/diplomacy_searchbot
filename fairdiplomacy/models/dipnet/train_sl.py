@@ -61,7 +61,6 @@ def process_batch(net, batch, loss_fn):
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
     x_state, x_orders, x_power, x_season, y_actions = batch
-    logger.debug("hi mom stop build mask, shape={}".format(order_mask.shape))
     order_mask = build_order_mask(y_actions)
 
     # forward pass

@@ -5,11 +5,10 @@ import torch
 
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import smarter_order_index
-from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN
+from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
-from fairdiplomacy.models.dipnet.standard_topo_locs import STANDARD_TOPO_LOCS
 from fairdiplomacy.models.dipnet.train_sl import new_model
 
 ORDER_VOCABULARY = get_order_vocabulary()
@@ -74,7 +73,7 @@ def get_order_mask(game, power, all_possible_orders=None):
     - a [1, 17, 13k] bool tensor
     - the actual lengh of the sequence == the number of orders to submit, <= 17
     """
-    orderable_locs = sorted(game.get_orderable_locations(power), key=STANDARD_TOPO_LOCS.index)
+    orderable_locs = sorted(game.get_orderable_locations(power), key=LOCS.index)
     if all_possible_orders is None:
         all_possible_orders = game.get_all_possible_orders()
     power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]

@@ -4,10 +4,9 @@ import numpy as np
 import torch
 
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
-from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN
+from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
-from fairdiplomacy.models.dipnet.standard_topo_locs import STANDARD_TOPO_LOCS
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
@@ -100,7 +99,7 @@ def encode_phase(game, phase_idx, only_winners=True):
                 continue
 
         # sort by topo order
-        order_idxs.sort(key=lambda idx: STANDARD_TOPO_LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
+        order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
         for i, order_idx in enumerate(order_idxs):
             y_actions[power_i, i] = order_idx
 

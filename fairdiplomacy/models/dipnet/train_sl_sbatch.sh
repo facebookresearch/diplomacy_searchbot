@@ -15,6 +15,8 @@ CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
+mila encoder
+linear decoder
 ENDNOTE
 
 srun --label \
