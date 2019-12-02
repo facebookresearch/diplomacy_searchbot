@@ -15,16 +15,14 @@ CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
-mila encoding
-small data
 ENDNOTE
 
 srun --label \
     python train_sl.py \
-    --data-dir /private/home/jsgray/code/fairdiplomacy/fairdiplomacy/data/mila_dataset/small_data \
+    --data-dir /private/home/jsgray/code/fairdiplomacy/fairdiplomacy/data/mila_dataset/data \
     --checkpoint $CHECKPOINT_DIR/checkpoint.pth \
     --batch-size 280 \
-    --lr 0.05 \
+    --lr 0.005 \
     --num-dataloader-workers 10 \
     1>$CHECKPOINT_DIR/stdout.log \
     2>$CHECKPOINT_DIR/stderr.log

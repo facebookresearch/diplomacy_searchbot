@@ -10,7 +10,7 @@ from torch.utils.data.distributed import DistributedSampler
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX
-from fairdiplomacy.models.dipnet.dipnet import DipNet
+from fairdiplomacy.models.dipnet.dipnet import SimpleDipNet as DipNet
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
@@ -48,8 +48,8 @@ def new_model():
         NUM_ENCODER_BLOCKS,
         A,
         len(ORDER_VOCABULARY),
-        LSTM_SIZE,
-        ORDER_EMB_SIZE,
+        # LSTM_SIZE,
+        # ORDER_EMB_SIZE,
     )
 
 
@@ -61,11 +61,8 @@ def process_batch(net, batch, loss_fn):
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
     x_state, x_orders, x_power, x_season, y_actions = batch
-
-    # order masks [B, 17, 13k], 1 iff a valid order else 0
-    logger.debug("hi mom start build mask")
-    order_mask = build_order_mask(y_actions)
     logger.debug("hi mom stop build mask, shape={}".format(order_mask.shape))
+    order_mask = build_order_mask(y_actions)
 
     # forward pass
     order_idxs, order_scores = net(x_state, x_orders, x_power, x_season, order_mask)
@@ -179,7 +176,7 @@ def main_subproc(
         pin_memory=True,
     )
 
-    for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 100):
+    for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 10000):
         train_set_sampler.set_epoch(epoch)
 
         for batch_i, batch in enumerate(train_set_loader):

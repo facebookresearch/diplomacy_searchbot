@@ -1,3 +1,4 @@
+import logging
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -34,6 +35,53 @@ class DipNet(nn.Module):
             inter_emb_size, orders_vocab_size, lstm_size, order_emb_size
         )
 
+    def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=0.1):
+        """
+        Arguments:
+        - x_bo: shape [B, 81, 35]
+        - x_po: shape [B, 81, 40]
+        - power_emb: shape [B, 7]
+        - season_emb: shape [B, 3]
+        - order_masks: shape [B, S, 13k]
+        - temperature: softmax temp, lower = more deterministic; must be either
+          a float or a tensor of shape [B, 1]
+
+        Returns:
+        - order_idxs [B, S]: idx of sampled orders
+        - order_scores [B, S, 13k]: masked pre-softmax logits of each order
+        """
+        enc = self.encoder(x_bo, x_po, power_emb, season_emb)  # [B, 81, 240]
+        avg_enc = torch.mean(enc, dim=1, keepdim=False)  # [B, enc_size]
+        return self.decoder(avg_enc, order_masks, temperature=temperature)
+
+
+class SimpleDipNet(nn.Module):
+    def __init__(
+        self,
+        board_state_size,  # 35
+        prev_orders_size,  # 40
+        inter_emb_size,  # 120
+        power_emb_size,  # 7 (one-hot)
+        season_emb_size,  # 3 (one-hot)
+        num_blocks,  # 16
+        A,  # 81x81
+        orders_vocab_size,  # 13k
+    ):
+        super().__init__()
+
+        self.encoder = DipNetEncoder(
+            board_state_size,
+            prev_orders_size,
+            inter_emb_size,
+            power_emb_size,
+            season_emb_size,
+            num_blocks,
+            A,
+        )
+
+        self.decoder = SimpleDipNetDecoder(2 * inter_emb_size, orders_vocab_size)
+
+    # FIXME: dedup
     def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=0.1):
         """
         Arguments:
@@ -109,10 +157,28 @@ class SimpleDipNetDecoder(nn.Module):
         super().__init__()
         self.linear = nn.Linear(enc_size, orders_vocab_size)
 
-    def forward(self, x):
-        """x should have shape [B, 81, enc_size]"""
-        x = torch.mean(x, dim=1, keepdim=False)  # [B, enc_size]
-        return self.linear(x)
+    def forward(self, enc, order_masks, temperature=1.0):
+        """enc should have shape [B, enc_size]"""
+        order_scores = self.linear(enc)  # [B, 13k]
+
+        all_order_idxs = []
+        all_order_scores = []
+
+        for step in range(order_masks.shape[1]):
+            order_mask = order_masks[:, step, :]  # [B, 13k]
+            masked_scores = order_scores.clone()
+            masked_scores[~order_mask] = float("-inf")
+
+            # N.B. if an entire row is masked out (probaby during an <EOS>
+            # token) then unmask it, or the sampling will crash. The loss for
+            # that row will be masked out later, so it doesn't matter
+            masked_scores[~torch.any(order_mask, dim=1)] = 1
+            order_idxs = Categorical(logits=masked_scores / temperature).sample()
+
+            all_order_idxs.append(order_idxs)
+            all_order_scores.append(masked_scores)
+
+        return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 
 
 class DipNetEncoder(nn.Module):
