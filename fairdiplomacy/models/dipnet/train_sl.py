@@ -131,7 +131,7 @@ def main_subproc(
     # load checkpoint if specified
     if args.checkpoint and os.path.isfile(args.checkpoint):
         logging.info("Loading checkpoint at {}".format(args.checkpoint))
-        checkpoint = torch.load(args.checkpoint, map_location='cuda:{}'.format(rank))
+        checkpoint = torch.load(args.checkpoint, map_location="cuda:{}".format(rank))
     else:
         checkpoint = None
 
@@ -255,7 +255,7 @@ if __name__ == "__main__":
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     args = parser.parse_args()
-    logging.info("Args: {}".format(args))
+    logging.warning("Args: {}".format(args))
 
     n_gpus = torch.cuda.device_count()
     logging.info("Using {} GPUs".format(n_gpus))
@@ -290,4 +290,3 @@ if __name__ == "__main__":
             val_game_json_lengths,
         ),
     )
-

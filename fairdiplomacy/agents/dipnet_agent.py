@@ -54,15 +54,10 @@ def encode_state(game):
     x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
 
     try:
-        last_move_phase, last_move_orders = [
-            (phase, orders)
-            for phase, orders in game.order_history.items()
-            if str(phase).endswith("M")
+        last_move_phase = [
+            phase for phase in game.get_phase_history() if str(phase.name).endswith("M")
         ][-1]
-        last_move_state = game.state_history[last_move_phase]
-        x_prev_orders = torch.from_numpy(
-            prev_orders_to_np(last_move_state, last_move_orders)
-        ).unsqueeze(0)
+        x_prev_orders = torch.from_numpy(prev_orders_to_np(last_move_phase)).unsqueeze(0)
     except IndexError:
         x_prev_orders = torch.zeros(1, 81, 40)
 

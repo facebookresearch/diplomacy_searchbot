@@ -56,24 +56,21 @@ def encode_phase(game, phase_idx, only_winners=True):
     season: shape=(7, 3)
     actions: shape=(7, 17) int order idxs
     """
-    phase = str(list(game.state_history.keys())[phase_idx])
+    phase_name = str(list(game.state_history.keys())[phase_idx])
 
     # encode board state
-    x_board_state = board_state_to_np(game.state_history[phase])
+    x_board_state = board_state_to_np(game.state_history[phase_name])
     x_board_state = torch.from_numpy(x_board_state).repeat(len(POWERS), 1, 1)
 
     # encode prev movement orders
-    # TODO: does MILA condition on last move orders, or last orders of any kind?
     prev_move_phases = [
         p
-        for i, p in enumerate(game.state_history.keys())
-        if i < phase_idx and str(p).endswith("M")
+        for i, p in enumerate(game.get_phase_history())
+        if i < phase_idx and str(p.name).endswith("M")
     ]
     if len(prev_move_phases) > 0:
         move_phase = prev_move_phases[-1]
-        x_prev_orders = prev_orders_to_np(
-            game.state_history[move_phase], game.order_history[move_phase]
-        )
+        x_prev_orders = prev_orders_to_np(move_phase)
         x_prev_orders = torch.from_numpy(x_prev_orders).repeat(len(POWERS), 1, 1)
     else:
         x_prev_orders = torch.zeros(len(POWERS), 81, 40)
@@ -83,13 +80,13 @@ def encode_phase(game, phase_idx, only_winners=True):
 
     # encode season 1-hot
     x_season = torch.zeros(len(POWERS), len(SEASONS))
-    season_idx = [s[0] for s in SEASONS].index(phase[0])
+    season_idx = [s[0] for s in SEASONS].index(phase_name[0])
     x_season[:, season_idx] = 1
 
     # encode actions
     y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int64).fill_(EOS_IDX)
     for power_i, power in enumerate(POWERS):
-        orders = game.order_history[phase].get(power, [])
+        orders = game.order_history[phase_name].get(power, [])
         order_idxs = []
         for order in orders:
             try:
