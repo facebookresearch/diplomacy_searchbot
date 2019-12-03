@@ -50,6 +50,20 @@ def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None)
     return "one" if winning_power == agent_one_power else "six"
 
 
+def parse_agent_cmdline(s):
+    s = s.lower()
+
+    if s == "mila":
+        return MilaSLAgent
+    elif s.startswith("mila:"):
+        temp = float(s.split(":")[1])
+        return (MilaSLAgent, (temp,))
+    elif s == "search":
+        return (SimpleSearchDipnetAgent, ("/checkpoint/jsgray/dipnet.20103672.pth",))
+    else:
+        return (DipnetAgent, (s,))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("agent_a", help="Either 'mila' or a path to a .pth file")
@@ -57,17 +71,8 @@ if __name__ == "__main__":
     parser.add_argument("--out-dir", "-o", help="Directory to write game.json files")
     args = parser.parse_args()
 
-    if args.agent_a.lower() == "mila":
-        agent_a = MilaSLAgent
-    elif args.agent_a.lower() == "search":
-        agent_a = (SimpleSearchDipnetAgent, ("/checkpoint/jsgray/dipnet.20103672.pth",))
-    else:
-        agent_a = (DipnetAgent, (args.agent_a,))
-
-    if args.agent_b.lower() == "mila":
-        agent_b = MilaSLAgent
-    else:
-        agent_b = (DipnetAgent, (args.agent_b))
+    agent_a = parse_agent_cmdline(args.agent_a)
+    agent_b = parse_agent_cmdline(args.agent_b)
 
     pool = ProcessPoolExecutor(16)
 
