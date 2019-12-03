@@ -114,6 +114,25 @@ def calculate_accuracy(order_idxs, y_truth):
     return torch.mean((y_truth[mask] == order_idxs[mask]).float())
 
 
+def validate(net, val_set_loader, loss_fn):
+    with torch.no_grad():
+        net.eval()
+        batch_losses, batch_accuracies = [], []
+        for batch in val_set_loader:
+            _, _, _, _, y_actions = batch
+            losses, order_idxs = process_batch(net, batch, loss_fn)
+            batch_losses.append(losses)
+            batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
+        net.train()
+
+    val_losses = torch.cat(batch_losses)
+    val_loss = torch.mean(val_losses)
+    weights = [len(l) / len(val_losses) for l in batch_losses]
+    val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
+
+    return val_loss, val_accuracy
+
+
 def main_subproc(
     rank,
     world_size,
@@ -197,21 +216,12 @@ def main_subproc(
             # calculate validation loss/accuracy
             if (epoch * len(train_set_loader) + batch_i) % 1000 == 0:
                 logger.info("Calculating val loss...")
-                with torch.no_grad():
-                    net.eval()
-                    batch_losses, batch_accuracies = [], []
-                    for batch in val_set_loader:
-                        _, _, _, _, y_actions = batch
-                        losses, order_idxs = process_batch(net, batch, loss_fn)
-                        batch_losses.append(losses)
-                        batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
-
-                    val_losses = torch.cat(batch_losses)
-                    val_loss = torch.mean(val_losses)
-                    weights = [len(l) / len(val_losses) for l in batch_losses]
-                    val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
-                    logger.info("Validation loss={} acc={}".format(val_loss, val_accuracy))
-                    net.train()
+                val_loss, val_accuracy = validate(net, val_set_loader, loss_fn)
+                logger.info(
+                    "Validation epoch={} batch={} loss={} acc={}".format(
+                        epoch, batch_i, val_loss, val_accuracy
+                    )
+                )
 
                 # save model
                 if args.checkpoint and rank == 0:
