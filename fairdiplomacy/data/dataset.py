@@ -46,14 +46,21 @@ class Dataset(torch.utils.data.Dataset):
         return self.len
 
 
-def encode_phase(game, phase_idx, only_winners=True):
-    """Return five tensors:
+def encode_phase(game, phase_idx, only_with_min_final_score=7):
+    """
+    Arguments:
+    - game: diplomacy.Game object
+    - phase_idx: int, the index of the phase to encode
+    - only_with_min_final_score: if specified, only encode for powers who
+      finish the game with some # of supply centers (i.e. only learn from
+      winners). MILA uses 7.
 
-    board_state: shape=(7, 81, 35)
-    prev_orders: shape=(7, 81, 40)
-    power: shape=(7, 7)
-    season: shape=(7, 3)
-    actions: shape=(7, 17) int order idxs
+    Return: tuple of five tensors
+    - board_state: shape=(7, 81, 35)
+    - prev_orders: shape=(7, 81, 40)
+    - power: shape=(7, 7)
+    - season: shape=(7, 3)
+    - actions: shape=(7, 17) int order idxs
     """
     phase_name = str(list(game.state_history.keys())[phase_idx])
 
@@ -103,9 +110,13 @@ def encode_phase(game, phase_idx, only_winners=True):
         for i, order_idx in enumerate(order_idxs):
             y_actions[power_i, i] = order_idx
 
-    if only_winners:
+    if only_with_min_final_score is not None:
         final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        winner_idxs = [i for i, power in enumerate(POWERS) if final_score.get(power, 0) > 0]
+        winner_idxs = [
+            i
+            for i, power in enumerate(POWERS)
+            if final_score.get(power, 0) >= only_with_min_final_score
+        ]
         return tuple(
             t[winner_idxs] for t in (x_board_state, x_prev_orders, x_power, x_season, y_actions)
         )
