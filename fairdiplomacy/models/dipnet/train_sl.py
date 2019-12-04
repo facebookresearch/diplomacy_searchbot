@@ -5,6 +5,8 @@ import logging
 import os
 import random
 import torch
+from collections import Counter
+from functools import reduce
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, collate_fn
@@ -114,23 +116,62 @@ def calculate_accuracy(order_idxs, y_truth):
     return torch.mean((y_truth[mask] == order_idxs[mask]).float())
 
 
+def calculate_split_accuracy_counts(order_idxs, y_truth):
+    counts = Counter()
+
+    y_truth = y_truth[: (order_idxs.shape[0]), : (order_idxs.shape[1])].to(order_idxs.device)
+    for b in range(y_truth.shape[0]):
+        for s in range(y_truth.shape[1]):
+            if y_truth[b, s] == EOS_IDX:
+                continue
+
+            truth_order = ORDER_VOCABULARY[y_truth[b, s]]
+            correct = y_truth[b, s] == order_idxs[b, s]
+
+            # stats by loc
+            loc = truth_order.split()[1]
+            counts["loc.{}.{}".format(loc, "y" if correct else "n")] += 1
+
+            # stats by order type
+            order_type = truth_order.split()[2]
+            counts["type.{}.{}".format(order_type, "y" if correct else "n")] += 1
+
+            # stats by order step
+            counts["step.{}.{}".format(s, "y" if correct else "n")] += 1
+
+    return counts
+
+
 def validate(net, val_set_loader, loss_fn):
     with torch.no_grad():
         net.eval()
-        batch_losses, batch_accuracies = [], []
+        batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
         for batch in val_set_loader:
             _, _, _, _, y_actions = batch
             losses, order_idxs = process_batch(net, batch, loss_fn)
             batch_losses.append(losses)
             batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
+            batch_acc_split_counts.append(calculate_split_accuracy_counts(order_idxs, y_actions))
         net.train()
 
+    # combine batch losses, accuracies
     val_losses = torch.cat(batch_losses)
     val_loss = torch.mean(val_losses)
     weights = [len(l) / len(val_losses) for l in batch_losses]
     val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
 
-    return val_loss, val_accuracy
+    # combine accuracy splits
+    split_counts = reduce(
+        lambda x, y: Counter({k: x[k] + y[k] for k in set(x.keys()) | set(y.keys())}),
+        batch_acc_split_counts,
+        Counter(),
+    )
+    split_pcts = {
+        k: split_counts[k + ".y"] / (split_counts[k + ".y"] + split_counts[k + ".n"])
+        for k in [k.rsplit(".", 1)[0] for k in split_counts.keys()]
+    }
+
+    return val_loss, val_accuracy, split_pcts
 
 
 def main_subproc(
@@ -216,12 +257,16 @@ def main_subproc(
             # calculate validation loss/accuracy
             if (epoch * len(train_set_loader) + batch_i) % 1000 == 0:
                 logger.info("Calculating val loss...")
-                val_loss, val_accuracy = validate(net, val_set_loader, loss_fn)
+                val_loss, val_accuracy, split_pcts = validate(net, val_set_loader, loss_fn)
                 logger.info(
                     "Validation epoch={} batch={} loss={} acc={}".format(
                         epoch, batch_i, val_loss, val_accuracy
                     )
                 )
+                for k, v in sorted(split_pcts.items()):
+                    logger.debug(
+                        "val split epoch={} batch={}: {} = {}".format(epoch, batch_i, k, v)
+                    )
 
                 # save model
                 if args.checkpoint and rank == 0:
