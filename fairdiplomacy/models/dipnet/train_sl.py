@@ -12,7 +12,7 @@ from torch.utils.data.distributed import DistributedSampler
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX
-from fairdiplomacy.models.dipnet.dipnet import SimpleDipNet as DipNet
+from fairdiplomacy.models.dipnet.dipnet import DipNet, SimpleDipNet
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
@@ -39,9 +39,9 @@ ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
 
 
-def new_model():
+def new_model(decoder="lstm", lstm_dropout=0):
     A = torch.from_numpy(ADJACENCY_MATRIX).float()
-    return DipNet(
+    args = [
         BOARD_STATE_SIZE,
         PREV_ORDERS_SIZE,
         INTER_EMB_SIZE,
@@ -50,12 +50,18 @@ def new_model():
         NUM_ENCODER_BLOCKS,
         A,
         len(ORDER_VOCABULARY),
-        # LSTM_SIZE,
-        # ORDER_EMB_SIZE,
-    )
+    ]
+
+    if decoder == "linear":
+        return SimpleDipNet(*args)
+    elif decoder == "lstm":
+        args.extend([LSTM_SIZE, ORDER_EMB_SIZE, lstm_dropout])
+        return DipNet(*args)
+    else:
+        return ValueError("Bad value for decoder: {}".format(decoder))
 
 
-def process_batch(net, batch, loss_fn):
+def process_batch(net, batch, loss_fn, p_teacher_force=0.0):
     """Calculate a forward pass on a batch
 
     Returns:
@@ -66,7 +72,10 @@ def process_batch(net, batch, loss_fn):
     order_mask = build_order_mask(y_actions)
 
     # forward pass
-    order_idxs, order_scores = net(x_state, x_orders, x_power, x_season, order_mask)
+    teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
+    order_idxs, order_scores = net(
+        x_state, x_orders, x_power, x_season, order_mask, teacher_force_orders=teacher_force_orders
+    )
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions.to(next(net.parameters()).device)
@@ -148,7 +157,7 @@ def validate(net, val_set_loader, loss_fn):
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
         for batch in val_set_loader:
             _, _, _, _, y_actions = batch
-            losses, order_idxs = process_batch(net, batch, loss_fn)
+            losses, order_idxs = process_batch(net, batch, loss_fn, p_teacher_force=1.0)
             batch_losses.append(losses)
             batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
             batch_acc_split_counts.append(calculate_split_accuracy_counts(order_idxs, y_actions))
@@ -197,7 +206,7 @@ def main_subproc(
 
     # create model, from checkpoint if specified
     logger.info("Init model...")
-    net = new_model()
+    net = new_model(args.decoder, lstm_dropout=args.lstm_dropout)
     if checkpoint:
         logger.debug("net.load_state_dict")
         net.load_state_dict(checkpoint["model"], strict=False)
@@ -247,7 +256,7 @@ def main_subproc(
             # learn
             logger.info("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
-            losses, _ = process_batch(net, batch, loss_fn)
+            losses, _ = process_batch(net, batch, loss_fn, p_teacher_force=args.teacher_force)
             loss = torch.mean(losses)
             logger.debug("hi mom start backward")
             loss.backward()
@@ -309,6 +318,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
+    parser.add_argument(
+        "--decoder", choices=["lstm", "linear"], default="lstm", help="Which decoder to use"
+    )
+    parser.add_argument(
+        "--teacher-force", type=float, default=0, help="Prob[teacher forcing] during training"
+    )
+    parser.add_argument("--lstm-dropout", type=float, default=0, help="LSTM dropout pct")
     args = parser.parse_args()
     logger.warning("Args: {}".format(args))
 

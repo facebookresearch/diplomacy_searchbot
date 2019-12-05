@@ -18,6 +18,7 @@ class DipNet(nn.Module):
         orders_vocab_size,  # 13k
         lstm_size,  # 200
         order_emb_size,  # 80
+        lstm_dropout=0,
     ):
         super().__init__()
 
@@ -32,10 +33,19 @@ class DipNet(nn.Module):
         )
 
         self.decoder = LSTMDipNetDecoder(
-            inter_emb_size, orders_vocab_size, lstm_size, order_emb_size
+            inter_emb_size, orders_vocab_size, lstm_size, order_emb_size, lstm_dropout
         )
 
-    def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=0.1):
+    def forward(
+        self,
+        x_bo,
+        x_po,
+        power_emb,
+        season_emb,
+        order_masks,
+        temperature=0.1,
+        teacher_force_orders=None,
+    ):
         """
         Arguments:
         - x_bo: shape [B, 81, 35]
@@ -45,6 +55,7 @@ class DipNet(nn.Module):
         - order_masks: shape [B, S, 13k]
         - temperature: softmax temp, lower = more deterministic; must be either
           a float or a tensor of shape [B, 1]
+        - teacher_force_orders: shape [B, S] int or None
 
         Returns:
         - order_idxs [B, S]: idx of sampled orders
@@ -52,7 +63,12 @@ class DipNet(nn.Module):
         """
         enc = self.encoder(x_bo, x_po, power_emb, season_emb)  # [B, 81, 240]
         avg_enc = torch.mean(enc, dim=1, keepdim=False)  # [B, enc_size]
-        return self.decoder(avg_enc, order_masks, temperature=temperature)
+        return self.decoder(
+            avg_enc,
+            order_masks,
+            temperature=temperature,
+            teacher_force_orders=teacher_force_orders,
+        )
 
 
 class SimpleDipNet(nn.Module):
@@ -103,15 +119,17 @@ class SimpleDipNet(nn.Module):
 
 
 class LSTMDipNetDecoder(nn.Module):
-    def __init__(self, inter_emb_size, orders_vocab_size, lstm_size, order_emb_size):
+    def __init__(self, inter_emb_size, orders_vocab_size, lstm_size, order_emb_size, lstm_dropout):
         super().__init__()
         self.lstm_size = lstm_size
         self.order_emb_size = order_emb_size
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
-        self.lstm = nn.LSTM(2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True)
+        self.lstm = nn.LSTM(
+            2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True, dropout=lstm_dropout
+        )
         self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
 
-    def forward(self, enc, order_masks, temperature=0.1):
+    def forward(self, enc, order_masks, temperature=0.1, teacher_force_orders=None):
         device = next(self.parameters()).device
         self.lstm.flatten_parameters()
 
@@ -142,7 +160,11 @@ class LSTMDipNetDecoder(nn.Module):
             order_scores[~order_mask] = float("-inf")
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
-            order_emb = self.order_embedding(order_idxs).squeeze(1)
+
+            if teacher_force_orders is not None:
+                order_emb = self.order_embedding(teacher_force_orders[:, step])
+            else:
+                order_emb = self.order_embedding(order_idxs).squeeze(1)
 
             # Mask out chosen actions in future steps to prevent the same
             # order from occuring twice in a single turn
