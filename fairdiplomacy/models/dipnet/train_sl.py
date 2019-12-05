@@ -61,7 +61,7 @@ def new_model(decoder="lstm", lstm_dropout=0):
         return ValueError("Bad value for decoder: {}".format(decoder))
 
 
-def process_batch(net, batch, loss_fn, p_teacher_force=0.0):
+def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     """Calculate a forward pass on a batch
 
     Returns:
@@ -74,7 +74,13 @@ def process_batch(net, batch, loss_fn, p_teacher_force=0.0):
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
     order_idxs, order_scores = net(
-        x_state, x_orders, x_power, x_season, order_mask, teacher_force_orders=teacher_force_orders
+        x_state,
+        x_orders,
+        x_power,
+        x_season,
+        order_mask,
+        temperature=temperature,
+        teacher_force_orders=teacher_force_orders,
     )
 
     # reshape and mask out <EOS> tokens from sequences
@@ -157,7 +163,9 @@ def validate(net, val_set_loader, loss_fn):
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
         for batch in val_set_loader:
             _, _, _, _, y_actions = batch
-            losses, order_idxs = process_batch(net, batch, loss_fn, p_teacher_force=1.0)
+            losses, order_idxs = process_batch(
+                net, batch, loss_fn, temperature=0.001, p_teacher_force=1.0
+            )
             batch_losses.append(losses)
             batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
             batch_acc_split_counts.append(calculate_split_accuracy_counts(order_idxs, y_actions))
