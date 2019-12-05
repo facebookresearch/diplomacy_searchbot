@@ -1,5 +1,6 @@
 import argparse
 import os
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from tabulate import tabulate
 
@@ -69,63 +70,90 @@ if __name__ == "__main__":
     parser.add_argument("agent_a", help="Either 'mila' or a path to a .pth file")
     parser.add_argument("agent_b", help="Either 'mila' or a path to a .pth file")
     parser.add_argument("--out-dir", "-o", help="Directory to write game.json files")
+    parser.add_argument("-n", type=int, default=1, help="Number of trials of each type to run")
+    parser.add_argument("--workers", "-w", type=int, default=16, help="Size of process pool")
     args = parser.parse_args()
 
     agent_a = parse_agent_cmdline(args.agent_a)
     agent_b = parse_agent_cmdline(args.agent_b)
 
-    pool = ProcessPoolExecutor(16)
+    pool = ProcessPoolExecutor(args.workers)
 
     # run 1A vs. 6B
-    results_1a6b = {
-        agent_a_power: pool.submit(
-            run_1v6_trial,
-            agent_a,
-            agent_b,
+    results_1a6b = [
+        (
             agent_a_power,
-            save_path=(
-                os.path.join(args.out_dir, "1a6b_{}.json".format(agent_a_power))
-                if args.out_dir
-                else None
+            pool.submit(
+                run_1v6_trial,
+                agent_a,
+                agent_b,
+                agent_a_power,
+                save_path=(
+                    os.path.join(args.out_dir, "1a6b_{}.json".format(agent_a_power))
+                    if args.out_dir
+                    else None
+                ),
             ),
         )
         for agent_a_power in POWERS
-    }
+        for _ in range(args.n)
+    ]
 
     # run 6A vs. 1B
-    results_6a1b = {
-        agent_b_power: pool.submit(
-            run_1v6_trial,
-            agent_b,
-            agent_a,
+    results_6a1b = [
+        (
             agent_b_power,
-            save_path=(
-                os.path.join(args.out_dir, "6a1b_{}.json".format(agent_b_power))
-                if args.out_dir
-                else None
+            pool.submit(
+                run_1v6_trial,
+                agent_b,
+                agent_a,
+                agent_b_power,
+                save_path=(
+                    os.path.join(args.out_dir, "6a1b_{}.json".format(agent_b_power))
+                    if args.out_dir
+                    else None
+                ),
             ),
         )
         for agent_b_power in POWERS
-    }
+        for _ in range(args.n)
+    ]
 
     # wait for results
-    results_1a6b = {k: v.result() for k, v in results_1a6b.items()}
-    results_6a1b = {k: v.result() for k, v in results_6a1b.items()}
+    results_1a6b = [(k, v.result()) for k, v in results_1a6b]
+    results_6a1b = [(k, v.result()) for k, v in results_6a1b]
+
+    # tally up results
+    winner_counts = Counter()  # key = (header, power, {"A", "B", "DRAW"})
+
+    for header, results, result_to_winner in [
+        (
+            "results_1a6b",
+            results_1a6b,
+            lambda r: ("A" if r == "one" else ("B" if r == "six" else "DRAW")),
+        ),
+        (
+            "results_6a1b",
+            results_6a1b,
+            lambda r: ("B" if r == "one" else ("A" if r == "six" else "DRAW")),
+        ),
+    ]:
+        for power, result in results:
+            winner_counts[(header, power, result_to_winner(result))] += 1
 
     # pretty table with results
     winner_1a6b = []
     winner_6a1b = []
     for p in POWERS:
-        if results_1a6b[p] == "draw":
-            winner_1a6b.append("DRAW")
-        else:
-            winner_1a6b.append("A" if results_1a6b[p] == "one" else "B")
-
-        if results_6a1b[p] == "draw":
-            winner_6a1b.append("DRAW")
-        else:
-            winner_6a1b.append("B" if results_6a1b[p] == "one" else "A")
+        for lst, key in [(winner_1a6b, "results_1a6b"), (winner_6a1b, "results_6a1b")]:
+            s = "{} / {} / {}".format(
+                winner_counts[(key, p, "A")],
+                winner_counts[(key, p, "DRAW")],
+                winner_counts[(key, p, "B")],
+            )
+            lst.append(s)
 
     print("AGENT A = {}".format(args.agent_a))
     print("AGENT B = {}".format(args.agent_b))
+    print("Result notation: A / DRAW / B")
     print(tabulate(zip(POWERS, winner_1a6b, winner_6a1b), headers=["", "1A vs. 6B", "6A vs. 1B"]))
