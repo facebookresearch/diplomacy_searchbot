@@ -18,12 +18,24 @@ class DipnetAgent(BaseAgent):
     def __init__(self, model_pth):
         self.model = load_dipnet_model(model_pth, map_location="cpu", eval=True)
 
-    def get_orders(self, game, power, temperature=0.1):
+    def get_orders(self, game, power, temperature=0.1, debug_probs=False):
         if len(game.get_orderable_locations(power)) == 0:
             return []
         inputs = encode_inputs(game, power)
-        order_idxs, _ = self.model(*inputs, temperature=temperature)
+        with torch.no_grad():
+            order_idxs, order_scores = self.model(*inputs, temperature=temperature)
+        if debug_probs:
+            self.debug_probs(order_idxs, order_scores, inputs[-1], temperature)
         return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :]]
+
+    def debug_probs(self, order_idxs, order_scores, mask, temperature):
+        order_scores[~mask] = float("-inf")
+        probs = torch.nn.functional.softmax(order_scores / temperature, dim=2)
+        for step in range(len(order_idxs[0])):
+            order_idx = order_idxs[0, step]
+            logging.debug(
+                "order {} p={}".format(ORDER_VOCABULARY[order_idx], probs[0, step, order_idx])
+            )
 
 
 def encode_inputs(game, power, all_possible_orders=None):
@@ -97,6 +109,7 @@ def get_order_mask(game, power, all_possible_orders=None):
     for i, loc in enumerate(orderable_locs):
         orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
         order_mask[0, i, order_idxs] = 1
+
     return order_mask, len(orderable_locs)
 
 
@@ -114,9 +127,16 @@ def filter_orders_in_vocab(orders):
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
-    agent = DipnetAgent("/checkpoint/jsgray/dipnet.pth")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("model_path", nargs='?', default="/checkpoint/jsgray/dipnet.pth")
+    parser.add_argument("--temperature", "-t", type=float, default=1.0)
+    args = parser.parse_args()
+
+    agent = DipnetAgent(args.model_path)
     game = diplomacy.Game()
-    orders = agent.get_orders(game, "ITALY")
+    orders = agent.get_orders(game, "ITALY", temperature=args.temperature, debug_probs=True)
     logging.info("Submit orders: {}".format(orders))
