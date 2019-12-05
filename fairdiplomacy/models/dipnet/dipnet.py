@@ -43,7 +43,7 @@ class DipNet(nn.Module):
         power_emb,
         season_emb,
         order_masks,
-        temperature=0.1,
+        temperature=1.0,
         teacher_force_orders=None,
     ):
         """
@@ -98,7 +98,7 @@ class SimpleDipNet(nn.Module):
         self.decoder = SimpleDipNetDecoder(2 * inter_emb_size, orders_vocab_size)
 
     # FIXME: dedup
-    def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=0.1):
+    def forward(self, x_bo, x_po, power_emb, season_emb, order_masks, temperature=1.0):
         """
         Arguments:
         - x_bo: shape [B, 81, 35]
@@ -129,7 +129,7 @@ class LSTMDipNetDecoder(nn.Module):
         )
         self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
 
-    def forward(self, enc, order_masks, temperature=0.1, teacher_force_orders=None):
+    def forward(self, enc, order_masks, temperature=1.0, teacher_force_orders=None):
         device = next(self.parameters()).device
         self.lstm.flatten_parameters()
 
