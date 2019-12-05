@@ -225,8 +225,16 @@ def main_subproc(
         optim.load_state_dict(checkpoint["optim"])
 
     # Create datasets / loaders
-    train_set = Dataset(train_game_jsons, train_game_json_lengths)
-    val_set = Dataset(val_game_jsons, val_game_json_lengths)
+    train_set = Dataset(
+        train_game_jsons,
+        train_game_json_lengths,
+        debug_only_opening_phase=args.debug_only_opening_phase,
+    )
+    val_set = Dataset(
+        val_game_jsons,
+        val_game_json_lengths,
+        debug_only_opening_phase=args.debug_only_opening_phase,
+    )
     train_set_sampler = DistributedSampler(train_set)
     train_set_loader = torch.utils.data.DataLoader(
         train_set,
@@ -264,7 +272,7 @@ def main_subproc(
             logger.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
 
             # calculate validation loss/accuracy
-            if (epoch * len(train_set_loader) + batch_i) % 1000 == 0:
+            if (epoch * len(train_set_loader) + batch_i) % args.validate_every == 0:
                 logger.info("Calculating val loss...")
                 val_loss, val_accuracy, split_pcts = validate(net, val_set_loader, loss_fn)
                 logger.info(
@@ -325,6 +333,12 @@ if __name__ == "__main__":
         "--teacher-force", type=float, default=0, help="Prob[teacher forcing] during training"
     )
     parser.add_argument("--lstm-dropout", type=float, default=0, help="LSTM dropout pct")
+    parser.add_argument(
+        "--debug-only-opening-phase", action="store_true", help="If set, restrict data to S1901M"
+    )
+    parser.add_argument(
+        "--validate-every", type=int, default=1000, help="Validate/save every # of batches"
+    )
     args = parser.parse_args()
     logger.warning("Args: {}".format(args))
 

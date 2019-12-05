@@ -14,8 +14,9 @@ ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULA
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, game_json_paths, game_json_lengths=None):
+    def __init__(self, game_json_paths, game_json_lengths=None, debug_only_opening_phase=False):
         self.game_json_paths = game_json_paths
+        self.debug_only_opening_phase = debug_only_opening_phase
 
         if game_json_lengths is not None:
             self.game_json_lengths = game_json_lengths
@@ -33,7 +34,10 @@ class Dataset(torch.utils.data.Dataset):
         path = self.game_json_paths[game_idx]
         game = diplomacy.utils.export.load_saved_games_from_disk(path)[0]
         try:
-            return encode_phase(game, phase_idx)
+            if self.debug_only_opening_phase:
+                return encode_phase(game, 0)
+            else:
+                return encode_phase(game, phase_idx)
         except Exception:
             logging.exception(
                 "Skipping dataset game_idx={} path={} phase_idx={}".format(

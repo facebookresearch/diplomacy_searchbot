@@ -15,12 +15,8 @@ CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
-mila encoder
-lstm decoder
-only encode >= 7
-log val splits
-val teacher forcing
-no train teacher forcing
+temperature 1.0
+validate argmax
 ENDNOTE
 
 srun --label \
@@ -33,5 +29,6 @@ srun --label \
     --decoder lstm \
     --teacher-force 0 \
     --lstm-dropout 0 \
+    --validate-every 1000 \
     1>$CHECKPOINT_DIR/stdout.log \
     2>$CHECKPOINT_DIR/stderr.log
