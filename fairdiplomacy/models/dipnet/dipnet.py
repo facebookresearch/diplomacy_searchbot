@@ -145,6 +145,7 @@ class LSTMDipNetDecoder(nn.Module):
         all_order_idxs = []
         all_order_scores = []
 
+        order_masks = order_masks.clone()
         for step in range(order_masks.shape[1]):
             order_mask = order_masks[:, step, :]  # [B, 13k]
             lstm_input = torch.cat((enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
