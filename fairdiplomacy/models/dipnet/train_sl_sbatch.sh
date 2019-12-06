@@ -15,8 +15,7 @@ CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
-temperature 1.0
-validate argmax
+swap encoder matmul order
 ENDNOTE
 
 srun --label \
@@ -27,7 +26,7 @@ srun --label \
     --lr 0.001 \
     --num-dataloader-workers 10 \
     --decoder lstm \
-    --teacher-force 0 \
+    --teacher-force 0.5 \
     --lstm-dropout 0 \
     --validate-every 1000 \
     1>$CHECKPOINT_DIR/stdout.log \
