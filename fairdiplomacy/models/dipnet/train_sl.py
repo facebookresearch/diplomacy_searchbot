@@ -2,6 +2,7 @@ import argparse
 import atexit
 import glob
 import logging
+import numpy as np
 import os
 import random
 import torch
@@ -11,8 +12,8 @@ from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
-from fairdiplomacy.models.consts import ADJACENCY_MATRIX
-from fairdiplomacy.models.dipnet.dipnet import DipNet, SimpleDipNet
+from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS, LOCS
+from fairdiplomacy.models.dipnet.dipnet import DipNet
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
@@ -29,8 +30,8 @@ logger.addHandler(handler)
 BOARD_STATE_SIZE = 35
 PREV_ORDERS_SIZE = 40
 INTER_EMB_SIZE = 120
-POWER_EMB_SIZE = 7
-SEASON_EMB_SIZE = 3
+POWER_EMB_SIZE = 60
+SEASON_EMB_SIZE = 20
 NUM_ENCODER_BLOCKS = 16
 LSTM_SIZE = 200
 ORDER_EMB_SIZE = 80
@@ -39,26 +40,24 @@ ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
 
 
-def new_model(decoder="lstm", lstm_dropout=0):
-    A = torch.from_numpy(ADJACENCY_MATRIX).float()
-    args = [
+def new_model(args):
+    return DipNet(
         BOARD_STATE_SIZE,
         PREV_ORDERS_SIZE,
         INTER_EMB_SIZE,
         POWER_EMB_SIZE,
         SEASON_EMB_SIZE,
         NUM_ENCODER_BLOCKS,
-        A,
+        torch.from_numpy(ADJACENCY_MATRIX).float(),
+        torch.from_numpy(MASTER_ALIGNMENTS).float(),
         len(ORDER_VOCABULARY),
-    ]
-
-    if decoder == "linear":
-        return SimpleDipNet(*args)
-    elif decoder == "lstm":
-        args.extend([LSTM_SIZE, ORDER_EMB_SIZE, lstm_dropout])
-        return DipNet(*args)
-    else:
-        return ValueError("Bad value for decoder: {}".format(decoder))
+        ORDER_EMB_SIZE,
+        LSTM_SIZE,
+        args.lstm_dropout,
+        learnable_A=args.learnable_A,
+        learnable_alignments=args.learnable_alignments,
+        avg_embedding=args.avg_embedding,
+    )
 
 
 def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
@@ -68,8 +67,8 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     - loss: the output of loss_fn(logits, targets)
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
-    x_state, x_orders, x_power, x_season, y_actions = batch
-    order_mask = build_order_mask(y_actions)
+    x_state, x_orders, x_power, x_season, x_in_adj_phase, y_actions = batch
+    order_mask, loc_idxs = build_order_mask(y_actions)
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
@@ -78,10 +77,13 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
         x_orders,
         x_power,
         x_season,
+        x_in_adj_phase,
+        loc_idxs,
         order_mask,
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
     )
+    logger.warning("hi mom end forward")
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions.to(next(net.parameters()).device)
@@ -103,11 +105,14 @@ def build_order_mask(y_actions):
     Returns:
     - [B, S, 13k] BoolTensor mask, 0 < S <= 17, where idx [b, s, x] == True if
       ORDER_VOCABULARY[x] is an order originating from the same unit as y_actions[b, s]
+    - loc_idxs: [B, S] LongTensor, 0 <= idx < 81, or idx = -1 where y_actions = 0
     """
     order_mask = torch.zeros(
         y_actions.shape[0], y_actions.shape[1], len(ORDER_VOCABULARY), dtype=torch.bool
     )
-    for step in range(order_mask.shape[1]):
+    loc_idxs = torch.zeros_like(y_actions).fill_(-1)
+
+    for step in range(y_actions.shape[1]):
         if (y_actions[:, step] == EOS_IDX).all():
             break
         for b in range(order_mask.shape[0]):
@@ -122,7 +127,15 @@ def build_order_mask(y_actions):
                 valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit.split("/")[0]]
             order_mask[b, step, valid_idxs] = 1
 
-    return order_mask[:, :step, :]
+            # determine loc_idx
+            loc = unit.split()[1]
+            try:
+                loc_idx = LOCS.index(loc)
+            except IndexError:
+                loc_idx = LOCS.index(loc.split("/")[0])
+            loc_idxs[b, step] = loc_idx
+
+    return order_mask[:, :step, :], loc_idxs[:, :step]
 
 
 def calculate_accuracy(order_idxs, y_truth):
@@ -162,7 +175,7 @@ def validate(net, val_set_loader, loss_fn):
         net.eval()
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
         for batch in val_set_loader:
-            _, _, _, _, y_actions = batch
+            _, _, _, _, _, y_actions = batch
             losses, order_idxs = process_batch(
                 net, batch, loss_fn, temperature=0.001, p_teacher_force=1.0
             )
@@ -214,10 +227,10 @@ def main_subproc(
 
     # create model, from checkpoint if specified
     logger.info("Init model...")
-    net = new_model(args.decoder, lstm_dropout=args.lstm_dropout)
+    net = new_model(args)
     if checkpoint:
         logger.debug("net.load_state_dict")
-        net.load_state_dict(checkpoint["model"], strict=False)
+        net.load_state_dict(checkpoint["model"], strict=True)
 
     # send model to GPU
     logger.debug("net.cuda({})".format(rank))
@@ -274,7 +287,6 @@ def main_subproc(
             optim.zero_grad()
             losses, _ = process_batch(net, batch, loss_fn, p_teacher_force=args.teacher_force)
             loss = torch.mean(losses)
-            logger.debug("hi mom start backward")
             loss.backward()
             optim.step()
             logger.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
@@ -335,20 +347,27 @@ if __name__ == "__main__":
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     parser.add_argument(
-        "--decoder", choices=["lstm", "linear"], default="lstm", help="Which decoder to use"
-    )
-    parser.add_argument(
         "--teacher-force", type=float, default=0, help="Prob[teacher forcing] during training"
     )
     parser.add_argument("--lstm-dropout", type=float, default=0, help="LSTM dropout pct")
     parser.add_argument(
         "--debug-only-opening-phase", action="store_true", help="If set, restrict data to S1901M"
     )
+    parser.add_argument("--debug-no-mp", action="store_true", help="If set, use a single process")
     parser.add_argument(
         "--validate-every", type=int, default=1000, help="Validate/save every # of batches"
     )
+    parser.add_argument("--learnable-A", action="store_true", help="Learn adjacency matrix")
+    parser.add_argument(
+        "--learnable-alignments", action="store_true", help="Learn attention alignment matrix"
+    )
+    parser.add_argument(
+        "--avg-embedding",
+        action="store_true",
+        help="Average across location embedding instead of using attention",
+    )
     args = parser.parse_args()
-    logger.warning("Args: {}".format(args))
+    logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
 
     n_gpus = torch.cuda.device_count()
     logger.info("Using {} GPUs".format(n_gpus))
@@ -371,15 +390,26 @@ if __name__ == "__main__":
     except RuntimeError:
         pass
 
-    torch.multiprocessing.spawn(
-        main_subproc,
-        nprocs=n_gpus,
-        args=(
-            n_gpus,
+    if args.debug_no_mp:
+        main_subproc(
+            0,
+            1,
             args,
             train_game_jsons,
             train_game_json_lengths,
             val_game_jsons,
             val_game_json_lengths,
-        ),
-    )
+        )
+    else:
+        torch.multiprocessing.spawn(
+            main_subproc,
+            nprocs=n_gpus,
+            args=(
+                n_gpus,
+                args,
+                train_game_jsons,
+                train_game_json_lengths,
+                val_game_jsons,
+                val_game_json_lengths,
+            ),
+        )

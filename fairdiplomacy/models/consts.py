@@ -1,6 +1,10 @@
 import diplomacy
-
-from diplomacy_research.models.state_space import get_adjacency_matrix, get_sorted_locs
+import numpy as np
+from diplomacy_research.models.state_space import (
+    get_adjacency_matrix,
+    get_sorted_locs,
+    get_board_alignments,
+)
 
 from .preprocess_adjacency import preprocess_adjacency
 
@@ -11,3 +15,4 @@ POWERS = sorted(MAP.powers)
 SEASONS = ["SPRING", "FALL", "WINTER"]
 MAX_SEQ_LEN = 17  # can't have 18 orders in one phase or you've already won
 ADJACENCY_MATRIX = preprocess_adjacency(get_adjacency_matrix())
+MASTER_ALIGNMENTS = np.stack(get_board_alignments(LOCS, False, 1, 81))

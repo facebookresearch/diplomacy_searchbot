@@ -59,11 +59,12 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
 
-    Return: tuple of five tensors
+    Return: tuple of six tensors
     - board_state: shape=(7, 81, 35)
     - prev_orders: shape=(7, 81, 40)
     - power: shape=(7, 7)
     - season: shape=(7, 3)
+    - in_adj_phase: shape=(7,)
     - actions: shape=(7, 17) int order idxs
     """
     phase_name = str(list(game.state_history.keys())[phase_idx])
@@ -92,6 +93,9 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
     x_season = torch.zeros(len(POWERS), len(SEASONS))
     season_idx = [s[0] for s in SEASONS].index(phase_name[0])
     x_season[:, season_idx] = 1
+
+    # encode adjustment phase
+    x_in_adj_phase = torch.zeros(len(POWERS), dtype=torch.bool).fill_(phase_name[-1] == "A")
 
     # encode actions
     y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int64).fill_(EOS_IDX)
@@ -122,10 +126,11 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
             if final_score.get(power, 0) >= only_with_min_final_score
         ]
         return tuple(
-            t[winner_idxs] for t in (x_board_state, x_prev_orders, x_power, x_season, y_actions)
+            t[winner_idxs]
+            for t in (x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions)
         )
     else:
-        return x_board_state, x_prev_orders, x_power, x_season, y_actions
+        return x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions
 
 
 def smarter_order_index(order):
@@ -138,8 +143,8 @@ def smarter_order_index(order):
 
 
 def collate_fn(items):
-    # items is a list of 5-tuples, one tuple from each dataset
-    # lsts is a 5-tuple of lists of tensors
+    # items is a list of 6-tuples, one tuple from each dataset
+    # lsts is a 6-tuple of lists of tensors
     lsts = zip(*(x for x in items if x is not None))
     try:
         return tuple(torch.cat(lst, dim=0) for lst in lsts)

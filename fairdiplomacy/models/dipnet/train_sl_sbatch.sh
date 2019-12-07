@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=80
 #SBATCH --mem=0
-#SBATCH --time=1440
+#SBATCH --time=2880
 #SBATCH --requeue
 
 
@@ -15,7 +15,8 @@ CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
-swap encoder matmul order
+actual season/power emb
+fixed loc_idxs, with adj
 ENDNOTE
 
 srun --label \
@@ -25,9 +26,9 @@ srun --label \
     --batch-size 280 \
     --lr 0.001 \
     --num-dataloader-workers 10 \
-    --decoder lstm \
-    --teacher-force 0.5 \
+    --teacher-force 1.0 \
     --lstm-dropout 0 \
     --validate-every 1000 \
+    --learnable-alignments \
     1>$CHECKPOINT_DIR/stdout.log \
     2>$CHECKPOINT_DIR/stderr.log

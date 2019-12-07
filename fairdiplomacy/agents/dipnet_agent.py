@@ -1,4 +1,3 @@
-import os
 import diplomacy
 import logging
 import torch
@@ -9,7 +8,6 @@ from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
-from fairdiplomacy.models.dipnet.train_sl import new_model
 
 ORDER_VOCABULARY = get_order_vocabulary()
 
@@ -39,19 +37,29 @@ class DipnetAgent(BaseAgent):
 
 
 def encode_inputs(game, power, all_possible_orders=None):
-    """Return a 5-tuple of tensors
+    """Return a 6-tuple of tensors
 
     x_board_state: shape=(1, 81, 35)
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
     x_power: shape=(1, 7)
+    x_in_adj_phase: shape=(1,), dtype=bool
+    loc_idxs: shape=[1, S], dtype=long, 0 < S <= 17
     x_order_mask: shape=[1, S, 13k], dtype=bool, 0 < S <= 17
     """
-    x_board_state, x_prev_orders, x_season = encode_state(game)
+    x_board_state, x_prev_orders, x_season, x_in_adj_phase = encode_state(game)
     x_power = torch.zeros(1, 7)
     x_power[0, POWERS.index(power)] = 1
-    order_mask, seq_len = get_order_mask(game, power, all_possible_orders)
-    return (x_board_state, x_prev_orders, x_season, x_power, order_mask[:, :seq_len, :])
+    order_mask, loc_idxs, seq_len = get_order_mask(game, power, all_possible_orders)
+    return (
+        x_board_state,
+        x_prev_orders,
+        x_season,
+        x_power,
+        x_in_adj_phase,
+        loc_idxs[:, :seq_len],
+        order_mask[:, :seq_len, :],
+    )
 
 
 def encode_state(game):
@@ -60,6 +68,7 @@ def encode_state(game):
     x_board_state: shape=(1, 81, 35)
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
+    x_in_adj_phase: shape=(1,), dtype=bool
     """
     state = game.get_state()
     x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
@@ -75,7 +84,9 @@ def encode_state(game):
     x_season = torch.zeros(1, 3)
     x_season[0, SEASONS.index(game.phase.split()[0])] = 1
 
-    return x_board_state, x_prev_orders, x_season
+    x_in_adj_phase = torch.zeros(1,  dtype=torch.bool).fill_(state["name"][-1] == "A")
+
+    return x_board_state, x_prev_orders, x_season, x_in_adj_phase
 
 
 def get_order_mask(game, power, all_possible_orders=None):
@@ -83,6 +94,7 @@ def get_order_mask(game, power, all_possible_orders=None):
 
     Returns:
     - a [1, 17, 13k] bool tensor
+    - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
     - the actual lengh of the sequence == the number of orders to submit, <= 17
     """
     orderable_locs = sorted(game.get_orderable_locations(power), key=LOCS.index)
@@ -91,26 +103,28 @@ def get_order_mask(game, power, all_possible_orders=None):
     power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
     n_builds = game.get_state()["builds"][power]["count"]
     order_mask = torch.zeros(1, MAX_SEQ_LEN, len(ORDER_VOCABULARY), dtype=torch.bool)
+    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long)
 
     if n_builds > 0:
         # build phase: all possible build orders, up to the number of allowed builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
         order_mask[0, :n_builds, order_idxs] = 1
-        return order_mask, n_builds
+        return order_mask, loc_idxs, n_builds
 
     if n_builds < 0:
         # disbands: all possible disband orders, up to the number of required disbands
         n_disbands = -n_builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
         order_mask[0, :n_disbands, order_idxs] = 1
-        return order_mask, n_disbands
+        return order_mask, loc_idxs, n_disbands
 
     # move phase: iterate through orderable_locs in topo order
     for i, loc in enumerate(orderable_locs):
         orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
         order_mask[0, i, order_idxs] = 1
+        loc_idxs[0, i] = LOCS.index(loc)
 
-    return order_mask, len(orderable_locs)
+    return order_mask, loc_idxs, len(orderable_locs)
 
 
 def filter_orders_in_vocab(orders):
@@ -132,7 +146,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_path", nargs='?', default="/checkpoint/jsgray/dipnet.pth")
+    parser.add_argument("model_path", nargs="?", default="/checkpoint/jsgray/dipnet.pth")
     parser.add_argument("--temperature", "-t", type=float, default=1.0)
     args = parser.parse_args()
 
