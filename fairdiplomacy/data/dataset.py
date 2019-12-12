@@ -119,7 +119,7 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
             y_actions[power_i, i] = order_idx
 
     # filter away powers that have no orders
-    power_idxs = torch.nonzero(torch.any(y_actions != EOS_IDX, dim=1)).squeeze(1)
+    power_idxs = torch.nonzero(torch.any(y_actions != EOS_IDX, dim=1)).squeeze(1).tolist()
 
     # maybe filter away powers that don't finish with enough SC
     if only_with_min_final_score is not None:
@@ -132,7 +132,7 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
         power_idxs = [idx for idx in power_idxs if idx in winner_idxs]
 
     return tuple(
-        t[winner_idxs]
+        t[power_idxs]
         for t in (x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions)
     )
 
