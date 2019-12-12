@@ -118,6 +118,10 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
         for i, order_idx in enumerate(order_idxs):
             y_actions[power_i, i] = order_idx
 
+    # filter away powers that have no orders
+    power_idxs = torch.nonzero(torch.any(y_actions != EOS_IDX, dim=1)).squeeze(1)
+
+    # maybe filter away powers that don't finish with enough SC
     if only_with_min_final_score is not None:
         final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
         winner_idxs = [
@@ -125,12 +129,12 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
             for i, power in enumerate(POWERS)
             if final_score.get(power, 0) >= only_with_min_final_score
         ]
-        return tuple(
-            t[winner_idxs]
-            for t in (x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions)
-        )
-    else:
-        return x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions
+        power_idxs = [idx for idx in power_idxs if idx in winner_idxs]
+
+    return tuple(
+        t[winner_idxs]
+        for t in (x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions)
+    )
 
 
 def smarter_order_index(order):
