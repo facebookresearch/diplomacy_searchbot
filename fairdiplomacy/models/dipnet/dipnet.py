@@ -202,35 +202,6 @@ class LSTMDipNetDecoder(nn.Module):
         return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 
 
-class SimpleDipNetDecoder(nn.Module):
-    def __init__(self, enc_size, orders_vocab_size):
-        super().__init__()
-        self.linear = nn.Linear(enc_size, orders_vocab_size)
-
-    def forward(self, enc, order_masks, temperature=1.0):
-        """enc should have shape [B, enc_size]"""
-        order_scores = self.linear(enc)  # [B, 13k]
-
-        all_order_idxs = []
-        all_order_scores = []
-
-        for step in range(order_masks.shape[1]):
-            order_mask = order_masks[:, step, :]  # [B, 13k]
-            masked_scores = order_scores.clone()
-            masked_scores[~order_mask] = float("-inf")
-
-            # N.B. if an entire row is masked out (probaby during an <EOS>
-            # token) then unmask it, or the sampling will crash. The loss for
-            # that row will be masked out later, so it doesn't matter
-            masked_scores[~torch.any(order_mask, dim=1)] = 1
-            order_idxs = Categorical(logits=masked_scores / temperature).sample()
-
-            all_order_idxs.append(order_idxs)
-            all_order_scores.append(masked_scores)
-
-        return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
-
-
 class DipNetEncoder(nn.Module):
     def __init__(
         self,
