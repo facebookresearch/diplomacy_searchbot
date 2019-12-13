@@ -193,7 +193,10 @@ class LSTMDipNetDecoder(nn.Module):
 
             # Mask out chosen actions in future steps to prevent the same
             # order from occuring twice in a single turn
-            for b, order_idx in enumerate(order_idxs):
+            dont_repeat_orders = (
+                teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs
+            )
+            for b, order_idx in enumerate(dont_repeat_orders):
                 order_masks[b, step:, order_idx] = 0
 
         return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
