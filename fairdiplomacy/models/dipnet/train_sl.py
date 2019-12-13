@@ -68,7 +68,7 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
     x_state, x_orders, x_power, x_season, x_in_adj_phase, y_actions = batch
-    order_mask, loc_idxs = build_order_mask(y_actions)
+    order_mask, loc_idxs = build_order_mask(y_actions, x_in_adj_phase)
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
@@ -96,11 +96,12 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     return loss_fn(order_scores, y_actions), order_idxs
 
 
-def build_order_mask(y_actions):
+def build_order_mask(y_actions, in_adj_phase):
     """Build a mask of valid possible actions given a ground truth sequence
 
     Arguments:
     - y_actions: [B, 17] LongTensor of order idxs
+    - in_adj_phase: [B] BoolTensor, if actions were taken during an adjustment phase
 
     Returns:
     - [B, S, 13k] BoolTensor mask, 0 < S <= 17, where idx [b, s, x] == True if
@@ -134,6 +135,21 @@ def build_order_mask(y_actions):
             except IndexError:
                 loc_idx = LOCS.index(loc.split("/")[0])
             loc_idxs[b, step] = loc_idx
+
+    assert not torch.all(
+        loc_idxs == -1, dim=1
+    ).any(), "Bad row with no locs, loc_idxs={} in_adj_phase={} y_actions={}".format(
+        loc_idxs, in_adj_phase, y_actions
+    )
+
+    # if in adj phase, union the masks from all steps -- builds and disbands
+    # can happen in any order
+    #
+    # TODO: could mask out movement/retreat orders too if we know we're in adj phase
+    used_actions = torch.any(order_mask, dim=1)  # [B, 13k]
+    for b in range(order_mask.shape[0]):
+        if in_adj_phase[b]:
+            order_mask[b, torch.nonzero(y_actions[b]), used_actions[b]] = 1
 
     return order_mask[:, :step, :], loc_idxs[:, :step]
 

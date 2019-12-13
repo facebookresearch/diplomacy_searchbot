@@ -169,6 +169,7 @@ class LSTMDipNetDecoder(nn.Module):
                     in_adj_phase.long().reshape(1, -1, 1).repeat(1, 1, adj_alignments.shape[-1]),
                 ).squeeze(0)
                 alignments /= torch.sum(alignments, dim=1, keepdim=True)
+                alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             lstm_input = torch.cat((loc_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
@@ -176,16 +177,12 @@ class LSTMDipNetDecoder(nn.Module):
             order_scores = self.lstm_out_linear(out.squeeze(1))  # [B, 13k]
             all_order_scores.append(order_scores)
 
-            # FIXME: remove once proven to be not needed anymore
-            #
-            # masked softmax to choose order_idxs N.B. if an entire row is
-            # masked out (probaby during an <EOS> token) then unmask it, or the
-            # sampling will crash. Similarly, set nans to 0.  The loss for that
-            # row will be masked out later, so it doesn't matter
-            # order_mask[~torch.any(order_mask, dim=1)] = 1
+            # unmask where there are no actions or the sampling will crash. The
+            # losses at these points will be masked out later, so this is safe.
+            order_mask[loc_idxs[:, step] == -1] = 1
 
+            # masked softmax to choose order_idxs
             order_scores[~order_mask] = float("-inf")
-            order_scores[order_scores != order_scores] = 0
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
 
