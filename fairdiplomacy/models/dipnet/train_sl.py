@@ -331,6 +331,7 @@ def main_subproc(
                             "epoch": epoch,
                             "batch_i": batch_i,
                             "val_accuracy": val_accuracy,
+                            "args": args,
                         },
                         args.checkpoint,
                     )
