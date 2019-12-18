@@ -41,8 +41,8 @@ def encode_inputs(game, power, all_possible_orders=None):
 
     x_board_state: shape=(1, 81, 35)
     x_prev_orders: shape=(1, 81, 40)
-    x_season: shape=(1, 3)
     x_power: shape=(1, 7)
+    x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
     loc_idxs: shape=[1, S], dtype=long, 0 < S <= 17
     x_order_mask: shape=[1, S, 13k], dtype=bool, 0 < S <= 17
@@ -54,8 +54,8 @@ def encode_inputs(game, power, all_possible_orders=None):
     return (
         x_board_state,
         x_prev_orders,
-        x_season,
         x_power,
+        x_season,
         x_in_adj_phase,
         loc_idxs[:, :seq_len],
         order_mask[:, :seq_len, :],
@@ -84,7 +84,7 @@ def encode_state(game):
     x_season = torch.zeros(1, 3)
     x_season[0, SEASONS.index(game.phase.split()[0])] = 1
 
-    x_in_adj_phase = torch.zeros(1,  dtype=torch.bool).fill_(state["name"][-1] == "A")
+    x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(state["name"][-1] == "A")
 
     return x_board_state, x_prev_orders, x_season, x_in_adj_phase
 
