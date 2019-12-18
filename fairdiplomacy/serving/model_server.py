@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-batch-latency", type=float, default=0.01)
     args = parser.parse_args()
 
-    MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
+    MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
     MAX_BATCH_SIZE = 1000
 
     def load_model():

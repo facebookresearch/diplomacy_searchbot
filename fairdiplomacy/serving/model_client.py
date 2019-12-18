@@ -11,7 +11,7 @@ from .recv_exactly import recv_exactly
 
 
 class ModelClient:
-    def __init__(self, port=ModelServer.DEFAULT_PORT, connect_timeout=5):
+    def __init__(self, port=ModelServer.DEFAULT_PORT, connect_timeout=20):
         self.s = socket.socket()
 
         # try to connect for up to "connect_timeout" seconds

@@ -175,14 +175,22 @@ class SimpleSearchDipnetAgent(BaseAgent):
             game.set_orders(power, list(orders))
 
         while not game.is_game_done:
-            # get orders
+            # prepare inputs
             all_possible_orders = game.get_all_possible_orders()
             other_powers = [p for p in game.powers if p not in set_orders_dict]
             xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for p in other_powers]
+            padded_loc_idxs_seqs, _ = cat_pad_sequences(
+                [x[-2] for x in xs], pad_value=-1, pad_to_len=MAX_SEQ_LEN
+            )
             padded_mask_seqs, seq_lens = cat_pad_sequences(
                 [x[-1] for x in xs], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
             )
-            batch_inputs = [torch.cat(ts) for ts in list(zip(*xs))[:-1]] + [padded_mask_seqs]
+            batch_inputs = [torch.cat(ts) for ts in list(zip(*xs))[:-2]] + [
+                padded_loc_idxs_seqs,
+                padded_mask_seqs,
+            ]
+
+            # get orders
             batch_orders = cls.do_model_request(model_client, batch_inputs, temperature)
 
             # process turn
@@ -252,7 +260,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
     logging.info("PID: {}".format(os.getpid()))
 
-    MODEL_PTH = "/checkpoint/jsgray/dipnet.20103672.pth"
+    MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
     game = diplomacy.Game()
 
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
