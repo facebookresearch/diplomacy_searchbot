@@ -60,7 +60,7 @@ def parse_agent_cmdline(s):
         temp = float(s.split(":")[1])
         return (MilaSLAgent, (temp,))
     elif s == "search":
-        return (SimpleSearchDipnetAgent, ("/checkpoint/jsgray/dipnet.20103672.pth",))
+        return (SimpleSearchDipnetAgent, ("/checkpoint/jsgray/dipnet.pth",))
     else:
         return (DipnetAgent, (s,))
 
