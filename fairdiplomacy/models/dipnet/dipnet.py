@@ -3,6 +3,11 @@ import torch.nn.functional as F
 from torch import nn
 from torch.distributions.categorical import Categorical
 
+from fairdiplomacy.models.dipnet.order_vocabulary import (
+    get_incompatible_build_idxs_map,
+    get_order_vocabulary,
+)
+
 
 class DipNet(nn.Module):
     def __init__(
@@ -197,7 +202,8 @@ class LSTMDipNetDecoder(nn.Module):
                 teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs
             )
             for b, order_idx in enumerate(dont_repeat_orders):
-                order_masks[b, step:, order_idx] = 0
+                incompatible_idxs = get_incompatible_build_idxs_map().get(int(order_idx), [order_idx])
+                order_masks[b, step:, incompatible_idxs] = 0
 
         return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 

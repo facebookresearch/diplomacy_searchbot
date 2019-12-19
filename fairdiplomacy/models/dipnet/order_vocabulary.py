@@ -4,12 +4,14 @@ https://github.com/diplomacy/research/blob/master/diplomacy_research/models/stat
 from collections import defaultdict
 
 from diplomacy import Map
+from fairdiplomacy.models.consts import COASTAL_HOME_SCS, MAP
 
 
 EOS_TOKEN = "<EOS>"
 EOS_IDX = 0
 _ORDER_VOCABULARY = None
 _ORDER_VOCABULARY_IDXS_BY_UNIT = None
+_ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS = None
 
 
 def get_order_vocabulary():
@@ -30,10 +32,40 @@ def get_order_vocabulary_idxs_by_unit():
 
     _ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
     for idx, order in enumerate(get_order_vocabulary()):
-        unit = order[:5]
+        unit = " ".join(order.split()[:2])
         _ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
     _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(_ORDER_VOCABULARY_IDXS_BY_UNIT)
     return _ORDER_VOCABULARY_IDXS_BY_UNIT
+
+
+def get_incompatible_build_idxs_map():
+    global _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS
+
+    if _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS is not None:
+        return _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS
+
+    _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS = {}
+
+    order_vocabulary = get_order_vocabulary()
+    idxs_by_unit = get_order_vocabulary_idxs_by_unit()
+
+    for loc in COASTAL_HOME_SCS:
+        order_idxs = set()
+        for variant in MAP.loc_coasts[loc]:
+            for unit_type in ["F", "A"]:
+                order_idxs.update(
+                    [
+                        idx
+                        for idx in idxs_by_unit.get("{} {}".format(unit_type, variant), [])
+                        if order_vocabulary[idx] == "{} {} B".format(unit_type, variant)
+                    ]
+                )
+
+        # map[order_idx] -> all build order idxs at that location
+        for order_idx in order_idxs:
+            _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS[order_idx] = list(order_idxs)
+
+    return _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS
 
 
 def _get_order_vocabulary():
