@@ -67,8 +67,8 @@ def parse_agent_cmdline(s):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("agent_a", help="Either 'mila' or a path to a .pth file")
-    parser.add_argument("agent_b", help="Either 'mila' or a path to a .pth file")
+    parser.add_argument("agent_a", help="Either 'mila', 'search', or a path to a .pth file")
+    parser.add_argument("agent_b", help="Either 'mila', 'search', or a path to a .pth file")
     parser.add_argument("--out-dir", "-o", help="Directory to write game.json files")
     parser.add_argument("-n", type=int, default=1, help="Number of trials of each type to run")
     parser.add_argument("--workers", "-w", type=int, default=16, help="Size of process pool")
@@ -89,14 +89,14 @@ if __name__ == "__main__":
                 agent_b,
                 agent_a_power,
                 save_path=(
-                    os.path.join(args.out_dir, "1a6b_{}.json".format(agent_a_power))
+                    os.path.join(args.out_dir, "1a6b_{}_{}.json".format(agent_a_power, i))
                     if args.out_dir
                     else None
                 ),
             ),
         )
         for agent_a_power in POWERS
-        for _ in range(args.n)
+        for i in range(args.n)
     ]
 
     # run 6A vs. 1B
@@ -109,14 +109,14 @@ if __name__ == "__main__":
                 agent_a,
                 agent_b_power,
                 save_path=(
-                    os.path.join(args.out_dir, "6a1b_{}.json".format(agent_b_power))
+                    os.path.join(args.out_dir, "6a1b_{}_{}.json".format(agent_b_power, i))
                     if args.out_dir
                     else None
                 ),
             ),
         )
         for agent_b_power in POWERS
-        for _ in range(args.n)
+        for i in range(args.n)
     ]
 
     # wait for results
