@@ -16,19 +16,19 @@ mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
 actual season/power emb
-fixed loc_idxs, with adj
+fixed loc_idxs, with fixed adj, fixed tf masking
+fixed incompatible builds masking
 ENDNOTE
 
 srun --label \
     python train_sl.py \
     --data-dir /private/home/jsgray/code/fairdiplomacy/fairdiplomacy/data/mila_dataset/data \
     --checkpoint $CHECKPOINT_DIR/checkpoint.pth \
-    --batch-size 280 \
+    --batch-size 600 \
     --lr 0.001 \
     --num-dataloader-workers 10 \
     --teacher-force 1.0 \
     --lstm-dropout 0 \
     --validate-every 1000 \
-    --learnable-alignments \
     1>$CHECKPOINT_DIR/stdout.log \
     2>$CHECKPOINT_DIR/stderr.log
