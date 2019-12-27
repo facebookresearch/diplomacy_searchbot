@@ -3,13 +3,12 @@ import faulthandler
 import itertools
 import logging
 import os
-import random
 import signal
 import torch
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
-from multiprocessing import Process, set_start_method, get_context
+from multiprocessing import get_context
 from typing import List, Tuple, Set, Dict
 
 from fairdiplomacy.agents.base_agent import BaseAgent
@@ -178,9 +177,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         torch.set_num_threads(1)
 
         game = from_saved_game_format(game_json)
-
         model_client = ModelClient(port=model_server_port)
-        orig_order = [v for v in set_orders_dict.values()][0]
 
         # keep track of state to see if we should exit early
         if early_exit_after_no_change is not None:
