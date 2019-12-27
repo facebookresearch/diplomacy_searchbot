@@ -156,7 +156,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         Returns a Dict[power, final supply count]
         """
-        logging.info("hi mom new proc {} -- {}".format(set_orders_dict, os.getpid()))
+        logging.info("new proc {} -- {}".format(set_orders_dict, os.getpid()))
         faulthandler.register(signal.SIGUSR1)
         torch.set_num_threads(1)
 
@@ -214,7 +214,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         # return supply counts for each power
         result = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        logging.info("hi mom pid {} result {}".format(os.getpid(), result))
+        logging.info("end do_rollout pid {} result {}".format(os.getpid(), result))
         return result
 
 
