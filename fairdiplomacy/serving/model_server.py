@@ -33,6 +33,9 @@ class ModelServer:
         Request payload: a tuple or list of input pytorch tensors to pass to model
         Response payload: output_transform(model(*x))
 
+        Server will accept payloads for `max_batch_latency` seconds, then cat
+        the inputs, pass them to the model, and return the outputs.
+
         Arguments:
         - load_model_fn: function called with no args, must return a pytorch model
         - max_batch_size: flush buffer if sum of request batch sizes >= max_batch_size
