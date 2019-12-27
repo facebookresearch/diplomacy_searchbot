@@ -21,6 +21,23 @@ from fairdiplomacy.serving import ModelServer, ModelClient
 
 
 class SimpleSearchDipnetAgent(BaseAgent):
+    """One-ply search with dipnet-policy rollouts
+
+    ## Policy
+    1. Consider a set of orders that are suggested by the dipnet policy network. 
+    2. For each set of orders, perform a number of rollouts using the dipnet
+    policy network for each power.
+    3. Score each order set by the average supply center count at the end
+    of the rollout.
+    4. Choose the order set with the highest score.
+
+    ## Implementation Details
+    - __init__ forks some number of server processes running a ModelServer instance
+      listening on different ports, and a ProcesssPoolExecutor for rollouts
+    - get_orders first gets plausible orders to search through, then launches
+      rollouts for each plausible order via the proc pool
+    """
+
     def __init__(
         self,
         model_path,
