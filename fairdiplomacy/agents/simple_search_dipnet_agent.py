@@ -25,9 +25,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
         self,
         model_path,
         n_rollout_procs=80,
-        n_server_procs=4,
+        n_server_procs=3,
         max_batch_size=1000,
-        max_batch_latency=0.005,
+        max_batch_latency=0.001,
         rollouts_per_plausible_order=10,
     ):
         super().__init__()
