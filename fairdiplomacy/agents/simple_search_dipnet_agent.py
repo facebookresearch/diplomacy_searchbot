@@ -30,6 +30,10 @@ def call(f):
     """
     return f()
 
+def div_round_up(A, B):
+    return (A + B - 1) // B
+
+
 class SimpleSearchDipnetAgent(BaseAgent):
     """One-ply search with dipnet-policy rollouts
 
@@ -51,10 +55,10 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_rollout_procs=79,
-        n_server_procs=1,
+        n_rollout_procs=70,
+        n_server_procs=3,
         max_batch_size=1000,
-        max_batch_latency=0.001,  # 0.1 actually works better...
+        max_batch_latency=0.001,
         rollouts_per_plausible_order=10,
         max_rollout_length=40,
     ):
@@ -66,16 +70,12 @@ class SimpleSearchDipnetAgent(BaseAgent):
             range(ModelServer.DEFAULT_PORT, ModelServer.DEFAULT_PORT + n_server_procs)
         )
 
-        # load model and launch server in separate process
-        def load_model():
-            return load_dipnet_model(model_path, map_location="cuda", eval=True).cuda()
-
         for port in self.server_ports:
             logging.info("Launching server on port {}".format(port))
-            mp.get_context("fork").Process(
+            mp.get_context("spawn").Process(
                 target=ModelServer,
                 kwargs=dict(
-                    load_model_fn=load_model,
+                    load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
                     max_batch_size=max_batch_size,
                     max_batch_latency=max_batch_latency,
                     port=port,
@@ -87,9 +87,10 @@ class SimpleSearchDipnetAgent(BaseAgent):
             ).start()
             logging.info("Launched server on port {}".format(port))
 
+        self.n_rollout_procs = n_rollout_procs
         self.proc_pool = mp.get_context("spawn").Pool(n_rollout_procs) # , mp_context=get_context("spawn"))
         logging.info("Warning up pool")
-        self.proc_pool.map(float, range(1000))
+        self.proc_pool.map(float, range(100))
         logging.info("Done warming up pool")
         self.model_client = ModelClient()
 
@@ -99,18 +100,25 @@ class SimpleSearchDipnetAgent(BaseAgent):
         logging.info("Plausible orders: {}".format(plausible_orders))
         game_json = to_saved_game_format(game)
         port_iterator = itertools.cycle(self.server_ports)
-        rollout_args = [(orders, seed) for orders in plausible_orders for seed in range(self.rollouts_per_plausible_order)]
-        scores = self.proc_pool.map(call,
+
+        # divide up the rollouts among the processes
+        procs_per_order = max(1, self.n_rollout_procs // len(plausible_orders))
+        batch_size = div_round_up(self.rollouts_per_plausible_order, procs_per_order)
+        remainder = self.rollouts_per_plausible_order - batch_size * (procs_per_order - 1)
+        logging.info(f"procs_per_order= {procs_per_order}, batch_size= {batch_size}, remainder= {remainder}")
+
+        results = self.proc_pool.map(call,
                 [partial(self.do_rollout,
                     game_json,
                     {power: orders},
                     model_server_port=next(port_iterator),  # round robin server assignment
-                    early_exit_after_no_change=5,
                     max_rollout_length=self.max_rollout_length,
+                    batch_size=batch_size if proc_idx < procs_per_order - 1 else remainder,
                  )
-            for orders, seed in rollout_args]
-        )
-        results = [(orders, score) for (orders, seed), score in zip(rollout_args, scores)]
+            for orders in plausible_orders
+            for proc_idx in range(procs_per_order)
+        ])
+        results = [(order_dict[power], scores) for result in results for (order_dict, scores) in result]
 
         return self.best_order_from_results(results, power)
 
@@ -173,9 +181,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
         set_orders_dict={},
         temperature=0.05,
         model_server_port=ModelServer.DEFAULT_PORT,
-        early_exit_after_no_change=None,
         max_rollout_length=40,
-    ) -> Dict[str, int]:
+        batch_size=1,
+    ) -> Dict[str, float]:
         """Complete game, optionally setting orders for the current turn
 
         This method can safely be called in a subprocess
@@ -185,7 +193,6 @@ class SimpleSearchDipnetAgent(BaseAgent):
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
         - model_server_port: port on which the batching model server is listening
-        - early_exit_after_no_change: int, end rollout early if game state is unchanged after # turns
 
         Returns a Dict[power, final supply count]
         """
@@ -196,69 +203,55 @@ class SimpleSearchDipnetAgent(BaseAgent):
         faulthandler.register(signal.SIGUSR1)
         torch.set_num_threads(1)
 
-        game = from_saved_game_format(game_json)
+        games = [from_saved_game_format(game_json) for _ in range(batch_size)]
         model_client = ModelClient(port=model_server_port)
-
-        # keep track of state to see if we should exit early
-        if early_exit_after_no_change is not None:
-            last_units = copy.deepcopy(game.get_state()["units"])
-            last_units_n_turns = 0
 
         # set orders if specified
         for power, orders in set_orders_dict.items():
-            game.set_orders(power, list(orders))
+            for game in games:
+                game.set_orders(power, list(orders))
+        all_powers = list(games[0].powers.keys())  # assumption: this is constant
 
-        num_turns = 0
-        timings['setup'] = time.time() - tic
-        while not game.is_game_done and num_turns < max_rollout_length:
-            num_turns += 1
-            tic = time.time()
+        turn_idx = 0
+        other_powers = [p for p in all_powers if p not in set_orders_dict]
+        timings['setup'] = time.time() - tic; tic = time.time()
+        while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
 
-            # prepare inputs
-            all_possible_orders = game.get_all_possible_orders()
-            other_powers = [p for p in game.powers if p not in set_orders_dict]
-            xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for p in other_powers]
+            batch_data = [(game, p, game.get_all_possible_orders()) for game in games if not game.is_game_done for p in other_powers]
+            xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for game, p, all_possible_orders in batch_data]
             padded_loc_idxs_seqs, _ = cat_pad_sequences(
                 [x[-2] for x in xs], pad_value=-1, pad_to_len=MAX_SEQ_LEN
             )
             padded_mask_seqs, seq_lens = cat_pad_sequences(
                 [x[-1] for x in xs], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
             )
+
             batch_inputs = [torch.cat(ts) for ts in list(zip(*xs))[:-2]] + [
                 padded_loc_idxs_seqs,
                 padded_mask_seqs,
             ]
-            timings['prep'] += time.time() - tic
-            tic = time.time()
+            timings['prep'] += time.time() - tic; tic = time.time()
 
             # get orders
             batch_orders = cls.do_model_request(model_client, batch_inputs, temperature)
-            timings['model'] += time.time() - tic
-            tic = time.time()
+            timings['model'] += time.time() - tic; tic = time.time()
+
             # process turn
-            for other_power, other_orders, seq_len in zip(other_powers, batch_orders, seq_lens):
-                game.set_orders(other_power, list(other_orders[:seq_len]))
-            game.process()
+            assert len(batch_data) == len(batch_orders)
+            for (game, other_power, _), orders, seq_len in zip(batch_data, batch_orders, seq_lens):
+                game.set_orders(other_power, list(orders[:seq_len]))
 
-            # should we exit early?
-            if early_exit_after_no_change is not None:
-                if game.get_state()["units"] == last_units:
-                    last_units_n_turns += 1
-                    if last_units_n_turns >= early_exit_after_no_change:
-                        logging.info("Early exiting rollout in phase {}".format(game.phase))
-                        break
-                else:
-                    last_units = copy.deepcopy(game.get_state()["units"])
-                    last_units_n_turns = 0
-            timings['env'] += time.time() - tic
+            for game in games:
+                if not game.is_game_done:
+                    game.process()
+            timings['env'] += time.time() - tic; tic = time.time()
 
+            turn_idx += 1
+            other_powers = all_powers  # no set orders on ssubsequent turns
 
-            # clear set_orders_dict
-            set_orders_dict = {}
-
-        # return supply counts for each power
-        result = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        logging.info(f"end do_rollout pid {os.getpid()} in {num_turns} turns. timings: "
+        # return avg supply counts for each power
+        result = [(set_orders_dict, {k: len(v) for k, v in game.get_state()["centers"].items()}) for game in games]
+        logging.info(f"end do_rollout pid {os.getpid()} for {batch_size} games in {turn_idx} turns. timings: "
                      f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }. result: {result}")
         return result
 

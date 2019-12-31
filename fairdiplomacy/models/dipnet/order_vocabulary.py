@@ -2,7 +2,6 @@
 https://github.com/diplomacy/research/blob/master/diplomacy_research/models/state_space.py
 """
 from collections import defaultdict
-
 from diplomacy import Map
 from fairdiplomacy.models.consts import COASTAL_HOME_SCS, MAP
 
@@ -221,11 +220,13 @@ def _get_order_vocabulary():
 
     # Sorting each category
     final_orders = []
+    final_orders_set = set()
     for category in categories:
-        category_orders = [order for order in orders[category] if order not in final_orders]
+        category_orders = [order for order in orders[category] if order not in final_orders_set]
         final_orders += list(
             sorted(category_orders, key=lambda value: (value.split()[1], value))  # Sorting by loc
         )  # Then alphabetically
+        final_orders_set |= set(category_orders)
     return final_orders
 
 

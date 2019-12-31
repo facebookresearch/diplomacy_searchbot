@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import pickle
 import struct
 import time
@@ -139,6 +140,7 @@ class ModelServer:
             xs = [torch.cat(ts).to("cuda") for ts in zip(*self.buf_batch)]
             self.timings['to_cuda'] += time.time() - tic; tic = time.time()
             tic = time.time()
+
             y = self.model(*xs)
             self.timings['forward'] += time.time() - tic; tic = time.time()
 
@@ -182,10 +184,11 @@ class ModelServer:
             stat_batch_count = self.stat_batch_count + 1e-8
 
             logging.info(
-                "Throughput: {} evals / {:.5} s = {:.5} evals/s. ".format(
+                "Throughput: {} evals / {:.5} s = {:.5} evals/s.   (PID {})".format(
                     self.stat_throughput_numerator,
                     delta,
                     self.stat_throughput_numerator / delta,
+                    os.getpid()
                 )
             )
             logging.info(

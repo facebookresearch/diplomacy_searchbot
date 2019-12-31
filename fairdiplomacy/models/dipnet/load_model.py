@@ -15,6 +15,9 @@ def load_dipnet_model(checkpoint_path, map_location="cpu", eval=False):
     }
     model.load_state_dict(state_dict)
 
+    if map_location == "cuda":
+        model.cuda()
+
     if eval:
         model.eval()
 
