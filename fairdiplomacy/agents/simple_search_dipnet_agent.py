@@ -4,8 +4,9 @@ import itertools
 import logging
 import os
 import signal
+import time
 import torch
-from collections import Counter
+from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 from multiprocessing import get_context
@@ -23,7 +24,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
     """One-ply search with dipnet-policy rollouts
 
     ## Policy
-    1. Consider a set of orders that are suggested by the dipnet policy network. 
+    1. Consider a set of orders that are suggested by the dipnet policy network.
     2. For each set of orders, perform a number of rollouts using the dipnet
     policy network for each power.
     3. Score each order set by the average supply center count at the end
@@ -40,15 +41,17 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_rollout_procs=80,
-        n_server_procs=3,
+        n_rollout_procs=79,
+        n_server_procs=1,
         max_batch_size=1000,
-        max_batch_latency=0.001,
+        max_batch_latency=0.001,  # 0.1 actually works better...
         rollouts_per_plausible_order=10,
+        max_rollout_length=40,
     ):
         super().__init__()
 
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
+        self.max_rollout_length = max_rollout_length
         self.server_ports = list(
             range(ModelServer.DEFAULT_PORT, ModelServer.DEFAULT_PORT + n_server_procs)
         )
@@ -77,10 +80,10 @@ class SimpleSearchDipnetAgent(BaseAgent):
         self.proc_pool = ProcessPoolExecutor(n_rollout_procs, mp_context=get_context("spawn"))
         self.model_client = ModelClient()
 
+
     def get_orders(self, game, power) -> List[str]:
         plausible_orders = self.get_plausible_orders(game, power)
         logging.info("Plausible orders: {}".format(plausible_orders))
-
         game_json = to_saved_game_format(game)
         port_iterator = itertools.cycle(self.server_ports)
         futures = [
@@ -92,13 +95,13 @@ class SimpleSearchDipnetAgent(BaseAgent):
                     {power: orders},
                     model_server_port=next(port_iterator),  # round robin server assignment
                     early_exit_after_no_change=5,
+                    max_rollout_length=self.max_rollout_length,
                 ),
             )
             for orders in plausible_orders
             for _ in range(self.rollouts_per_plausible_order)
         ]
         results = [(orders, f.result()) for (orders, f) in futures]
-
         return self.best_order_from_results(results, power)
 
     @classmethod
@@ -145,10 +148,13 @@ class SimpleSearchDipnetAgent(BaseAgent):
             for i in range(order_idxs.shape[0])
         ]
 
-    def get_plausible_orders(self, game, power, n=100, temperature=0.25) -> Set[Tuple[str]]:
+    def get_plausible_orders(self, game, power, n=100, temperature=0.5) -> Set[Tuple[str]]:
         x = encode_inputs(game, power)
         x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
-        return set(self.do_model_request(self.model_client, x, temperature))
+        generated_orders = self.do_model_request(self.model_client, x, temperature)
+        unique_orders = set(generated_orders)
+        logging.debug(f"Generated {len(generated_orders)} sets of orders; found {len(unique_orders)} unique sets.")
+        return unique_orders
 
     @classmethod
     def do_rollout(
@@ -158,6 +164,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         temperature=0.05,
         model_server_port=ModelServer.DEFAULT_PORT,
         early_exit_after_no_change=None,
+        max_rollout_length=40,
     ) -> Dict[str, int]:
         """Complete game, optionally setting orders for the current turn
 
@@ -172,6 +179,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         Returns a Dict[power, final supply count]
         """
+        timings = defaultdict(float)
+        tic = time.time()
+
         logging.info("new proc {} -- {}".format(set_orders_dict, os.getpid()))
         faulthandler.register(signal.SIGUSR1)
         torch.set_num_threads(1)
@@ -188,7 +198,12 @@ class SimpleSearchDipnetAgent(BaseAgent):
         for power, orders in set_orders_dict.items():
             game.set_orders(power, list(orders))
 
-        while not game.is_game_done:
+        num_turns = 0
+        timings['setup'] = time.time() - tic
+        while not game.is_game_done and num_turns < max_rollout_length:
+            num_turns += 1
+            tic = time.time()
+
             # prepare inputs
             all_possible_orders = game.get_all_possible_orders()
             other_powers = [p for p in game.powers if p not in set_orders_dict]
@@ -203,10 +218,13 @@ class SimpleSearchDipnetAgent(BaseAgent):
                 padded_loc_idxs_seqs,
                 padded_mask_seqs,
             ]
+            timings['prep'] += time.time() - tic
+            tic = time.time()
 
             # get orders
             batch_orders = cls.do_model_request(model_client, batch_inputs, temperature)
-
+            timings['model'] += time.time() - tic
+            tic = time.time()
             # process turn
             for other_power, other_orders, seq_len in zip(other_powers, batch_orders, seq_lens):
                 game.set_orders(other_power, list(other_orders[:seq_len]))
@@ -222,13 +240,16 @@ class SimpleSearchDipnetAgent(BaseAgent):
                 else:
                     last_units = copy.deepcopy(game.get_state()["units"])
                     last_units_n_turns = 0
+            timings['env'] += time.time() - tic
+
 
             # clear set_orders_dict
             set_orders_dict = {}
 
         # return supply counts for each power
         result = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        logging.info("end do_rollout pid {} result {}".format(os.getpid(), result))
+        logging.info(f"end do_rollout pid {os.getpid()} in {num_turns} turns. timings: "
+                     f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }. result: {result}")
         return result
 
 
@@ -278,4 +299,6 @@ if __name__ == "__main__":
     game = diplomacy.Game()
 
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
+    tic = time.time()
     logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
+    logging.info(f"Performed all rollouts in {time.time() - tic} s")

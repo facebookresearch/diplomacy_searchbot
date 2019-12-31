@@ -5,6 +5,8 @@ import struct
 import time
 import torch
 
+from collections import defaultdict
+
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
 
@@ -46,7 +48,9 @@ class ModelServer:
         - log_stats_every: period in seconds to log perf stats
         - if start is True, call start() after __init__()
         """
+        logging.info(f"ModelServer __init__. batch= {max_batch_size}, latency= {max_batch_latency}")
         self.model = load_model_fn()
+        logging.info(f"Model: {self.model}")
         self.port = port
         self.max_batch_size = max_batch_size
         self.max_batch_latency = max_batch_latency
@@ -59,6 +63,8 @@ class ModelServer:
         self.timeout_flush_task = None
 
         self.stat_throughput_numerator = 0
+        self.stat_batch_count = 0
+        self.timings = defaultdict(float)
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -112,41 +118,47 @@ class ModelServer:
             writer.write(result_pickled)
             await writer.drain()
 
-    def append_to_buf_batch(self, batch) -> asyncio.Future:
-        if len(self.buf_batch) == 0:
-            assert self.timeout_flush_task is None
+    def schedule_timeout(self):
+        if self.timeout_flush_task is None and len(self.buf_batch) > 0:
             self.timeout_flush_task = asyncio.create_task(self.scheduled_timeout_flush())
 
+    def append_to_buf_batch(self, batch) -> asyncio.Future:
         self.buf_batch.append(batch)
         self.buf_batch_sizes.append(batch[0].shape[0])
+
+        self.schedule_timeout()
 
         future = asyncio.get_running_loop().create_future()
         self.buf_batch_futures.append(future)
         return future
 
     def flush_buf_batch(self):
-        logging.debug("Flushing buf batch, sizes {}".format(self.buf_batch_sizes))
-
-        if self.timeout_flush_task is not None:
-            self.timeout_flush_task.cancel()
-            self.timeout_flush_task = None
+        tic = time.time()
 
         with torch.no_grad():
             xs = [torch.cat(ts).to("cuda") for ts in zip(*self.buf_batch)]
-            y = self.model(*xs)  # TODO: possible to do async?
+            self.timings['to_cuda'] += time.time() - tic; tic = time.time()
+            tic = time.time()
+            y = self.model(*xs)
+            self.timings['forward'] += time.time() - tic; tic = time.time()
+
 
         if self.output_transform is not None:
             y = self.output_transform(y)
+        self.timings['transform'] += time.time() - tic; tic = time.time()
 
         y = tuple(t.to("cpu") for t in y)
+        self.timings['to_cpu'] += time.time() - tic; tic = time.time()
 
         i = 0
         for size, future in zip(self.buf_batch_sizes, self.buf_batch_futures):
             batch_y = tuple(t[i : (i + size)] for t in y)
             future.set_result(batch_y)
             i += size
+        self.timings['send'] += time.time() - tic; tic = time.time()
 
         self.stat_throughput_numerator += i
+        self.stat_batch_count += 1
         self.buf_batch = []
         self.buf_batch_sizes = []
         self.buf_batch_futures = []
@@ -154,8 +166,10 @@ class ModelServer:
     async def scheduled_timeout_flush(self):
         try:
             await asyncio.sleep(self.max_batch_latency)
-            self.timeout_flush_task = None
+
             self.flush_buf_batch()
+            self.timeout_flush_task = None  # allow a new timeout to be scheduled
+            self.schedule_timeout()
         except asyncio.CancelledError:
             pass
 
@@ -164,14 +178,28 @@ class ModelServer:
         while True:
             await asyncio.sleep(period)
             now = time.time()
+            delta = now - last_logged_time
+            stat_batch_count = self.stat_batch_count + 1e-8
+
             logging.info(
-                "Throughput: {} / {} = {}".format(
+                "Throughput: {} evals / {:.5} s = {:.5} evals/s. ".format(
                     self.stat_throughput_numerator,
-                    now - last_logged_time,
-                    self.stat_throughput_numerator / (now - last_logged_time),
+                    delta,
+                    self.stat_throughput_numerator / delta,
                 )
             )
+            logging.info(
+                "            {} batches of avg size {:.5}; {:.5} s/batch".format(
+                    self.stat_batch_count,
+                    self.stat_throughput_numerator / stat_batch_count,
+                    delta / stat_batch_count,
+                )
+            )
+            self.timings['wait'] = delta - sum(self.timings.values())
+            logging.info({k : "{:.3}".format(v / (self.stat_batch_count + 1e-8)) for k, v in self.timings.items()})
+            self.timings.clear()
             self.stat_throughput_numerator = 0
+            self.stat_batch_count = 0
             last_logged_time = now
 
 
