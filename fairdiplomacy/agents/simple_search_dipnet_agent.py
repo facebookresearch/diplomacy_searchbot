@@ -6,10 +6,12 @@ import os
 import signal
 import time
 import torch
+import torch.multiprocessing as mp
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
-from multiprocessing import get_context
+from functools import partial
+
 from typing import List, Tuple, Set, Dict
 
 from fairdiplomacy.agents.base_agent import BaseAgent
@@ -19,6 +21,14 @@ from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.serving import ModelServer, ModelClient
 
+
+def call(f):
+    """Helper to be able to do pool.map(call, [partial(f, foo=42)])
+
+    Using pool.starmap(f, [(42,)]) is shorter, but it doesn't support keyword
+    arguments. It appears going through partial is the only way to do that.
+    """
+    return f()
 
 class SimpleSearchDipnetAgent(BaseAgent):
     """One-ply search with dipnet-policy rollouts
@@ -62,7 +72,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         for port in self.server_ports:
             logging.info("Launching server on port {}".format(port))
-            get_context("fork").Process(
+            mp.get_context("fork").Process(
                 target=ModelServer,
                 kwargs=dict(
                     load_model_fn=load_model,
@@ -77,7 +87,10 @@ class SimpleSearchDipnetAgent(BaseAgent):
             ).start()
             logging.info("Launched server on port {}".format(port))
 
-        self.proc_pool = ProcessPoolExecutor(n_rollout_procs, mp_context=get_context("spawn"))
+        self.proc_pool = mp.get_context("spawn").Pool(n_rollout_procs) # , mp_context=get_context("spawn"))
+        logging.info("Warning up pool")
+        self.proc_pool.map(float, range(1000))
+        logging.info("Done warming up pool")
         self.model_client = ModelClient()
 
 
@@ -86,22 +99,19 @@ class SimpleSearchDipnetAgent(BaseAgent):
         logging.info("Plausible orders: {}".format(plausible_orders))
         game_json = to_saved_game_format(game)
         port_iterator = itertools.cycle(self.server_ports)
-        futures = [
-            (
-                orders,
-                self.proc_pool.submit(
-                    self.do_rollout,
+        rollout_args = [(orders, seed) for orders in plausible_orders for seed in range(self.rollouts_per_plausible_order)]
+        scores = self.proc_pool.map(call,
+                [partial(self.do_rollout,
                     game_json,
                     {power: orders},
                     model_server_port=next(port_iterator),  # round robin server assignment
                     early_exit_after_no_change=5,
                     max_rollout_length=self.max_rollout_length,
-                ),
-            )
-            for orders in plausible_orders
-            for _ in range(self.rollouts_per_plausible_order)
-        ]
-        results = [(orders, f.result()) for (orders, f) in futures]
+                 )
+            for orders, seed in rollout_args]
+        )
+        results = [(orders, score) for (orders, seed), score in zip(rollout_args, scores)]
+
         return self.best_order_from_results(results, power)
 
     @classmethod
@@ -299,6 +309,7 @@ if __name__ == "__main__":
     game = diplomacy.Game()
 
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
+    logging.info("Constructed agent")
     tic = time.time()
     logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
     logging.info(f"Performed all rollouts in {time.time() - tic} s")

@@ -50,7 +50,7 @@ class ModelServer:
         """
         logging.info(f"ModelServer __init__. batch= {max_batch_size}, latency= {max_batch_latency}")
         self.model = load_model_fn()
-        logging.info(f"Model: {self.model}")
+        # logging.info(f"Model: {self.model}")
         self.port = port
         self.max_batch_size = max_batch_size
         self.max_batch_latency = max_batch_latency
