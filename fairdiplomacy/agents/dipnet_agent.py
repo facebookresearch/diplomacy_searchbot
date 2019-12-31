@@ -15,11 +15,15 @@ ORDER_VOCABULARY = get_order_vocabulary()
 class DipnetAgent(BaseAgent):
     def __init__(self, model_pth):
         self.model = load_dipnet_model(model_pth, map_location="cpu", eval=True)
+        self.model.cuda()
 
-    def get_orders(self, game, power, temperature=0.1, debug_probs=False):
+    def get_orders(self, game, power, temperature=0.1, debug_probs=False, batch_size=1):
         if len(game.get_orderable_locations(power)) == 0:
             return []
         inputs = encode_inputs(game, power)
+        if batch_size > 1:
+            # fake a big batch
+            inputs = [x.expand(batch_size, *x.shape[1:]).to("cuda").contiguous() for x in inputs]
         with torch.no_grad():
             order_idxs, order_scores = self.model(*inputs, temperature=temperature)
         if debug_probs:
@@ -152,5 +156,5 @@ if __name__ == "__main__":
 
     agent = DipnetAgent(args.model_path)
     game = diplomacy.Game()
-    orders = agent.get_orders(game, "ITALY", temperature=args.temperature, debug_probs=True)
+    orders = agent.get_orders(game, "ITALY", temperature=args.temperature, debug_probs=True) #, batch_size=1000)
     logging.info("Submit orders: {}".format(orders))

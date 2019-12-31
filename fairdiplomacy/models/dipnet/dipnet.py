@@ -1,4 +1,5 @@
 import torch
+import time
 import torch.nn.functional as F
 from torch import nn
 from torch.distributions.categorical import Categorical
@@ -8,6 +9,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
 )
 
+def maybe_print(*args): pass
 
 class DipNet(nn.Module):
     def __init__(
@@ -81,8 +83,9 @@ class DipNet(nn.Module):
         - order_idxs [B, S]: idx of sampled orders
         - order_scores [B, S, 13k]: masked pre-softmax logits of each order
         """
+        tic = time.time()
         enc = self.encoder(x_bo, x_po, x_power_1h, x_season_1h)  # [B, 81, 240]
-        return self.decoder(
+        res = self.decoder(
             enc,
             in_adj_phase,
             loc_idxs,
@@ -90,6 +93,8 @@ class DipNet(nn.Module):
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
         )
+        # print(f"DipNet forward time: {time.time() - tic}")
+        return res
 
 
 class LSTMDipNetDecoder(nn.Module):
@@ -130,9 +135,18 @@ class LSTMDipNetDecoder(nn.Module):
                 learnable_alignments
             )
 
+        # 13k x 13k table of compatible orders
+        self.compatible_orders_table = ~(torch.eye(orders_vocab_size).bool())
+        incompatible_orders = get_incompatible_build_idxs_map()
+        for order, v in incompatible_orders.items():
+            for incomp_order in enumerate(v):
+                self.compatible_orders_table[order, incomp_order] = 0
+
     def forward(
         self, enc, in_adj_phase, loc_idxs, order_masks, temperature=1.0, teacher_force_orders=None
     ):
+        totaltic = time.time()
+        tic = time.time()
         device = next(self.parameters()).device
         self.lstm.flatten_parameters()
 
@@ -177,17 +191,31 @@ class LSTMDipNetDecoder(nn.Module):
                 alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
+
             lstm_input = torch.cat((loc_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
+
             out, hidden = self.lstm(lstm_input, hidden)
+
             order_scores = self.lstm_out_linear(out.squeeze(1))  # [B, 13k]
             all_order_scores.append(order_scores)
 
             # unmask where there are no actions or the sampling will crash. The
             # losses at these points will be masked out later, so this is safe.
-            order_mask[loc_idxs[:, step] == -1] = 1
+            invalid_mask = (loc_idxs[:, step] == -1)
+
+            if invalid_mask.sum() == loc_idxs.shape[0]:
+                maybe_print(f"Breaking at step {step} because no more orders to give")
+                assert step > 0
+                # early exit
+                for _step in range(step, order_masks.shape[1]):  # fill in garbage
+                    all_order_idxs.append(all_order_idxs[-1])
+                break
+
+            order_mask[invalid_mask] = 1
 
             # masked softmax to choose order_idxs
             order_scores[~order_mask] = float("-inf")
+
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
 
@@ -201,12 +229,16 @@ class LSTMDipNetDecoder(nn.Module):
             dont_repeat_orders = (
                 teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs
             )
-            for b, order_idx in enumerate(dont_repeat_orders):
-                incompatible_idxs = get_incompatible_build_idxs_map().get(int(order_idx), [order_idx])
-                order_masks[b, step:, incompatible_idxs] = 0
 
-        return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
+            # ugh, hack because I don't want to make compatible_orders_table a buffer (backwards-incompatible)
+            self.compatible_orders_table = self.compatible_orders_table.to(order_mask.device)
 
+            compatible_mask = self.compatible_orders_table[dont_repeat_orders]  # B x 13k
+            order_masks[:, step:] *= compatible_mask.unsqueeze(1)
+
+        res = torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
+        maybe_print("total: ", time.time() - totaltic)
+        return res
 
 class DipNetEncoder(nn.Module):
     def __init__(
