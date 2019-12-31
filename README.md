@@ -19,6 +19,11 @@ Install singularity 3.x, or on FAIR cluster run:
 module load singularity/3.4.1/gcc.7.3.0
 ```
 
+If you are getting warnings about `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION`, you may also need to set this environment variable:
+```
+PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
+```
+
 # Running a Game
 
 Run:
