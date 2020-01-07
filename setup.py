@@ -40,7 +40,7 @@ setup(
         "diplomacy==1.1.1",
         "ipdb",
         "joblib",
-        "torch==1.2",
+        "torch",
         "tqdm",
         "tabulate",
         "tornado>=5.0",  # for diplomacy_research
