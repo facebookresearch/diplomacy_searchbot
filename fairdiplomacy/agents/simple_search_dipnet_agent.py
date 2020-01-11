@@ -44,19 +44,29 @@ def run_server(bq, num_clients, load_model_fn, output_transform=None, seed=None)
     if seed is not None:
         torch.manual_seed(seed)
 
+    frame_count, batch_count, total_batches, tic = 0, 0, 0, time.time()
+
     with torch.no_grad():
         while bq.get_num_done() < num_clients:
             batch = bq.next_batch(timeout=0)
             if batch is not None:
-                # print("GOT A REAL BATCH")
-                # print([(x.shape, x.sum()) for x in batch])
                 batch = tuple(x.to("cuda") for x in batch)
-                # print(batch)
                 y = model(*batch)
                 if output_transform is not None:
                     y = output_transform(y)
                 y = tuple(x.to("cpu") for x in y)
                 bq.reply(y)
+
+                # Do some performance logging here
+                batch_count += 1
+                total_batches += 1
+                frame_count += batch[0].shape[0]
+                if (total_batches & (total_batches - 1)) == 0:
+                    delta = time.time() - tic
+                    print(f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
+                          f"in {delta} s, {frame_count / delta} forward/s.")
+                    batch_count = frame_count = 0
+                    tic = time.time()
 
     print("SERVER DONE")
 
@@ -82,30 +92,33 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_rollout_procs=70,
-        max_batch_size=500,
+        n_rollout_procs=32,
+        n_server_procs=3,
+        max_batch_size=1000,
         max_batch_latency=0.001,
         rollouts_per_plausible_order=10,
-        max_rollout_length=40,
+        max_rollout_length=20,
     ):
         super().__init__()
 
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.max_rollout_length = max_rollout_length
 
-        self.bq = BatchingQueue(max_batch=max_batch_size)
-        mp.Process(
-            target=run_server,
-            kwargs=dict(
-                bq=self.bq,
-                num_clients=1,  # FIXME: do a cleanup
-                load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
-                output_transform=model_output_transform,
-                seed=0,
-            ),
-            daemon=True,
-        ).start()
+        self.bqs = [BatchingQueue(max_batch=max_batch_size) for i in range(n_server_procs)]
+        for i in range(n_server_procs):
+            mp.Process(
+                target=run_server,
+                kwargs=dict(
+                    bq=self.bqs[i],
+                    num_clients=1,  # FIXME: do a cleanup
+                    load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
+                    output_transform=model_output_transform,
+                    seed=0,
+                ),
+                daemon=True,
+            ).start()
 
+        self.n_server_procs = n_server_procs
         self.n_rollout_procs = n_rollout_procs
         self.proc_pool = mp.Pool(n_rollout_procs)
         logging.info("Warming up pool")
@@ -126,12 +139,12 @@ class SimpleSearchDipnetAgent(BaseAgent):
                 [partial(self.do_rollout,
                     game_json=game_json,
                     set_orders_dict={power: orders},
-                    bq=self.bq,
+                    bq=self.bqs[i % self.n_server_procs],
                     max_rollout_length=self.max_rollout_length,
                     batch_size=batch_size,
                  )
             for orders in plausible_orders
-            for batch_size in batch_sizes
+            for i, batch_size in enumerate(batch_sizes)
         ])
         results = [(order_dict[power], scores) for result in results for (order_dict, scores) in result]
 
@@ -191,8 +204,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         batch_inputs, _seq_lens = cat_pad_inputs(x)
         # print(batch_inputs)
         # x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
-        logging.debug("GPO Model request")
-        generated_orders = self.do_model_request(self.bq, batch_inputs, temperature)
+        generated_orders = self.do_model_request(self.bqs[0], batch_inputs, temperature)
         unique_orders = set(generated_orders)
         logging.debug(f"Generated {len(generated_orders)} sets of orders; found {len(unique_orders)} unique sets.")
         return unique_orders
