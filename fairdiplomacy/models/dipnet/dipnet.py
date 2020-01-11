@@ -214,6 +214,7 @@ class LSTMDipNetDecoder(nn.Module):
             order_mask[invalid_mask] = 1
 
             # masked softmax to choose order_idxs
+            # print("order_mask", order_mask.shape, order_mask.nelement(), order_mask.sum(), temperature.mean())
             order_scores[~order_mask] = float("-inf")
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)

@@ -11,8 +11,8 @@ from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 from functools import partial
-
 from typing import List, Tuple, Set, Dict
+from batching_queue import BatchingQueue
 
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, ORDER_VOCABULARY
@@ -30,8 +30,35 @@ def call(f):
     """
     return f()
 
+
 def div_round_up(A, B):
     return (A + B - 1) // B
+
+
+def run_server(bq, num_clients, load_model_fn, output_transform=None, seed=None):
+
+    print(f"STARTED SERVER! {os.getpid()}")
+    model = load_model_fn()
+    print("LOADED MODEL")
+
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    with torch.no_grad():
+        while bq.get_num_done() < num_clients:
+            batch = bq.next_batch(timeout=0)
+            if batch is not None:
+                # print("GOT A REAL BATCH")
+                # print([(x.shape, x.sum()) for x in batch])
+                batch = tuple(x.to("cuda") for x in batch)
+                # print(batch)
+                y = model(*batch)
+                if output_transform is not None:
+                    y = output_transform(y)
+                y = tuple(x.to("cpu") for x in y)
+                bq.reply(y)
+
+    print("SERVER DONE")
 
 
 class SimpleSearchDipnetAgent(BaseAgent):
@@ -56,8 +83,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         self,
         model_path,
         n_rollout_procs=70,
-        n_server_procs=3,
-        max_batch_size=1000,
+        max_batch_size=500,
         max_batch_latency=0.001,
         rollouts_per_plausible_order=10,
         max_rollout_length=40,
@@ -66,40 +92,31 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.max_rollout_length = max_rollout_length
-        self.server_ports = list(
-            range(ModelServer.DEFAULT_PORT, ModelServer.DEFAULT_PORT + n_server_procs)
-        )
 
-        for port in self.server_ports:
-            logging.info("Launching server on port {}".format(port))
-            mp.get_context("spawn").Process(
-                target=ModelServer,
-                kwargs=dict(
-                    load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
-                    max_batch_size=max_batch_size,
-                    max_batch_latency=max_batch_latency,
-                    port=port,
-                    output_transform=model_output_transform,
-                    seed=0,
-                    start=True,
-                ),
-                daemon=True,
-            ).start()
-            logging.info("Launched server on port {}".format(port))
+        self.bq = BatchingQueue(max_batch=max_batch_size)
+        mp.Process(
+            target=run_server,
+            kwargs=dict(
+                bq=self.bq,
+                num_clients=1,  # FIXME: do a cleanup
+                load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
+                output_transform=model_output_transform,
+                seed=0,
+            ),
+            daemon=True,
+        ).start()
 
         self.n_rollout_procs = n_rollout_procs
-        self.proc_pool = mp.get_context("spawn").Pool(n_rollout_procs) # , mp_context=get_context("spawn"))
-        logging.info("Warning up pool")
+        self.proc_pool = mp.Pool(n_rollout_procs)
+        logging.info("Warming up pool")
         self.proc_pool.map(float, range(100))
         logging.info("Done warming up pool")
-        self.model_client = ModelClient()
 
 
     def get_orders(self, game, power) -> List[str]:
         plausible_orders = self.get_plausible_orders(game, power)
         logging.info("Plausible orders: {}".format(plausible_orders))
         game_json = to_saved_game_format(game)
-        port_iterator = itertools.cycle(self.server_ports)
 
         # divide up the rollouts among the processes
         procs_per_order = max(1, self.n_rollout_procs // len(plausible_orders))
@@ -109,7 +126,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
                 [partial(self.do_rollout,
                     game_json=game_json,
                     set_orders_dict={power: orders},
-                    model_server_port=next(port_iterator),  # round robin server assignment
+                    bq=self.bq,
                     max_rollout_length=self.max_rollout_length,
                     batch_size=batch_size,
                  )
@@ -147,7 +164,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         return max(order_avg_score.items(), key=lambda kv: kv[1])[0]
 
     @classmethod
-    def do_model_request(cls, model_client, x, temperature=1.0) -> List[Tuple[str]]:
+    def do_model_request(cls, bq, x, temperature=1.0) -> List[Tuple[str]]:
         """Synchronous request to model server
 
         Arguments:
@@ -158,16 +175,24 @@ class SimpleSearchDipnetAgent(BaseAgent):
         - a list (len = batch size) of order-sets
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
-        order_idxs, = model_client.synchronous_request([*x, temp_array])
+        req = (*x, temp_array)
+
+        order_idxs, = bq.push(req)
+        # order_idxs, = model_client.synchronous_request([*x, temp_array])
         return [
             tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :])
             for i in range(order_idxs.shape[0])
         ]
 
     def get_plausible_orders(self, game, power, n=100, temperature=0.5) -> Set[Tuple[str]]:
-        x = encode_inputs(game, power)
-        x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
-        generated_orders = self.do_model_request(self.model_client, x, temperature)
+        x = [encode_inputs(game, power)] * n
+        assert isinstance(x, list)
+        assert isinstance(x[0], tuple)
+        batch_inputs, _seq_lens = cat_pad_inputs(x)
+        # print(batch_inputs)
+        # x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
+        logging.debug("GPO Model request")
+        generated_orders = self.do_model_request(self.bq, batch_inputs, temperature)
         unique_orders = set(generated_orders)
         logging.debug(f"Generated {len(generated_orders)} sets of orders; found {len(unique_orders)} unique sets.")
         return unique_orders
@@ -176,9 +201,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def do_rollout(
         cls,
         game_json,
+        bq,
         set_orders_dict={},
         temperature=0.05,
-        model_server_port=ModelServer.DEFAULT_PORT,
         max_rollout_length=40,
         batch_size=1,
     ) -> Dict[str, float]:
@@ -202,7 +227,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         torch.set_num_threads(1)
 
         games = [from_saved_game_format(game_json) for _ in range(batch_size)]
-        model_client = ModelClient(port=model_server_port)
+        # model_client = ModelClient(port=model_server_port)
 
         # set orders if specified
         for power, orders in set_orders_dict.items():
@@ -217,21 +242,12 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
             batch_data = [(game, p, game.get_all_possible_orders()) for game in games if not game.is_game_done for p in other_powers]
             xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for game, p, all_possible_orders in batch_data]
-            padded_loc_idxs_seqs, _ = cat_pad_sequences(
-                [x[-2] for x in xs], pad_value=-1, pad_to_len=MAX_SEQ_LEN
-            )
-            padded_mask_seqs, seq_lens = cat_pad_sequences(
-                [x[-1] for x in xs], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
-            )
+            batch_inputs, seq_lens = cat_pad_inputs(xs)
 
-            batch_inputs = [torch.cat(ts) for ts in list(zip(*xs))[:-2]] + [
-                padded_loc_idxs_seqs,
-                padded_mask_seqs,
-            ]
             timings['prep'] += time.time() - tic; tic = time.time()
 
             # get orders
-            batch_orders = cls.do_model_request(model_client, batch_inputs, temperature)
+            batch_orders = cls.do_model_request(bq, batch_inputs, temperature)
             timings['model'] += time.time() - tic; tic = time.time()
 
             # process turn
@@ -284,6 +300,21 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
     ]
     return torch.cat(padded, dim=0), seq_lens
 
+def cat_pad_inputs(xs):
+    # FIXME: move to utils
+    padded_loc_idxs_seqs, _ = cat_pad_sequences(
+        [x[-2] for x in xs], pad_value=-1, pad_to_len=MAX_SEQ_LEN
+    )
+    padded_mask_seqs, seq_lens = cat_pad_sequences(
+        [x[-1] for x in xs], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
+    )
+
+    batch_inputs = [torch.cat(ts) for ts in list(zip(*xs))[:-2]] + [
+        padded_loc_idxs_seqs,
+        padded_mask_seqs,
+    ]
+    return batch_inputs, seq_lens
+
 
 def model_output_transform(y):
     # return only order_idxs, not order_scores
@@ -292,13 +323,13 @@ def model_output_transform(y):
 
 if __name__ == "__main__":
     import diplomacy
-
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
     logging.info("PID: {}".format(os.getpid()))
 
     MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
     game = diplomacy.Game()
 
+    mp.set_start_method("spawn")
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
     logging.info("Constructed agent")
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
