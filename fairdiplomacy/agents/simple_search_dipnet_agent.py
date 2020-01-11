@@ -103,20 +103,18 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         # divide up the rollouts among the processes
         procs_per_order = max(1, self.n_rollout_procs // len(plausible_orders))
-        batch_size = div_round_up(self.rollouts_per_plausible_order, procs_per_order)
-        remainder = self.rollouts_per_plausible_order - batch_size * (procs_per_order - 1)
-        logging.info(f"procs_per_order= {procs_per_order}, batch_size= {batch_size}, remainder= {remainder}")
-
+        logging.info(f"num_plausible_orders= {len(plausible_orders)} , procs_per_order= {procs_per_order}")
+        batch_sizes = [len(x) for x in torch.arange(self.rollouts_per_plausible_order).chunk(procs_per_order) if len(x) > 0]
         results = self.proc_pool.map(call,
                 [partial(self.do_rollout,
-                    game_json,
-                    {power: orders},
+                    game_json=game_json,
+                    set_orders_dict={power: orders},
                     model_server_port=next(port_iterator),  # round robin server assignment
                     max_rollout_length=self.max_rollout_length,
-                    batch_size=batch_size if proc_idx < procs_per_order - 1 else remainder,
+                    batch_size=batch_size,
                  )
             for orders in plausible_orders
-            for proc_idx in range(procs_per_order)
+            for batch_size in batch_sizes
         ])
         results = [(order_dict[power], scores) for result in results for (order_dict, scores) in result]
 
@@ -252,7 +250,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         # return avg supply counts for each power
         result = [(set_orders_dict, {k: len(v) for k, v in game.get_state()["centers"].items()}) for game in games]
         logging.info(f"end do_rollout pid {os.getpid()} for {batch_size} games in {turn_idx} turns. timings: "
-                     f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }. result: {result}")
+                     f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }.")
         return result
 
 
@@ -303,6 +301,7 @@ if __name__ == "__main__":
 
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
     logging.info("Constructed agent")
+    logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
     tic = time.time()
     logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
-    logging.info(f"Performed all rollouts in {time.time() - tic} s")
+    logging.info(f"Performed all rollouts for one search in {time.time() - tic} s")
