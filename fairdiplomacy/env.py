@@ -1,20 +1,21 @@
 import logging
 import random
 from concurrent.futures import ThreadPoolExecutor
+import numpy as np
+import torch
 
 import diplomacy
 
-from agents.random_agent import RandomAgent
-
-from agents.mila_sl_agent import MilaSLAgent
-from agents.dipnet_agent import DipnetAgent
+from fairdiplomacy.agents.random_agent import RandomAgent
+from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
+from fairdiplomacy.agents.dipnet_agent import DipnetAgent
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
 
 
 class Env:
-    def __init__(self, agents):
+    def __init__(self, agents, seed=0):
         """
         agents must be one of:
             1. a list of 7 Agent objects, which will be randomly assigned to powers
@@ -23,6 +24,11 @@ class Env:
         """
         self.game = diplomacy.Game()
         self.thread_pool = ThreadPoolExecutor(max_workers=len(self.game.powers))
+
+        # set random seeds
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
         # Save self.agents as a map of power name -> Agent
         if all(power in agents for power in self.game.powers.keys()):
