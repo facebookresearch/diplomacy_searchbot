@@ -75,6 +75,7 @@ def encode_state(game):
     x_in_adj_phase: shape=(1,), dtype=bool
     """
     state = game.get_state()
+
     x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
 
     try:

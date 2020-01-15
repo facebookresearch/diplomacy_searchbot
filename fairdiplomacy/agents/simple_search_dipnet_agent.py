@@ -1,25 +1,44 @@
+
 import copy
 import faulthandler
 import itertools
 import logging
 import os
 import signal
+import sys
+
 import time
 import torch
+
 import torch.multiprocessing as mp
+
 from collections import Counter, defaultdict
+
 from concurrent.futures import ProcessPoolExecutor
+import diplomacy.utils.export
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 from functools import partial
 from typing import List, Tuple, Set, Dict
-from batching_queue import BatchingQueue
-
+import torchbeast
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, ORDER_VOCABULARY
 from fairdiplomacy.models.consts import MAX_SEQ_LEN
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.serving import ModelServer, ModelClient
+
+if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
+    logging.warn(f"You should delete {diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH}" +
+                 f"for faster startup time!")
+
+def gen_hostport(host="localhost", port=12345):
+    import socket
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex((host, port)) == 0:  # socket already exists
+                port += 1
+            else:
+                return f"{host}:{port}"
 
 
 def call(f):
@@ -35,40 +54,70 @@ def div_round_up(A, B):
     return (A + B - 1) // B
 
 
-def run_server(bq, num_clients, load_model_fn, output_transform=None, seed=None):
+def server_handler(q: torchbeast.ComputationQueue,
+                   load_model_fn,
+                   output_transform=None,
+                   seed=None):
 
-    print(f"STARTED SERVER! {os.getpid()}")
+    logging.info(f"STARTED SERVER! {os.getpid()}")
     model = load_model_fn()
-    print("LOADED MODEL")
+    logging.info("LOADED MODEL")
 
     if seed is not None:
         torch.manual_seed(seed)
 
-    frame_count, batch_count, total_batches, tic = 0, 0, 0, time.time()
-
+    frame_count, batch_count, total_batches = 0, 0, 0
+    timings = defaultdict(float)
+    jit_model = None
+    totaltic = time.time()
     with torch.no_grad():
-        while bq.get_num_done() < num_clients:
-            batch = bq.next_batch(timeout=0)
-            if batch is not None:
-                batch = tuple(x.to("cuda") for x in batch)
-                y = model(*batch)
-                if output_transform is not None:
-                    y = output_transform(y)
-                y = tuple(x.to("cpu") for x in y)
-                bq.reply(y)
-
-                # Do some performance logging here
-                batch_count += 1
-                total_batches += 1
-                frame_count += batch[0].shape[0]
-                if (total_batches & (total_batches - 1)) == 0:
-                    delta = time.time() - tic
-                    print(f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
-                          f"in {delta} s, {frame_count / delta} forward/s.")
-                    batch_count = frame_count = 0
+        while True:
+            logging.info("Waiting for batch")
+            try:
+                for batch in q:
+                    # logging.info("Goot batch")
                     tic = time.time()
+                    inputs = batch.get_inputs()[0]
+                    timings['next_batch'] += time.time() - tic; tic = time.time()
+
+                    inputs = tuple(x.to("cuda") for x in inputs)
+                    timings['to_cuda'] += time.time() - tic; tic = time.time()
+
+                    y = model(*inputs) # jit_model(*batch)
+                    timings['model'] += time.time() - tic; tic = time.time()
+                    if output_transform is not None:
+                        y = output_transform(y)
+                    timings['transform'] += time.time() - tic; tic = time.time()
+                    y = tuple(x.to("cpu") for x in y)
+                    timings['to_cpu'] += time.time() - tic; tic = time.time()
+                    batch.set_outputs(y)
+                    timings['reply'] += time.time() - tic; tic = time.time()
+
+                    # Do some performance logging here
+                    batch_count += 1
+                    total_batches += 1
+                    frame_count += inputs[0].shape[0]
+                    if (total_batches & (total_batches - 1)) == 0:
+                        delta = time.time() - totaltic
+                        logging.info(f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
+                                     f"in {delta} s, {frame_count / delta} forward/s.")
+                        logging.info(str(timings))
+                        batch_count = frame_count = 0
+                        timings.clear()
+                        totaltic = time.time()
+            except TimeoutError as e:
+                logging.info("TimeoutError:", e)
 
     print("SERVER DONE")
+
+
+def run_server(hostport, batch_size, **kwargs):
+    logging.info(f"STARTED SERVER on {hostport} batch= {batch_size}")
+    server = torchbeast.Server(hostport)
+    eval_queue = torchbeast.ComputationQueue(batch_size)
+    server.bind_queue("evaluate", eval_queue)
+    server.run()
+    server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
 
 
 class SimpleSearchDipnetAgent(BaseAgent):
@@ -92,37 +141,43 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_rollout_procs=32,
-        n_server_procs=3,
+        n_rollout_procs=64,
+        n_server_procs=1,
         max_batch_size=1000,
-        max_batch_latency=0.001,
         rollouts_per_plausible_order=10,
-        max_rollout_length=20,
+        max_rollout_length=40,
     ):
         super().__init__()
 
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.max_rollout_length = max_rollout_length
-
-        self.bqs = [BatchingQueue(max_batch=max_batch_size) for i in range(n_server_procs)]
+        self.hostports = [gen_hostport() for _ in range(n_server_procs)]
+        self.servers = []
         for i in range(n_server_procs):
-            mp.Process(
+            server = mp.Process(
                 target=run_server,
                 kwargs=dict(
-                    bq=self.bqs[i],
-                    num_clients=1,  # FIXME: do a cleanup
+                    hostport=self.hostports[i],
+                    batch_size=max_batch_size,
                     load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
                     output_transform=model_output_transform,
                     seed=0,
                 ),
                 daemon=True,
-            ).start()
+            )
+            server.start()
+            self.servers.append(server)
 
+        self.client = torchbeast.Client(self.hostports[0])
+        logging.info(f"Connecting to {self.hostports[0]}")
+
+        self.client.connect(20)
+        logging.info(f"Connected to {self.hostports[0]}")
         self.n_server_procs = n_server_procs
         self.n_rollout_procs = n_rollout_procs
         self.proc_pool = mp.Pool(n_rollout_procs)
         logging.info("Warming up pool")
-        self.proc_pool.map(float, range(100))
+        self.proc_pool.map(float, range(n_rollout_procs))
         logging.info("Done warming up pool")
 
 
@@ -135,11 +190,12 @@ class SimpleSearchDipnetAgent(BaseAgent):
         procs_per_order = max(1, self.n_rollout_procs // len(plausible_orders))
         logging.info(f"num_plausible_orders= {len(plausible_orders)} , procs_per_order= {procs_per_order}")
         batch_sizes = [len(x) for x in torch.arange(self.rollouts_per_plausible_order).chunk(procs_per_order) if len(x) > 0]
+        logging.info(f"procs_per_order= {procs_per_order} , batch_sizes= {batch_sizes}")
         results = self.proc_pool.map(call,
                 [partial(self.do_rollout,
                     game_json=game_json,
                     set_orders_dict={power: orders},
-                    bq=self.bqs[i % self.n_server_procs],
+                    hostport=self.hostports[i % self.n_server_procs],
                     max_rollout_length=self.max_rollout_length,
                     batch_size=batch_size,
                  )
@@ -177,7 +233,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         return max(order_avg_score.items(), key=lambda kv: kv[1])[0]
 
     @classmethod
-    def do_model_request(cls, bq, x, temperature=1.0) -> List[Tuple[str]]:
+    def do_model_request(cls, client, x, temperature=1.0) -> List[Tuple[str]]:
         """Synchronous request to model server
 
         Arguments:
@@ -189,8 +245,16 @@ class SimpleSearchDipnetAgent(BaseAgent):
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
         req = (*x, temp_array)
+        if req[0].shape[0] > 14:
+            logging.info(f"Req batch size: {req[0].shape[0]}")
+        try:
+            order_idxs, = client.evaluate(req)
+        except:
+            e = sys.exc_info()[0]
+            print("EXCEPTION", e)
+            print([(x.shape, x.dtype) for x in req])
+            raise
 
-        order_idxs, = bq.push(req)
         # order_idxs, = model_client.synchronous_request([*x, temp_array])
         return [
             tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :])
@@ -198,13 +262,16 @@ class SimpleSearchDipnetAgent(BaseAgent):
         ]
 
     def get_plausible_orders(self, game, power, n=100, temperature=0.5) -> Set[Tuple[str]]:
+        generated_orders = []
+        # FIXME FIXME FIXME
         x = [encode_inputs(game, power)] * n
         assert isinstance(x, list)
         assert isinstance(x[0], tuple)
-        batch_inputs, _seq_lens = cat_pad_inputs(x)
-        # print(batch_inputs)
-        # x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
-        generated_orders = self.do_model_request(self.bqs[0], batch_inputs, temperature)
+        for i in range(n // 10):
+            batch_inputs, _seq_lens = cat_pad_inputs(x[i * 10: (i+1) * 10])
+            # print(batch_inputs)
+            # x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
+            generated_orders += self.do_model_request(self.client, batch_inputs, temperature)
         unique_orders = set(generated_orders)
         logging.debug(f"Generated {len(generated_orders)} sets of orders; found {len(unique_orders)} unique sets.")
         return unique_orders
@@ -213,7 +280,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def do_rollout(
         cls,
         game_json,
-        bq,
+        hostport,
         set_orders_dict={},
         temperature=0.05,
         max_rollout_length=40,
@@ -231,9 +298,11 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         Returns a Dict[power, final supply count]
         """
+        assert batch_size <= 2
+        client = torchbeast.Client(hostport)
+        client.connect(3)
         timings = defaultdict(float)
         tic = time.time()
-
         logging.info("new proc {} -- {}".format(set_orders_dict, os.getpid()))
         faulthandler.register(signal.SIGUSR1)
         torch.set_num_threads(1)
@@ -251,19 +320,23 @@ class SimpleSearchDipnetAgent(BaseAgent):
         other_powers = [p for p in all_powers if p not in set_orders_dict]
         timings['setup'] = time.time() - tic; tic = time.time()
         while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
+            timings['prep0'] += time.time() - tic; tic = time.time()
 
             batch_data = [(game, p, game.get_all_possible_orders()) for game in games if not game.is_game_done for p in other_powers]
+            timings['prep1'] += time.time() - tic; tic = time.time()
+
             xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for game, p, all_possible_orders in batch_data]
+            timings['prep2'] += time.time() - tic; tic = time.time()
             batch_inputs, seq_lens = cat_pad_inputs(xs)
 
-            timings['prep'] += time.time() - tic; tic = time.time()
+            timings['prep3'] += time.time() - tic; tic = time.time()
 
             # get orders
-            batch_orders = cls.do_model_request(bq, batch_inputs, temperature)
+            batch_orders = cls.do_model_request(client, batch_inputs, temperature)
             timings['model'] += time.time() - tic; tic = time.time()
 
             # process turn
-            assert len(batch_data) == len(batch_orders)
+            assert len(batch_data) == len(batch_orders), f"{len(batch_data)} != {len(batch_orders)}"
             for (game, other_power, _), orders, seq_len in zip(batch_data, batch_orders, seq_lens):
                 game.set_orders(other_power, list(orders[:seq_len]))
 
@@ -296,6 +369,7 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
     """
     seq_lens = [t.shape[1] for t in tensors]
     max_len = max(seq_lens) if pad_to_len is None else pad_to_len
+
     padded = [
         torch.cat(
             [
@@ -312,16 +386,18 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
     ]
     return torch.cat(padded, dim=0), seq_lens
 
+
 def cat_pad_inputs(xs):
     # FIXME: move to utils
+    batch = list(zip(*xs))
     padded_loc_idxs_seqs, _ = cat_pad_sequences(
-        [x[-2] for x in xs], pad_value=-1, pad_to_len=MAX_SEQ_LEN
+        batch[-2], pad_value=-1, pad_to_len=MAX_SEQ_LEN
     )
     padded_mask_seqs, seq_lens = cat_pad_sequences(
-        [x[-1] for x in xs], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
+        batch[-1], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
     )
 
-    batch_inputs = [torch.cat(ts) for ts in list(zip(*xs))[:-2]] + [
+    batch_inputs = [torch.cat(ts) for ts in batch[:-2]] + [
         padded_loc_idxs_seqs,
         padded_mask_seqs,
     ]
@@ -345,6 +421,7 @@ if __name__ == "__main__":
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
     logging.info("Constructed agent")
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
+
     tic = time.time()
     logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
     logging.info(f"Performed all rollouts for one search in {time.time() - tic} s")
