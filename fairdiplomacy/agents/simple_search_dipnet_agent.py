@@ -57,9 +57,12 @@ def div_round_up(A, B):
 def server_handler(q: torchbeast.ComputationQueue,
                    load_model_fn,
                    output_transform=None,
-                   seed=None):
+                   seed=None,
+                   device=0):
 
     logging.info(f"STARTED SERVER! {os.getpid()}")
+    if device != 0:
+        torch.cuda.set_device(device)
     model = load_model_fn()
     logging.info("LOADED MODEL")
 
@@ -141,11 +144,12 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def __init__(
         self,
         model_path,
-        n_rollout_procs=64,
+        n_rollout_procs=70,
         n_server_procs=1,
+        n_gpu=1,
         max_batch_size=1000,
         rollouts_per_plausible_order=10,
-        max_rollout_length=40,
+        max_rollout_length=20,
     ):
         super().__init__()
 
@@ -153,6 +157,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         self.max_rollout_length = max_rollout_length
         self.hostports = [gen_hostport() for _ in range(n_server_procs)]
         self.servers = []
+        assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
         for i in range(n_server_procs):
             server = mp.Process(
                 target=run_server,
@@ -162,6 +167,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
                     load_model_fn=partial(load_dipnet_model, model_path, map_location="cuda", eval=True),
                     output_transform=model_output_transform,
                     seed=0,
+                    device=i % n_gpu,
                 ),
                 daemon=True,
             )
@@ -245,7 +251,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
         req = (*x, temp_array)
-        if req[0].shape[0] > 14:
+        if req[0].shape[0] > 30:
             logging.info(f"Req batch size: {req[0].shape[0]}")
         try:
             order_idxs, = client.evaluate(req)
@@ -298,7 +304,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         Returns a Dict[power, final supply count]
         """
-        assert batch_size <= 2
+        assert batch_size <= 8
         client = torchbeast.Client(hostport)
         client.connect(3)
         timings = defaultdict(float)
