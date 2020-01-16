@@ -7,7 +7,7 @@ from fairdiplomacy.data.dataset import smarter_order_index
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
-from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, get_order_vocabulary_idxs_len
 
 ORDER_VOCABULARY = get_order_vocabulary()
 
@@ -28,10 +28,16 @@ class DipnetAgent(BaseAgent):
         with torch.no_grad():
             order_idxs, order_scores = self.model(*inputs, temperature=temperature)
         if debug_probs:
-            self.debug_probs(order_idxs, order_scores, inputs[-1], temperature)
+            self.debug_probs(
+                order_idxs,
+                order_scores,
+                self.model.valid_order_idxs_to_mask(inputs[-1], inputs[-2]),
+                temperature
+            )
         return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :]]
 
     def debug_probs(self, order_idxs, order_scores, mask, temperature):
+
         order_scores[~mask] = float("-inf")
         probs = torch.nn.functional.softmax(order_scores / temperature, dim=2)
         for step in range(len(order_idxs[0])):
@@ -99,7 +105,7 @@ def get_order_mask(game, power, all_possible_orders=None):
     """Return a boolean mask of valid orders
 
     Returns:
-    - a [1, 17, 13k] bool tensor
+    - a [1, 17, 468] int tensor of valid move indexes (padded with -1)
     - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
     - the actual lengh of the sequence == the number of orders to submit, <= 17
     """
@@ -108,29 +114,29 @@ def get_order_mask(game, power, all_possible_orders=None):
         all_possible_orders = game.get_all_possible_orders()
     power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
     n_builds = game.get_state()["builds"][power]["count"]
-    order_mask = torch.zeros(1, MAX_SEQ_LEN, len(ORDER_VOCABULARY), dtype=torch.bool)
+    all_order_idxs = torch.zeros(1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32)
     loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long)
 
     if n_builds > 0:
         # build phase: all possible build orders, up to the number of allowed builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        order_mask[0, :n_builds, order_idxs] = 1
-        return order_mask, loc_idxs, n_builds
+        all_order_idxs[0, :n_builds, :len(order_idxs)] = order_idxs.unsqueeze(0)
+        return all_order_idxs, loc_idxs, n_builds
 
     if n_builds < 0:
         # disbands: all possible disband orders, up to the number of required disbands
         n_disbands = -n_builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        order_mask[0, :n_disbands, order_idxs] = 1
-        return order_mask, loc_idxs, n_disbands
+        all_order_idxs[0, :n_builds, :len(order_idxs)] = order_idxs.unsqueeze(0)
+        return all_order_idxs, loc_idxs, n_disbands
 
     # move phase: iterate through orderable_locs in topo order
     for i, loc in enumerate(orderable_locs):
         orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
-        order_mask[0, i, order_idxs] = 1
+        all_order_idxs[0, i, :len(order_idxs)] = order_idxs
         loc_idxs[0, i] = LOCS.index(loc)
 
-    return order_mask, loc_idxs, len(orderable_locs)
+    return all_order_idxs, loc_idxs, len(orderable_locs)
 
 
 def filter_orders_in_vocab(orders):
@@ -143,7 +149,7 @@ def filter_orders_in_vocab(orders):
             idxs.append(idx)
         except KeyError:
             continue
-    return ret, idxs
+    return ret, torch.tensor(idxs, dtype=torch.int32)
 
 
 if __name__ == "__main__":

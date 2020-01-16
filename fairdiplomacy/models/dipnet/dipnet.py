@@ -31,7 +31,7 @@ class DipNet(nn.Module):
         avg_embedding=False,
     ):
         super().__init__()
-
+        self.orders_vocab_size = orders_vocab_size
         self.encoder = DipNetEncoder(
             board_state_size,
             prev_orders_size,
@@ -54,6 +54,16 @@ class DipNet(nn.Module):
             avg_embedding=avg_embedding,
         )
 
+    def valid_order_idxs_to_mask(self, valid_order_idxs, loc_idxs):
+        valid_order_mask = torch.zeros((valid_order_idxs.shape[0],
+                                        valid_order_idxs.shape[1],
+                                        self.orders_vocab_size),
+                                       dtype=torch.bool,
+                                       device=valid_order_idxs.device)
+        valid_order_mask.scatter_(-1, valid_order_idxs.long().clamp_(min=0), 1)
+        valid_order_mask[:, :, 0] = 0  # remove EOS_TOKEN
+        return valid_order_mask
+
     def forward(
         self,
         x_bo,
@@ -62,7 +72,7 @@ class DipNet(nn.Module):
         x_season_1h,
         in_adj_phase,
         loc_idxs,
-        order_masks,
+        valid_order_idxs,
         temperature=1.0,
         teacher_force_orders=None,
     ):
@@ -74,7 +84,7 @@ class DipNet(nn.Module):
         - x_season_1h: shape [B, 3]
         - in_adj_phase: shape [B], bool
         - loc_idxs: shape [B, S], long, 0 <= idx < 81
-        - order_masks: shape [B, S, 13k]
+        - order_idxs: shape [B, S, 468]  padded with -1
         - temperature: softmax temp, lower = more deterministic; must be either
           a float or a tensor of shape [B, 1]
         - teacher_force_orders: shape [B, S] int or None
@@ -89,7 +99,7 @@ class DipNet(nn.Module):
             enc,
             in_adj_phase,
             loc_idxs,
-            order_masks,
+            self.valid_order_idxs_to_mask(valid_order_idxs, loc_idxs),
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
         )
@@ -142,6 +152,7 @@ class LSTMDipNetDecoder(nn.Module):
             for incomp_order in enumerate(v):
                 self.compatible_orders_table[order, incomp_order] = 0
 
+
     def forward(
         self, enc, in_adj_phase, loc_idxs, order_masks, temperature=1.0, teacher_force_orders=None
     ):
@@ -149,6 +160,7 @@ class LSTMDipNetDecoder(nn.Module):
         tic = time.time()
         device = next(self.parameters()).device
         self.lstm.flatten_parameters()
+
 
         hidden = (
             torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
@@ -162,9 +174,8 @@ class LSTMDipNetDecoder(nn.Module):
         all_order_idxs = []
         all_order_scores = []
 
-        order_masks = order_masks.clone()
         for step in range(order_masks.shape[1]):
-            order_mask = order_masks[:, step, :]  # [B, 13k]
+            order_mask = order_masks[:, step].contiguous()
 
             if self.avg_embedding:
                 # no attention: average across loc embeddings
@@ -202,20 +213,18 @@ class LSTMDipNetDecoder(nn.Module):
             # unmask where there are no actions or the sampling will crash. The
             # losses at these points will be masked out later, so this is safe.
             invalid_mask = (loc_idxs[:, step] == -1)
-
             if invalid_mask.sum() == loc_idxs.shape[0]:
                 maybe_print(f"Breaking at step {step} because no more orders to give")
                 assert step > 0
                 # early exit
                 for _step in range(step, order_masks.shape[1]):  # fill in garbage
                     all_order_idxs.append(all_order_idxs[-1])
+                    # FIXME(alerer): shouldn't we be filling in 0? (i.e. <EOS>)
                 break
 
             order_mask[invalid_mask] = 1
-
-            # masked softmax to choose order_idxs
-            # print("order_mask", order_mask.shape, order_mask.nelement(), order_mask.sum(), temperature.mean())
             order_scores[~order_mask] = float("-inf")
+
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
 

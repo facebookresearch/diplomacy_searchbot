@@ -9,33 +9,35 @@ from fairdiplomacy.models.consts import COASTAL_HOME_SCS, MAP
 EOS_TOKEN = "<EOS>"
 EOS_IDX = 0
 _ORDER_VOCABULARY = None
+_ORDER_VOCABULARY_BY_UNIT = None
 _ORDER_VOCABULARY_IDXS_BY_UNIT = None
+_ORDER_VOCABULARY_IDXS_LEN = None
 _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS = None
 
 
 def get_order_vocabulary():
-    global _ORDER_VOCABULARY
+    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_IDXS_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
 
     if _ORDER_VOCABULARY is not None:
         return _ORDER_VOCABULARY
 
     _ORDER_VOCABULARY = [EOS_TOKEN] + _get_order_vocabulary()
+    idxs_by_unit = defaultdict(list)
+    for i, order in enumerate(_ORDER_VOCABULARY):
+        unit = " ".join(order.split()[:2])
+        idxs_by_unit[unit].append(i)
+
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(idxs_by_unit)
+    _ORDER_VOCABULARY_IDXS_LEN = max(len(x) for x in idxs_by_unit.values())
     return _ORDER_VOCABULARY
 
+def get_order_vocabulary_idxs_len():
+    get_order_vocabulary()
+    return _ORDER_VOCABULARY_IDXS_LEN
 
 def get_order_vocabulary_idxs_by_unit():
-    global _ORDER_VOCABULARY_IDXS_BY_UNIT
-
-    if _ORDER_VOCABULARY_IDXS_BY_UNIT is not None:
-        return _ORDER_VOCABULARY_IDXS_BY_UNIT
-
-    _ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
-    for idx, order in enumerate(get_order_vocabulary()):
-        unit = " ".join(order.split()[:2])
-        _ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
-    _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(_ORDER_VOCABULARY_IDXS_BY_UNIT)
-    return _ORDER_VOCABULARY_IDXS_BY_UNIT
-
+    get_order_vocabulary()
+    return  _ORDER_VOCABULARY_IDXS_BY_UNIT
 
 def get_incompatible_build_idxs_map():
     global _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS
@@ -233,3 +235,7 @@ def _get_order_vocabulary():
 if __name__ == "__main__":
     for order in get_order_vocabulary():
         print(order)
+
+    for unit, orders in get_order_vocabulary_by_unit().items():
+        print(f"{unit}: {len(orders)}")
+    print(f"Max: {max(len(o) for o in get_order_vocabulary_by_unit().values())}")
