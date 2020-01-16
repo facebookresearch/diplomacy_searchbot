@@ -122,6 +122,7 @@ def get_order_mask(game, power, all_possible_orders=None):
     if n_builds > 0:
         # build phase: all possible build orders, up to the number of allowed builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
+        assert order_idxs.ndimension() == 1
         all_order_idxs[0, :n_builds, :len(order_idxs)] = order_idxs.unsqueeze(0)
         return all_order_idxs, loc_idxs, n_builds
 

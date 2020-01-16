@@ -147,6 +147,7 @@ class LSTMDipNetDecoder(nn.Module):
 
         # 13k x 13k table of compatible orders
         self.compatible_orders_table = ~(torch.eye(orders_vocab_size).bool())
+        self.compatible_orders_table[0, 0] = 1  # EOS is compatible with itself
         incompatible_orders = get_incompatible_build_idxs_map()
         for order, v in incompatible_orders.items():
             for incomp_order in enumerate(v):
@@ -219,7 +220,7 @@ class LSTMDipNetDecoder(nn.Module):
                 # early exit
                 for _step in range(step, order_masks.shape[1]):  # fill in garbage
                     all_order_idxs.append(all_order_idxs[-1])
-                    # FIXME(alerer): shouldn't we be filling in 0? (i.e. <EOS>)
+                    # all_order_idxs.append(all_order_idxs[-1].clone().fill_(0))  # fill in <EOS>
                 break
 
             order_mask[invalid_mask] = 1
@@ -244,6 +245,7 @@ class LSTMDipNetDecoder(nn.Module):
 
             compatible_mask = self.compatible_orders_table[dont_repeat_orders]  # B x 13k
             order_masks[:, step:] *= compatible_mask.unsqueeze(1)
+            # assert order_masks.sum(-1).min() > 0, (order_masks.sum(-1), compatible_mask.sum(-1), loc_idxs)
 
         res = torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
         maybe_print("total: ", time.time() - totaltic)

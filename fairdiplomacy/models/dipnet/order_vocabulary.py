@@ -10,34 +10,53 @@ EOS_TOKEN = "<EOS>"
 EOS_IDX = 0
 _ORDER_VOCABULARY = None
 _ORDER_VOCABULARY_BY_UNIT = None
+_ORDER_VOCABULARY_SLICE_BY_UNIT = None
 _ORDER_VOCABULARY_IDXS_BY_UNIT = None
 _ORDER_VOCABULARY_IDXS_LEN = None
 _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS = None
 
 
 def get_order_vocabulary():
-    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_IDXS_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
+    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_SLICE_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
 
     if _ORDER_VOCABULARY is not None:
         return _ORDER_VOCABULARY
 
-    _ORDER_VOCABULARY = [EOS_TOKEN] + _get_order_vocabulary()
-    idxs_by_unit = defaultdict(list)
-    for i, order in enumerate(_ORDER_VOCABULARY):
-        unit = " ".join(order.split()[:2])
-        idxs_by_unit[unit].append(i)
-
-    _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(idxs_by_unit)
-    _ORDER_VOCABULARY_IDXS_LEN = max(len(x) for x in idxs_by_unit.values())
+    _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_SLICE_BY_UNIT = _get_order_vocabulary()
+    _ORDER_VOCABULARY_IDXS_LEN = max(len(o) for o in _ORDER_VOCABULARY_BY_UNIT.values())
     return _ORDER_VOCABULARY
+
+def get_order_vocabulary_by_unit():
+    get_order_vocabulary()
+    return _ORDER_VOCABULARY_BY_UNIT
+
+def get_order_vocabulary_slice_by_unit():
+    get_order_vocabulary()
+    return _ORDER_VOCABULARY_SLICE_BY_UNIT
 
 def get_order_vocabulary_idxs_len():
     get_order_vocabulary()
     return _ORDER_VOCABULARY_IDXS_LEN
 
 def get_order_vocabulary_idxs_by_unit():
-    get_order_vocabulary()
-    return  _ORDER_VOCABULARY_IDXS_BY_UNIT
+    global _ORDER_VOCABULARY_IDXS_BY_UNIT
+
+    if _ORDER_VOCABULARY_IDXS_BY_UNIT is not None:
+        return _ORDER_VOCABULARY_IDXS_BY_UNIT
+
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
+    for idx, order in enumerate(get_order_vocabulary()):
+        unit = " ".join(order.split()[:2])
+        _ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
+
+    # # sanity check that it's contiguous
+    # for unit, idxs in _ORDER_VOCABULARY_IDXS_BY_UNIT.items():
+    #     for i in range(len(idxs) - 1):
+    #         assert idxs[i + 1] - idxs[i] == 1, f"'{unit}' : {idxs} [ {_ORDER_VOCABULARY[idxs[i]]} , {_ORDER_VOCABULARY[idxs[i+1]]} ]"
+
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(_ORDER_VOCABULARY_IDXS_BY_UNIT)
+    return _ORDER_VOCABULARY_IDXS_BY_UNIT
+
 
 def get_incompatible_build_idxs_map():
     global _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS
@@ -221,15 +240,27 @@ def _get_order_vocabulary():
                             )
 
     # Sorting each category
-    final_orders = []
-    final_orders_set = set()
-    for category in categories:
-        category_orders = [order for order in orders[category] if order not in final_orders_set]
-        final_orders += list(
-            sorted(category_orders, key=lambda value: (value.split()[1], value))  # Sorting by loc
-        )  # Then alphabetically
-        final_orders_set |= set(category_orders)
-    return final_orders
+    orders_by_unit = {}
+    orders_by_unit["_BUILD"] = orders["B"]  # building is unit-independent
+    orders_by_unit["_DISBAND"] = orders["D"]  # disbanding is unit-independent
+
+    for category, category_orders in orders.items():
+        if category in ("B", "D"): continue
+        for order in category_orders:
+            unit = " ".join(order.split()[:2])
+            if unit not in orders_by_unit:
+                orders_by_unit[unit] = set()
+            orders_by_unit[unit].add(order)
+
+    orders_by_unit = {k : sorted(list(v)) for k, v in orders_by_unit.items()}
+    sorted_unit_keys = sorted(orders_by_unit)
+    unit_order_slices = {}
+    final_orders = [EOS_TOKEN]
+    for unit in sorted_unit_keys:
+        unit_order_slices[unit] = (len(final_orders), len(final_orders) + len(orders_by_unit[unit]))
+        final_orders += orders_by_unit[unit]
+
+    return final_orders, orders_by_unit, unit_order_slices
 
 
 if __name__ == "__main__":
