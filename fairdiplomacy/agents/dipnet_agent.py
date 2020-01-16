@@ -21,9 +21,10 @@ class DipnetAgent(BaseAgent):
         if len(game.get_orderable_locations(power)) == 0:
             return []
         inputs = encode_inputs(game, power)
+        inputs = [x.to("cuda") for x in inputs]
         if batch_size > 1:
             # fake a big batch
-            inputs = [x.expand(batch_size, *x.shape[1:]).to("cuda").contiguous() for x in inputs]
+            inputs = [x.expand(batch_size, *x.shape[1:]).contiguous() for x in inputs]
         with torch.no_grad():
             order_idxs, order_scores = self.model(*inputs, temperature=temperature)
         if debug_probs:
