@@ -47,7 +47,7 @@ class DipnetAgent(BaseAgent):
             )
 
 
-def encode_inputs(game, power, all_possible_orders=None):
+def encode_inputs(game, power, all_possible_orders=None, game_state=None):
     """Return a 6-tuple of tensors
 
     x_board_state: shape=(1, 81, 35)
@@ -58,7 +58,9 @@ def encode_inputs(game, power, all_possible_orders=None):
     loc_idxs: shape=[1, S], dtype=long, 0 < S <= 17
     x_order_mask: shape=[1, S, 13k], dtype=bool, 0 < S <= 17
     """
-    x_board_state, x_prev_orders, x_season, x_in_adj_phase = encode_state(game)
+    if game_state is None:
+        game_state = encode_state(game)
+    x_board_state, x_prev_orders, x_season, x_in_adj_phase = game_state
     x_power = torch.zeros(1, 7)
     x_power[0, POWERS.index(power)] = 1
     order_mask, loc_idxs, seq_len = get_order_mask(game, power, all_possible_orders)
@@ -166,3 +168,11 @@ if __name__ == "__main__":
     game = diplomacy.Game()
     orders = agent.get_orders(game, "ITALY", temperature=args.temperature, debug_probs=True) #, batch_size=1000)
     logging.info("Submit orders: {}".format(orders))
+
+    b, N = 1000, 100
+    import time
+    tic = time.time()
+    for i in range(N):
+        orders = agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=b)
+    delta = time.time() - tic
+    print(f"batch {b} N {N} : forward'd {b*N} in {delta} s. {b*N/delta} forwards/s")

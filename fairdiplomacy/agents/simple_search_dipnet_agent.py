@@ -21,7 +21,7 @@ from functools import partial
 from typing import List, Tuple, Set, Dict
 import torchbeast
 from fairdiplomacy.agents.base_agent import BaseAgent
-from fairdiplomacy.agents.dipnet_agent import encode_inputs, ORDER_VOCABULARY
+from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, ORDER_VOCABULARY
 from fairdiplomacy.models.consts import MAX_SEQ_LEN
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
@@ -30,6 +30,7 @@ from fairdiplomacy.serving import ModelServer, ModelClient
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     logging.warn(f"You should delete {diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH}" +
                  f"for faster startup time!")
+
 
 def gen_hostport(host="localhost", port=12345):
     import socket
@@ -77,9 +78,9 @@ def server_handler(q: torchbeast.ComputationQueue,
         while True:
             logging.info("Waiting for batch")
             try:
+                tic = time.time()
                 for batch in q:
                     # logging.info("Goot batch")
-                    tic = time.time()
                     inputs = batch.get_inputs()[0]
                     timings['next_batch'] += time.time() - tic; tic = time.time()
 
@@ -271,10 +272,8 @@ class SimpleSearchDipnetAgent(BaseAgent):
         generated_orders = []
         # FIXME FIXME FIXME
         x = [encode_inputs(game, power)] * n
-        assert isinstance(x, list)
-        assert isinstance(x[0], tuple)
-        for i in range(n // 10):
-            batch_inputs, _seq_lens = cat_pad_inputs(x[i * 10: (i+1) * 10])
+        for x_chunk in [x[i:i+10] for i in range(0, len(x), 10)]:
+            batch_inputs, _seq_lens = cat_pad_inputs(x_chunk)
             # print(batch_inputs)
             # x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
             generated_orders += self.do_model_request(self.client, batch_inputs, temperature)
@@ -325,17 +324,27 @@ class SimpleSearchDipnetAgent(BaseAgent):
         turn_idx = 0
         other_powers = [p for p in all_powers if p not in set_orders_dict]
         timings['setup'] = time.time() - tic; tic = time.time()
+        # import cProfile, pstats, io
+        # from pstats import SortKey
+        # pr = cProfile.Profile()
+        # pr.enable()
         while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
             timings['prep0'] += time.time() - tic; tic = time.time()
 
-            batch_data = [(game, p, game.get_all_possible_orders()) for game in games if not game.is_game_done for p in other_powers]
-            timings['prep1'] += time.time() - tic; tic = time.time()
+            batch_data = []
+            for game in games:
+                if game.is_game_done:
+                    continue
+                all_possible_orders = game.get_all_possible_orders()  # this is expensive
+                game_state = encode_state(game)
+                batch_data += [(game, p, encode_inputs(game, p, all_possible_orders=all_possible_orders, game_state=game_state))
+                               for p in other_powers]
 
-            xs: List[Tuple] = [encode_inputs(game, p, all_possible_orders) for game, p, all_possible_orders in batch_data]
-            timings['prep2'] += time.time() - tic; tic = time.time()
+            xs: List[Tuple] = [b[2] for b in batch_data]
             batch_inputs, seq_lens = cat_pad_inputs(xs)
 
-            timings['prep3'] += time.time() - tic; tic = time.time()
+            timings['prep'] += time.time() - tic; tic = time.time()
+
 
             # get orders
             batch_orders = cls.do_model_request(client, batch_inputs, temperature)
@@ -353,6 +362,13 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
             turn_idx += 1
             other_powers = all_powers  # no set orders on ssubsequent turns
+
+        # pr.disable()
+        # s = io.StringIO()
+        # sortby = SortKey.CUMULATIVE
+        # ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        # ps.print_stats()
+        # print(s.getvalue())
 
         # return avg supply counts for each power
         result = [(set_orders_dict, {k: len(v) for k, v in game.get_state()["centers"].items()}) for game in games]
@@ -430,4 +446,8 @@ if __name__ == "__main__":
 
     tic = time.time()
     logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
-    logging.info(f"Performed all rollouts for one search in {time.time() - tic} s")
+    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
+    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
+    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
+
+    logging.info(f"Performed all rollouts for four searches in {time.time() - tic} s")
