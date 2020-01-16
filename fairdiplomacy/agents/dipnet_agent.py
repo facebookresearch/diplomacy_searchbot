@@ -127,7 +127,6 @@ def get_order_mask(game, power, all_possible_orders=None):
     if n_builds > 0:
         # build phase: all possible build orders, up to the number of allowed builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        assert order_idxs.ndimension() == 1
         all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
         return all_order_idxs, loc_idxs, n_builds
 
@@ -172,9 +171,7 @@ if __name__ == "__main__":
 
     agent = DipnetAgent(args.model_path)
     game = diplomacy.Game()
-    orders = agent.get_orders(
-        game, "ITALY", temperature=args.temperature, debug_probs=True
-    )  # , batch_size=1000)
+    orders = agent.get_orders(game, "ITALY", temperature=args.temperature, debug_probs=True)
     logging.info("Submit orders: {}".format(orders))
 
     b, N = 1000, 100
@@ -185,3 +182,7 @@ if __name__ == "__main__":
         orders = agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=b)
     delta = time.time() - tic
     print(f"batch {b} N {N} : forward'd {b*N} in {delta} s. {b*N/delta} forwards/s")
+
+    # with torch.autograd.profiler.profile(use_cuda=True, record_shapes=True) as prof:
+    #     agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=400)
+    # print(prof.table(row_limit=10000))

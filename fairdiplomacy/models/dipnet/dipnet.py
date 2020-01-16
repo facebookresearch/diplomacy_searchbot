@@ -150,7 +150,6 @@ class LSTMDipNetDecoder(nn.Module):
 
         # 13k x 13k table of compatible orders
         self.compatible_orders_table = ~(torch.eye(orders_vocab_size).bool())
-        self.compatible_orders_table[0, 0] = 1  # EOS is compatible with itself
         incompatible_orders = get_incompatible_build_idxs_map()
         for order, v in incompatible_orders.items():
             for incomp_order in enumerate(v):
@@ -220,11 +219,13 @@ class LSTMDipNetDecoder(nn.Module):
                 # early exit
                 for _step in range(step, order_masks.shape[1]):  # fill in garbage
                     all_order_idxs.append(all_order_idxs[-1])
-                    # all_order_idxs.append(all_order_idxs[-1].clone().fill_(0))  # fill in <EOS>
+                    # FIXME(alerer): shouldn't we be filling in 0? (i.e. <EOS>)
                 break
-
             order_mask[invalid_mask] = 1
-            order_scores[~order_mask] = float("-inf")
+
+            # make scores for invalid actions 0. This is faster  than order_scores[~order_mask] = float("-inf")
+            # use 1e9 instead of inf because 0*inf=nan
+            order_scores -= (1 - order_mask.float()) * 1e9
 
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
@@ -245,7 +246,6 @@ class LSTMDipNetDecoder(nn.Module):
 
             compatible_mask = self.compatible_orders_table[dont_repeat_orders]  # B x 13k
             order_masks[:, step:] *= compatible_mask.unsqueeze(1)
-            # assert order_masks.sum(-1).min() > 0, (order_masks.sum(-1), compatible_mask.sum(-1), loc_idxs)
 
         res = torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
         maybe_print("total: ", time.time() - totaltic)
@@ -381,7 +381,14 @@ class GraphConv(nn.Module):
         returns (B, 81, out_size)
         """
         Wx = self.W(x)
-        return torch.matmul(self.A, Wx)
+
+        # following 3 lines are equivalent to (but faster than)
+        # res = torch.matmul(self.A, Wx)
+        Wx_shape = Wx.shape
+        res = self.A @ Wx.transpose(0, 1).reshape(Wx_shape[1], -1)
+        res = res.view(Wx_shape[1], Wx_shape[0], Wx_shape[2]).transpose(0, 1).contiguous()
+
+        return res
 
 
 class FiLM(nn.Module):

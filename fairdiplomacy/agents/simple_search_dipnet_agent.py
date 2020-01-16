@@ -486,9 +486,8 @@ if __name__ == "__main__":
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
 
     tic = time.time()
-    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
-    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
-    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
-    logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
+    N = 1
+    for _ in range(N):
+        logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
 
-    logging.info(f"Performed all rollouts for four searches in {time.time() - tic} s")
+    logging.info(f"Performed all rollouts for {N} searches in {time.time() - tic} s")
