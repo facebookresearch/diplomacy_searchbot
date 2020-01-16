@@ -22,21 +22,29 @@ def get_order_vocabulary():
     if _ORDER_VOCABULARY is not None:
         return _ORDER_VOCABULARY
 
-    _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_SLICE_BY_UNIT = _get_order_vocabulary()
+    (
+        _ORDER_VOCABULARY,
+        _ORDER_VOCABULARY_BY_UNIT,
+        _ORDER_VOCABULARY_SLICE_BY_UNIT,
+    ) = _get_order_vocabulary()
     _ORDER_VOCABULARY_IDXS_LEN = max(len(o) for o in _ORDER_VOCABULARY_BY_UNIT.values())
     return _ORDER_VOCABULARY
+
 
 def get_order_vocabulary_by_unit():
     get_order_vocabulary()
     return _ORDER_VOCABULARY_BY_UNIT
 
+
 def get_order_vocabulary_slice_by_unit():
     get_order_vocabulary()
     return _ORDER_VOCABULARY_SLICE_BY_UNIT
 
+
 def get_order_vocabulary_idxs_len():
     get_order_vocabulary()
     return _ORDER_VOCABULARY_IDXS_LEN
+
 
 def get_order_vocabulary_idxs_by_unit():
     global _ORDER_VOCABULARY_IDXS_BY_UNIT
@@ -245,19 +253,23 @@ def _get_order_vocabulary():
     orders_by_unit["_DISBAND"] = orders["D"]  # disbanding is unit-independent
 
     for category, category_orders in orders.items():
-        if category in ("B", "D"): continue
+        if category in ("B", "D"):
+            continue
         for order in category_orders:
             unit = " ".join(order.split()[:2])
             if unit not in orders_by_unit:
                 orders_by_unit[unit] = set()
             orders_by_unit[unit].add(order)
 
-    orders_by_unit = {k : sorted(list(v)) for k, v in orders_by_unit.items()}
+    orders_by_unit = {k: sorted(list(v)) for k, v in orders_by_unit.items()}
     sorted_unit_keys = sorted(orders_by_unit)
     unit_order_slices = {}
     final_orders = [EOS_TOKEN]
     for unit in sorted_unit_keys:
-        unit_order_slices[unit] = (len(final_orders), len(final_orders) + len(orders_by_unit[unit]))
+        unit_order_slices[unit] = (
+            len(final_orders),
+            len(final_orders) + len(orders_by_unit[unit]),
+        )
         final_orders += orders_by_unit[unit]
 
     return final_orders, orders_by_unit, unit_order_slices

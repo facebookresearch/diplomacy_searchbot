@@ -49,7 +49,9 @@ class ModelServer:
         - log_stats_every: period in seconds to log perf stats
         - if start is True, call start() after __init__()
         """
-        logging.info(f"ModelServer __init__. batch= {max_batch_size}, latency= {max_batch_latency}")
+        logging.info(
+            f"ModelServer __init__. batch= {max_batch_size}, latency= {max_batch_latency}"
+        )
         self.model = load_model_fn()
         # logging.info(f"Model: {self.model}")
         self.port = port
@@ -138,26 +140,30 @@ class ModelServer:
 
         with torch.no_grad():
             xs = [torch.cat(ts).to("cuda") for ts in zip(*self.buf_batch)]
-            self.timings['to_cuda'] += time.time() - tic; tic = time.time()
+            self.timings["to_cuda"] += time.time() - tic
+            tic = time.time()
             tic = time.time()
 
             y = self.model(*xs)
-            self.timings['forward'] += time.time() - tic; tic = time.time()
-
+            self.timings["forward"] += time.time() - tic
+            tic = time.time()
 
         if self.output_transform is not None:
             y = self.output_transform(y)
-        self.timings['transform'] += time.time() - tic; tic = time.time()
+        self.timings["transform"] += time.time() - tic
+        tic = time.time()
 
         y = tuple(t.to("cpu") for t in y)
-        self.timings['to_cpu'] += time.time() - tic; tic = time.time()
+        self.timings["to_cpu"] += time.time() - tic
+        tic = time.time()
 
         i = 0
         for size, future in zip(self.buf_batch_sizes, self.buf_batch_futures):
             batch_y = tuple(t[i : (i + size)] for t in y)
             future.set_result(batch_y)
             i += size
-        self.timings['send'] += time.time() - tic; tic = time.time()
+        self.timings["send"] += time.time() - tic
+        tic = time.time()
 
         self.stat_throughput_numerator += i
         self.stat_batch_count += 1
@@ -188,7 +194,7 @@ class ModelServer:
                     self.stat_throughput_numerator,
                     delta,
                     self.stat_throughput_numerator / delta,
-                    os.getpid()
+                    os.getpid(),
                 )
             )
             logging.info(
@@ -198,8 +204,13 @@ class ModelServer:
                     delta / stat_batch_count,
                 )
             )
-            self.timings['wait'] = delta - sum(self.timings.values())
-            logging.info({k : "{:.3}".format(v / (self.stat_batch_count + 1e-8)) for k, v in self.timings.items()})
+            self.timings["wait"] = delta - sum(self.timings.values())
+            logging.info(
+                {
+                    k: "{:.3}".format(v / (self.stat_batch_count + 1e-8))
+                    for k, v in self.timings.items()
+                }
+            )
             self.timings.clear()
             self.stat_throughput_numerator = 0
             self.stat_batch_count = 0

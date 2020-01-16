@@ -9,7 +9,10 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
 )
 
-def maybe_print(*args): pass
+
+def maybe_print(*args):
+    pass
+
 
 class DipNet(nn.Module):
     def __init__(
@@ -55,11 +58,11 @@ class DipNet(nn.Module):
         )
 
     def valid_order_idxs_to_mask(self, valid_order_idxs, loc_idxs):
-        valid_order_mask = torch.zeros((valid_order_idxs.shape[0],
-                                        valid_order_idxs.shape[1],
-                                        self.orders_vocab_size),
-                                       dtype=torch.bool,
-                                       device=valid_order_idxs.device)
+        valid_order_mask = torch.zeros(
+            (valid_order_idxs.shape[0], valid_order_idxs.shape[1], self.orders_vocab_size),
+            dtype=torch.bool,
+            device=valid_order_idxs.device,
+        )
         valid_order_mask.scatter_(-1, valid_order_idxs.long().clamp_(min=0), 1)
         valid_order_mask[:, :, 0] = 0  # remove EOS_TOKEN
         return valid_order_mask
@@ -153,7 +156,6 @@ class LSTMDipNetDecoder(nn.Module):
             for incomp_order in enumerate(v):
                 self.compatible_orders_table[order, incomp_order] = 0
 
-
     def forward(
         self, enc, in_adj_phase, loc_idxs, order_masks, temperature=1.0, teacher_force_orders=None
     ):
@@ -161,7 +163,6 @@ class LSTMDipNetDecoder(nn.Module):
         tic = time.time()
         device = next(self.parameters()).device
         self.lstm.flatten_parameters()
-
 
         hidden = (
             torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
@@ -203,7 +204,6 @@ class LSTMDipNetDecoder(nn.Module):
                 alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
-
             lstm_input = torch.cat((loc_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
 
             out, hidden = self.lstm(lstm_input, hidden)
@@ -213,7 +213,7 @@ class LSTMDipNetDecoder(nn.Module):
 
             # unmask where there are no actions or the sampling will crash. The
             # losses at these points will be masked out later, so this is safe.
-            invalid_mask = (loc_idxs[:, step] == -1)
+            invalid_mask = loc_idxs[:, step] == -1
             if invalid_mask.sum() == loc_idxs.shape[0]:
                 maybe_print(f"Breaking at step {step} because no more orders to give")
                 assert step > 0
@@ -250,6 +250,7 @@ class LSTMDipNetDecoder(nn.Module):
         res = torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
         maybe_print("total: ", time.time() - totaltic)
         return res
+
 
 class DipNetEncoder(nn.Module):
     def __init__(
