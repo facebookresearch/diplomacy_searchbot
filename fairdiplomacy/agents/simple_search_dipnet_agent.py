@@ -486,7 +486,7 @@ if __name__ == "__main__":
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
 
     tic = time.time()
-    N = 1
+    N = 4
     for _ in range(N):
         logging.info("Chose orders: {}".format(agent.get_orders(game, "ITALY")))
 

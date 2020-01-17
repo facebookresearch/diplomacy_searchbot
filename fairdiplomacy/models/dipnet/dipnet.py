@@ -58,12 +58,13 @@ class DipNet(nn.Module):
         )
 
     def valid_order_idxs_to_mask(self, valid_order_idxs, loc_idxs):
+        assert valid_order_idxs.dtype == torch.int32
         valid_order_mask = torch.zeros(
             (valid_order_idxs.shape[0], valid_order_idxs.shape[1], self.orders_vocab_size),
             dtype=torch.bool,
             device=valid_order_idxs.device,
         )
-        valid_order_mask.scatter_(-1, valid_order_idxs.long().clamp_(min=0), 1)
+        valid_order_mask.scatter_(-1, valid_order_idxs.long(), 1)
         valid_order_mask[:, :, 0] = 0  # remove EOS_TOKEN
         return valid_order_mask
 

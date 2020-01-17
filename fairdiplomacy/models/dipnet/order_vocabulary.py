@@ -17,7 +17,7 @@ _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS = None
 
 
 def get_order_vocabulary():
-    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_SLICE_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
+    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_SLICE_BY_UNIT, _ORDER_VOCABULARY_IDXS_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
 
     if _ORDER_VOCABULARY is not None:
         return _ORDER_VOCABULARY
@@ -27,7 +27,13 @@ def get_order_vocabulary():
         _ORDER_VOCABULARY_BY_UNIT,
         _ORDER_VOCABULARY_SLICE_BY_UNIT,
     ) = _get_order_vocabulary()
-    _ORDER_VOCABULARY_IDXS_LEN = max(len(o) for o in _ORDER_VOCABULARY_BY_UNIT.values())
+
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = {
+        unit: list(range(start, end))
+        for unit, (start, end) in _ORDER_VOCABULARY_SLICE_BY_UNIT.items()
+    }
+    _ORDER_VOCABULARY_IDXS_LEN = max(len(o) for o in _ORDER_VOCABULARY_IDXS_BY_UNIT.values())
+
     return _ORDER_VOCABULARY
 
 
@@ -47,22 +53,8 @@ def get_order_vocabulary_idxs_len():
 
 
 def get_order_vocabulary_idxs_by_unit():
-    global _ORDER_VOCABULARY_IDXS_BY_UNIT
+    get_order_vocabulary()
 
-    if _ORDER_VOCABULARY_IDXS_BY_UNIT is not None:
-        return _ORDER_VOCABULARY_IDXS_BY_UNIT
-
-    _ORDER_VOCABULARY_IDXS_BY_UNIT = defaultdict(list)
-    for idx, order in enumerate(get_order_vocabulary()):
-        unit = " ".join(order.split()[:2])
-        _ORDER_VOCABULARY_IDXS_BY_UNIT[unit].append(idx)
-
-    # # sanity check that it's contiguous
-    # for unit, idxs in _ORDER_VOCABULARY_IDXS_BY_UNIT.items():
-    #     for i in range(len(idxs) - 1):
-    #         assert idxs[i + 1] - idxs[i] == 1, f"'{unit}' : {idxs} [ {_ORDER_VOCABULARY[idxs[i]]} , {_ORDER_VOCABULARY[idxs[i+1]]} ]"
-
-    _ORDER_VOCABULARY_IDXS_BY_UNIT = dict(_ORDER_VOCABULARY_IDXS_BY_UNIT)
     return _ORDER_VOCABULARY_IDXS_BY_UNIT
 
 

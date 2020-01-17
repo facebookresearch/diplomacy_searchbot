@@ -17,6 +17,7 @@ from fairdiplomacy.models.dipnet.dipnet import DipNet
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
+    get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
 
@@ -104,29 +105,39 @@ def build_order_mask(y_actions, in_adj_phase):
     - in_adj_phase: [B] BoolTensor, if actions were taken during an adjustment phase
 
     Returns:
-    - [B, S, 13k] BoolTensor mask, 0 < S <= 17, where idx [b, s, x] == True if
-      ORDER_VOCABULARY[x] is an order originating from the same unit as y_actions[b, s]
+    - valid_order_idxs: [B, S, 485] int32 indexes, 0 < S <= 17, where idx
+      [b, s, :] contains indexes of ORDER_VOCABULARY[x] corresponding to orders
+      originating from the same unit as y_actions[b, s]
     - loc_idxs: [B, S] LongTensor, 0 <= idx < 81, or idx = -1 where y_actions = 0
     """
-    order_mask = torch.zeros(
-        y_actions.shape[0], y_actions.shape[1], len(ORDER_VOCABULARY), dtype=torch.bool
+    valid_order_idxs = torch.zeros(
+        y_actions.shape[0], y_actions.shape[1], get_order_vocabulary_idxs_len(), dtype=torch.int32
     )
     loc_idxs = torch.zeros_like(y_actions).fill_(-1)
 
-    for step in range(y_actions.shape[1]):
-        if (y_actions[:, step] == EOS_IDX).all():
-            break
-        for b in range(order_mask.shape[0]):
+    max_step = 0
+    for b in range(y_actions.shape[0]):
+        valid_idxs_offset = 0
+        adj_offset = 0
+        for step in range(y_actions.shape[1]):
             order_idx = y_actions[b, step]
             if order_idx == EOS_IDX:
-                continue
+                break
+            max_step = max(max_step, step)
             order = ORDER_VOCABULARY[order_idx]
             unit = " ".join(order.split()[:2])
-            try:
-                valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit]
-            except KeyError:
-                valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit.split("/")[0]]
-            order_mask[b, step, valid_idxs] = 1
+            if in_adj_phase[b]:
+                valid_idxs = (
+                    ORDER_VOCABULARY_IDXS_BY_UNIT["_BUILD"]
+                    + ORDER_VOCABULARY_IDXS_BY_UNIT["_DISBAND"]
+                )
+            else:
+                try:
+                    valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit]
+                except KeyError:
+                    valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit.split("/")[0]]
+
+            valid_order_idxs[b, step, 0 : len(valid_idxs)] = torch.tensor(valid_idxs)
 
             # determine loc_idx
             loc = unit.split()[1]
@@ -142,16 +153,7 @@ def build_order_mask(y_actions, in_adj_phase):
         loc_idxs, in_adj_phase, y_actions
     )
 
-    # if in adj phase, union the masks from all steps -- builds and disbands
-    # can happen in any order
-    #
-    # TODO: could mask out movement/retreat orders too if we know we're in adj phase
-    used_actions = torch.any(order_mask, dim=1)  # [B, 13k]
-    for b in range(order_mask.shape[0]):
-        if in_adj_phase[b]:
-            order_mask[b, torch.nonzero(y_actions[b]), used_actions[b]] = 1
-
-    return order_mask[:, :step, :], loc_idxs[:, :step]
+    return valid_order_idxs[:, :max_step, :], loc_idxs[:, :max_step]
 
 
 def calculate_accuracy(order_idxs, y_truth):
