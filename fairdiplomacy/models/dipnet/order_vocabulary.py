@@ -10,28 +10,23 @@ EOS_TOKEN = "<EOS>"
 EOS_IDX = 0
 _ORDER_VOCABULARY = None
 _ORDER_VOCABULARY_BY_UNIT = None
-_ORDER_VOCABULARY_SLICE_BY_UNIT = None
 _ORDER_VOCABULARY_IDXS_BY_UNIT = None
 _ORDER_VOCABULARY_IDXS_LEN = None
 _ORDER_VOCABULARY_INCOMPATIBLE_BUILD_IDXS = None
 
 
 def get_order_vocabulary():
-    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_SLICE_BY_UNIT, _ORDER_VOCABULARY_IDXS_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
+    global _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT, _ORDER_VOCABULARY_IDXS_BY_UNIT, _ORDER_VOCABULARY_IDXS_LEN
 
     if _ORDER_VOCABULARY is not None:
         return _ORDER_VOCABULARY
 
-    (
-        _ORDER_VOCABULARY,
-        _ORDER_VOCABULARY_BY_UNIT,
-        _ORDER_VOCABULARY_SLICE_BY_UNIT,
-    ) = _get_order_vocabulary()
+    _ORDER_VOCABULARY, _ORDER_VOCABULARY_BY_UNIT = _get_order_vocabulary()
+    order_vocabulary_idxs = {order:i for i, order in enumerate(_ORDER_VOCABULARY)}
 
-    _ORDER_VOCABULARY_IDXS_BY_UNIT = {
-        unit: list(range(start, end))
-        for unit, (start, end) in _ORDER_VOCABULARY_SLICE_BY_UNIT.items()
-    }
+    _ORDER_VOCABULARY_IDXS_BY_UNIT = {unit: [order_vocabulary_idxs[order] for order in orders]
+                                      for unit, orders in _ORDER_VOCABULARY_BY_UNIT.items()}
+
     _ORDER_VOCABULARY_IDXS_LEN = max(len(o) for o in _ORDER_VOCABULARY_IDXS_BY_UNIT.values())
 
     return _ORDER_VOCABULARY
@@ -40,11 +35,6 @@ def get_order_vocabulary():
 def get_order_vocabulary_by_unit():
     get_order_vocabulary()
     return _ORDER_VOCABULARY_BY_UNIT
-
-
-def get_order_vocabulary_slice_by_unit():
-    get_order_vocabulary()
-    return _ORDER_VOCABULARY_SLICE_BY_UNIT
 
 
 def get_order_vocabulary_idxs_len():
@@ -239,14 +229,24 @@ def _get_order_vocabulary():
                                 % (support_unit_type, support_loc, start_loc, dest_loc[:3])
                             )
 
-    # Sorting each category
+    # Sorting into contiguous chunks by unit. This is because valid orders
+    # for a given situation are usually based on the unit, and this makes the
+    # decoder more efficient (because you can operate on a contiguous chunk).
+    # Builds and disbands are counted as their own "unit" for these purposes.
+    #
+    # Valid moves are mostly disjoint sets (either you're moving a particular
+    # unit, or you're building, or you're disbanding). There is on exception,
+    # which is that a disband can occur *either* during the build phase, *or*
+    # during the retreat phase if units cannot retreat.
+    #
+    # Therefore the 'disband' valid orders will not be a contiguous set, because
+    # they have to be grouped with the unit orders.
+
     orders_by_unit = {}
     orders_by_unit["_BUILD"] = orders["B"]  # building is unit-independent
     orders_by_unit["_DISBAND"] = orders["D"]  # disbanding is unit-independent
 
     for category, category_orders in orders.items():
-        if category in ("B", "D"):
-            continue
         for order in category_orders:
             unit = " ".join(order.split()[:2])
             if unit not in orders_by_unit:
@@ -255,16 +255,11 @@ def _get_order_vocabulary():
 
     orders_by_unit = {k: sorted(list(v)) for k, v in orders_by_unit.items()}
     sorted_unit_keys = sorted(orders_by_unit)
-    unit_order_slices = {}
     final_orders = [EOS_TOKEN]
     for unit in sorted_unit_keys:
-        unit_order_slices[unit] = (
-            len(final_orders),
-            len(final_orders) + len(orders_by_unit[unit]),
-        )
         final_orders += orders_by_unit[unit]
 
-    return final_orders, orders_by_unit, unit_order_slices
+    return final_orders, orders_by_unit
 
 
 if __name__ == "__main__":

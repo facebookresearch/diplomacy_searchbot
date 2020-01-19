@@ -69,7 +69,7 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
     x_state, x_orders, x_power, x_season, x_in_adj_phase, y_actions = batch
-    order_mask, loc_idxs = build_order_mask(y_actions, x_in_adj_phase)
+    valid_order_idxs, loc_idxs = build_order_mask(y_actions, x_in_adj_phase)
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
@@ -80,21 +80,27 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
         x_season,
         x_in_adj_phase,
         loc_idxs,
-        order_mask,
+        valid_order_idxs,
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
     )
-    logger.warning("hi mom end forward")
+    # logger.warning("hi mom end forward")
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions.to(next(net.parameters()).device)
     y_actions = y_actions[:, : order_idxs.shape[1]].reshape(-1)  # [B * S]
     order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
+
+    observed_order_scores = order_scores.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
+    if observed_order_scores.min() < -1e7:
+        min_score, min_idx = observed_order_scores.min(0)
+        logging.warning(f"!!! Got masked order for {get_order_vocabulary(y_actions[min_idx])} !!!!")
+
     order_scores = order_scores[y_actions != EOS_IDX]
     y_actions = y_actions[y_actions != EOS_IDX]
 
     # calculate loss
-    return loss_fn(order_scores, y_actions), order_idxs
+    return loss_fn(order_scores, y_actions), order_scores, order_idxs
 
 
 def build_order_mask(y_actions, in_adj_phase):
@@ -120,10 +126,10 @@ def build_order_mask(y_actions, in_adj_phase):
         valid_idxs_offset = 0
         adj_offset = 0
         for step in range(y_actions.shape[1]):
+            max_step = max(max_step, step)
             order_idx = y_actions[b, step]
             if order_idx == EOS_IDX:
                 break
-            max_step = max(max_step, step)
             order = ORDER_VOCABULARY[order_idx]
             unit = " ".join(order.split()[:2])
             if in_adj_phase[b]:
@@ -152,7 +158,6 @@ def build_order_mask(y_actions, in_adj_phase):
     ).any(), "Bad row with no locs, loc_idxs={} in_adj_phase={} y_actions={}".format(
         loc_idxs, in_adj_phase, y_actions
     )
-
     return valid_order_idxs[:, :max_step, :], loc_idxs[:, :max_step]
 
 
@@ -194,7 +199,10 @@ def validate(net, val_set_loader, loss_fn):
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
         for batch in val_set_loader:
             _, _, _, _, _, y_actions = batch
-            losses, order_idxs = process_batch(
+            if y_actions.shape[0] == 0:
+                logging.warning("Got an empty validation batch! (???)")
+                continue
+            losses, order_scores, order_idxs = process_batch(
                 net, batch, loss_fn, temperature=0.001, p_teacher_force=1.0
             )
             batch_losses.append(losses)
@@ -303,7 +311,8 @@ def main_subproc(
             # learn
             logger.info("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
-            losses, _ = process_batch(net, batch, loss_fn, p_teacher_force=args.teacher_force)
+            losses, order_scores, order_idxs = process_batch(net, batch, loss_fn, p_teacher_force=args.teacher_force)
+
             loss = torch.mean(losses)
             loss.backward()
             optim.step()

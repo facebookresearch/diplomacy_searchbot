@@ -152,8 +152,9 @@ class LSTMDipNetDecoder(nn.Module):
         # 13k x 13k table of compatible orders
         self.compatible_orders_table = ~(torch.eye(orders_vocab_size).bool())
         incompatible_orders = get_incompatible_build_idxs_map()
+        assert len(incompatible_orders) > 0
         for order, v in incompatible_orders.items():
-            for incomp_order in enumerate(v):
+            for incomp_order in v:
                 self.compatible_orders_table[order, incomp_order] = 0
 
     def forward(
@@ -226,7 +227,10 @@ class LSTMDipNetDecoder(nn.Module):
 
             # make scores for invalid actions 0. This is faster  than order_scores[~order_mask] = float("-inf")
             # use 1e9 instead of inf because 0*inf=nan
-            order_scores -= (1 - order_mask.float()) * 1e9
+            order_scores = torch.min(
+                order_scores,
+                order_mask.float() * (-1e9) + 1e8
+            )
 
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
