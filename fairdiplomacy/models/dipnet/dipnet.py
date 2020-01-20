@@ -210,7 +210,6 @@ class LSTMDipNetDecoder(nn.Module):
             out, hidden = self.lstm(lstm_input, hidden)
 
             order_scores = self.lstm_out_linear(out.squeeze(1))  # [B, 13k]
-            all_order_scores.append(order_scores)
 
             # unmask where there are no actions or the sampling will crash. The
             # losses at these points will be masked out later, so this is safe.
@@ -229,8 +228,11 @@ class LSTMDipNetDecoder(nn.Module):
             # use 1e9 instead of inf because 0*inf=nan
             order_scores = torch.min(
                 order_scores,
-                order_mask.float() * (-1e9) + 1e8
+                order_mask.float() * 1e9 - 1e8
             )
+            all_order_scores.append(order_scores)
+
+            # print('order_scores', order_scores.min(), order_scores.max(), order_scores.mean())
 
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)

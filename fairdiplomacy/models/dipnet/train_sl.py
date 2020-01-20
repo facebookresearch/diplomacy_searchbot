@@ -94,7 +94,7 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     observed_order_scores = order_scores.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
     if observed_order_scores.min() < -1e7:
         min_score, min_idx = observed_order_scores.min(0)
-        logging.warning(f"!!! Got masked order for {get_order_vocabulary(y_actions[min_idx])} !!!!")
+        logging.warning(f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!")
 
     order_scores = order_scores[y_actions != EOS_IDX]
     y_actions = y_actions[y_actions != EOS_IDX]
