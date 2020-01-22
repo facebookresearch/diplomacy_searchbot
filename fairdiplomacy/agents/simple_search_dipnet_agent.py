@@ -28,6 +28,7 @@ if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
         + f"for faster startup time!"
     )
 
+
 class SimpleSearchDipnetAgent(BaseAgent):
     """One-ply search with dipnet-policy rollouts
 
@@ -101,14 +102,14 @@ class SimpleSearchDipnetAgent(BaseAgent):
         # divide up the rollouts among the processes
         procs_per_order = max(1, self.n_rollout_procs // len(plausible_orders))
         logging.info(
-            f"num_plausible_orders= {len(plausible_orders)} , procs_per_order= {procs_per_order}"
+            f"num_plausible_orders={len(plausible_orders)} , procs_per_order={procs_per_order}"
         )
         batch_sizes = [
             len(x)
             for x in torch.arange(self.rollouts_per_plausible_order).chunk(procs_per_order)
             if len(x) > 0
         ]
-        logging.info(f"procs_per_order= {procs_per_order} , batch_sizes= {batch_sizes}")
+        logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
         results = self.proc_pool.map(
             call,
             [
@@ -169,8 +170,6 @@ class SimpleSearchDipnetAgent(BaseAgent):
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
         req = (*x, temp_array)
-        if req[0].shape[0] > 30:
-            logging.info(f"Req batch size: {req[0].shape[0]}")
         try:
             (order_idxs,) = client.evaluate(req)
         except Exception:
@@ -183,18 +182,24 @@ class SimpleSearchDipnetAgent(BaseAgent):
             for i in range(order_idxs.shape[0])
         ]
 
-    def get_plausible_orders(self, game, power, n=100, temperature=0.5) -> Set[Tuple[str]]:
+    def get_plausible_orders(
+        self, game, power, n=1000, temperature=0.5, max_return_size=8, batch_size=100
+    ) -> Set[Tuple[str]]:
         generated_orders = []
-        # FIXME FIXME FIXME
         x = [encode_inputs(game, power)] * n
-        for x_chunk in [x[i : i + 10] for i in range(0, len(x), 10)]:
-            batch_inputs, _seq_lens = cat_pad_inputs(x_chunk)
-            generated_orders += self.do_model_request(self.client, batch_inputs, temperature)
-        unique_orders = set(generated_orders)
+        for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
+            batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
+            generated_orders += unpad_lists(
+                self.do_model_request(self.client, batch_inputs, temperature), seq_lens
+            )
+        unique_orders = Counter(generated_orders)
+
         logging.debug(
-            f"Generated {len(generated_orders)} sets of orders; found {len(unique_orders)} unique sets."
+            "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
+                n, temperature, len(unique_orders), max_return_size
+            )
         )
-        return unique_orders
+        return set([orders for orders, _ in unique_orders.most_common(max_return_size)])
 
     @classmethod
     def do_rollout(
@@ -268,7 +273,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
                 batch_inputs, seq_lens = cat_pad_inputs(xs)
 
             with timings("model"):
-                batch_orders = cls.do_model_request(client, batch_inputs, temperature)
+                batch_orders = unpad_lists(
+                    cls.do_model_request(client, batch_inputs, temperature), seq_lens
+                )
 
             with timings("env"):
                 # process turn
@@ -369,7 +376,6 @@ def server_handler(
     logging.info("SERVER DONE")
 
 
-
 def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
     """
     Arguments:
@@ -441,6 +447,10 @@ def call(f):
 
 def div_round_up(A, B):
     return (A + B - 1) // B
+
+
+def unpad_lists(lists, lens):
+    return [lst[:length] for lst, length in zip(lists, lens)]
 
 
 if __name__ == "__main__":
