@@ -12,6 +12,7 @@ class TimingCtx:
 
     def __call__(self, arg):
         self.arg = arg
+        return self
 
     def __enter__(self):
         self.tic = time.time()
@@ -20,4 +21,4 @@ class TimingCtx:
         self.timings[self.arg] += time.time() - self.tic
 
     def __repr__(self):
-        return self.timings.__repr__()
+        return dict(self.timings).__repr__()
