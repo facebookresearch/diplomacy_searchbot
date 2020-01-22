@@ -22,3 +22,6 @@ class TimingCtx:
 
     def __repr__(self):
         return dict(self.timings).__repr__()
+
+    def items(self):
+        return self.timings.items()
