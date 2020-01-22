@@ -1,60 +1,32 @@
-import copy
 import faulthandler
-import itertools
 import logging
 import os
 import signal
+import socket
 import sys
-
 import time
-import torch
-
-import torch.multiprocessing as mp
-
-from collections import Counter, defaultdict
-
-from concurrent.futures import ProcessPoolExecutor
-import diplomacy.utils.export
-from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
+from collections import Counter
 from functools import partial
 from typing import List, Tuple, Set, Dict
+
+import diplomacy.utils.export
+import torch
+import torch.multiprocessing as mp
 import torchbeast
+from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
+
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, ORDER_VOCABULARY
-from fairdiplomacy.models.consts import MAX_SEQ_LEN
+from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
-from fairdiplomacy.serving import ModelServer, ModelClient
+from fairdiplomacy.profiling.timing_ctx import TimingCtx
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     logging.warn(
         f"You should delete {diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH}"
         + f"for faster startup time!"
     )
-
-
-def gen_hostport(host="localhost", port=12345):
-    import socket
-
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex((host, port)) == 0:  # socket already exists
-                port += 1
-            else:
-                return f"{host}:{port}"
-
-
-def call(f):
-    """Helper to be able to do pool.map(call, [partial(f, foo=42)])
-
-    Using pool.starmap(f, [(42,)]) is shorter, but it doesn't support keyword
-    arguments. It appears going through partial is the only way to do that.
-    """
-    return f()
-
-
-def div_round_up(A, B):
-    return (A + B - 1) // B
 
 
 def server_handler(
@@ -71,37 +43,31 @@ def server_handler(
         torch.manual_seed(seed)
 
     frame_count, batch_count, total_batches = 0, 0, 0
-    timings = defaultdict(float)
-    jit_model = None
+    timings = TimingCtx()
     totaltic = time.time()
     with torch.no_grad():
         while True:
             logging.info("Waiting for batch")
             try:
-                tic = time.time()
                 for batch in q:
-                    # logging.info("Goot batch")
-                    inputs = batch.get_inputs()[0]
-                    timings["next_batch"] += time.time() - tic
-                    tic = time.time()
+                    with timings("next_batch"):
+                        inputs = batch.get_inputs()[0]
 
-                    inputs = tuple(x.to("cuda") for x in inputs)
-                    timings["to_cuda"] += time.time() - tic
-                    tic = time.time()
+                    with timings("to_cuda"):
+                        inputs = tuple(x.to("cuda") for x in inputs)
 
-                    y = model(*inputs)  # jit_model(*batch)
-                    timings["model"] += time.time() - tic
-                    tic = time.time()
-                    if output_transform is not None:
-                        y = output_transform(y)
-                    timings["transform"] += time.time() - tic
-                    tic = time.time()
-                    y = tuple(x.to("cpu") for x in y)
-                    timings["to_cpu"] += time.time() - tic
-                    tic = time.time()
-                    batch.set_outputs(y)
-                    timings["reply"] += time.time() - tic
-                    tic = time.time()
+                    with timings("model"):
+                        y = model(*inputs)
+
+                    with timings("transform"):
+                        if output_transform is not None:
+                            y = output_transform(y)
+
+                    with timings("to_cpu"):
+                        y = tuple(x.to("cpu") for x in y)
+
+                    with timings("reply"):
+                        batch.set_outputs(y)
 
                     # Do some performance logging here
                     batch_count += 1
@@ -117,10 +83,11 @@ def server_handler(
                         batch_count = frame_count = 0
                         timings.clear()
                         totaltic = time.time()
+
             except TimeoutError as e:
                 logging.info("TimeoutError:", e)
 
-    print("SERVER DONE")
+    logging.info("SERVER DONE")
 
 
 def run_server(hostport, batch_size, **kwargs):
@@ -277,13 +244,11 @@ class SimpleSearchDipnetAgent(BaseAgent):
             logging.info(f"Req batch size: {req[0].shape[0]}")
         try:
             (order_idxs,) = client.evaluate(req)
-        except:
-            e = sys.exc_info()[0]
-            print("EXCEPTION", e)
-            print([(x.shape, x.dtype) for x in req])
+        except Exception:
+            logging.error("EXCEPTION {}".format(sys.exc_info()[0]))
+            logging.error([(x.shape, x.dtype) for x in req])
             raise
 
-        # order_idxs, = model_client.synchronous_request([*x, temp_array])
         return [
             tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :])
             for i in range(order_idxs.shape[0])
@@ -295,8 +260,6 @@ class SimpleSearchDipnetAgent(BaseAgent):
         x = [encode_inputs(game, power)] * n
         for x_chunk in [x[i : i + 10] for i in range(0, len(x), 10)]:
             batch_inputs, _seq_lens = cat_pad_inputs(x_chunk)
-            # print(batch_inputs)
-            # x = [t.repeat([n] + ([1] * (len(t.shape) - 1))) for t in x]
             generated_orders += self.do_model_request(self.client, batch_inputs, temperature)
         unique_orders = set(generated_orders)
         logging.debug(
@@ -320,92 +283,80 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         Arguments:
         - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
+        - hostport: string, "{host}:{port}" of model server
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
-        - model_server_port: port on which the batching model server is listening
+        - max_rollout_length: return SC count after at most # steps
+        - batch_size: rollout # of games in parallel, return avg results
 
-        Returns a Dict[power, final supply count]
+        Returns a Dict[power, average final supply count]
         """
         assert batch_size <= 8
-        client = torchbeast.Client(hostport)
-        client.connect(3)
-        timings = defaultdict(float)
-        tic = time.time()
-        logging.info("new proc {} -- {}".format(set_orders_dict, os.getpid()))
-        faulthandler.register(signal.SIGUSR1)
-        torch.set_num_threads(1)
+        timings = TimingCtx()
 
-        games = [from_saved_game_format(game_json) for _ in range(batch_size)]
-        # model_client = ModelClient(port=model_server_port)
+        with timings("torchbeast.client"):
+            client = torchbeast.Client(hostport)
+            client.connect(3)
 
-        # set orders if specified
-        for power, orders in set_orders_dict.items():
-            for game in games:
-                game.set_orders(power, list(orders))
-        all_powers = list(games[0].powers.keys())  # assumption: this is constant
+        with timings("setup"):
+            logging.info("new proc {} -- {}".format(set_orders_dict, os.getpid()))
+            faulthandler.register(signal.SIGUSR1)
+            torch.set_num_threads(1)
 
-        turn_idx = 0
-        other_powers = [p for p in all_powers if p not in set_orders_dict]
-        timings["setup"] = time.time() - tic
-        tic = time.time()
-        # import cProfile, pstats, io
-        # from pstats import SortKey
-        # pr = cProfile.Profile()
-        # pr.enable()
+            games = [from_saved_game_format(game_json) for _ in range(batch_size)]
+
+            # set orders if specified
+            for power, orders in set_orders_dict.items():
+                for game in games:
+                    game.set_orders(power, list(orders))
+
+            turn_idx = 0
+            other_powers = [p for p in POWERS if p not in set_orders_dict]
+
         while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
-            timings["prep0"] += time.time() - tic
-            tic = time.time()
+            with timings("prep"):
+                batch_data = []
+                for game in games:
+                    if game.is_game_done:
+                        continue
+                    all_possible_orders = game.get_all_possible_orders()  # expensive
+                    game_state = encode_state(game)
+                    batch_data += [
+                        (
+                            game,
+                            p,
+                            encode_inputs(
+                                game,
+                                p,
+                                all_possible_orders=all_possible_orders,
+                                game_state=game_state,
+                            ),
+                        )
+                        for p in other_powers
+                    ]
 
-            batch_data = []
-            for game in games:
-                if game.is_game_done:
-                    continue
-                all_possible_orders = game.get_all_possible_orders()  # this is expensive
-                game_state = encode_state(game)
-                batch_data += [
-                    (
-                        game,
-                        p,
-                        encode_inputs(
-                            game, p, all_possible_orders=all_possible_orders, game_state=game_state
-                        ),
-                    )
-                    for p in other_powers
-                ]
+                xs: List[Tuple] = [b[2] for b in batch_data]
+                batch_inputs, seq_lens = cat_pad_inputs(xs)
 
-            xs: List[Tuple] = [b[2] for b in batch_data]
-            batch_inputs, seq_lens = cat_pad_inputs(xs)
+            with timings("model"):
+                batch_orders = cls.do_model_request(client, batch_inputs, temperature)
 
-            timings["prep"] += time.time() - tic
-            tic = time.time()
+            with timings("env"):
+                # process turn
+                assert len(batch_data) == len(
+                    batch_orders
+                ), f"{len(batch_data)} != {len(batch_orders)}"
+                for (game, other_power, _), orders, seq_len in zip(
+                    batch_data, batch_orders, seq_lens
+                ):
+                    game.set_orders(other_power, list(orders[:seq_len]))
 
-            # get orders
-            batch_orders = cls.do_model_request(client, batch_inputs, temperature)
-            timings["model"] += time.time() - tic
-            tic = time.time()
-
-            # process turn
-            assert len(batch_data) == len(
-                batch_orders
-            ), f"{len(batch_data)} != {len(batch_orders)}"
-            for (game, other_power, _), orders, seq_len in zip(batch_data, batch_orders, seq_lens):
-                game.set_orders(other_power, list(orders[:seq_len]))
-
-            for game in games:
-                if not game.is_game_done:
-                    game.process()
-            timings["env"] += time.time() - tic
-            tic = time.time()
+                for game in games:
+                    if not game.is_game_done:
+                        game.process()
 
             turn_idx += 1
-            other_powers = all_powers  # no set orders on ssubsequent turns
-
-        # pr.disable()
-        # s = io.StringIO()
-        # sortby = SortKey.CUMULATIVE
-        # ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        # ps.print_stats()
-        # print(s.getvalue())
+            other_powers = POWERS  # no set orders on subsequent turns
 
         # return avg supply counts for each power
         result = [
@@ -452,23 +403,44 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
 
 
 def cat_pad_inputs(xs):
-    # FIXME: move to utils
     batch = list(zip(*xs))
+
+    # first cat_pad_sequences on sequence inputs
     padded_loc_idxs_seqs, _ = cat_pad_sequences(batch[-2], pad_value=-1, pad_to_len=MAX_SEQ_LEN)
     padded_mask_seqs, seq_lens = cat_pad_sequences(
         batch[-1], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
     )
 
-    batch_inputs = [torch.cat(ts) for ts in batch[:-2]] + [
-        padded_loc_idxs_seqs,
-        padded_mask_seqs,
-    ]
+    # then cat all tensors
+    batch_inputs = [torch.cat(ts) for ts in batch[:-2]] + [padded_loc_idxs_seqs, padded_mask_seqs]
     return batch_inputs, seq_lens
 
 
 def model_output_transform(y):
     # return only order_idxs, not order_scores
     return y[:1]
+
+
+def gen_hostport(host="localhost", port=12345):
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex((host, port)) == 0:  # socket already exists
+                port += 1
+            else:
+                return f"{host}:{port}"
+
+
+def call(f):
+    """Helper to be able to do pool.map(call, [partial(f, foo=42)])
+
+    Using pool.starmap(f, [(42,)]) is shorter, but it doesn't support keyword
+    arguments. It appears going through partial is the only way to do that.
+    """
+    return f()
+
+
+def div_round_up(A, B):
+    return (A + B - 1) // B
 
 
 if __name__ == "__main__":

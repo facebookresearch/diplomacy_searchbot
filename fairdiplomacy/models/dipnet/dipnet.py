@@ -1,17 +1,11 @@
-import torch
+import logging
 import time
+import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.distributions.categorical import Categorical
 
-from fairdiplomacy.models.dipnet.order_vocabulary import (
-    get_incompatible_build_idxs_map,
-    get_order_vocabulary,
-)
-
-
-def maybe_print(*args):
-    pass
+from fairdiplomacy.models.dipnet.order_vocabulary import get_incompatible_build_idxs_map
 
 
 class DipNet(nn.Module):
@@ -57,17 +51,6 @@ class DipNet(nn.Module):
             avg_embedding=avg_embedding,
         )
 
-    def valid_order_idxs_to_mask(self, valid_order_idxs, loc_idxs):
-        assert valid_order_idxs.dtype == torch.int32
-        valid_order_mask = torch.zeros(
-            (valid_order_idxs.shape[0], valid_order_idxs.shape[1], self.orders_vocab_size),
-            dtype=torch.bool,
-            device=valid_order_idxs.device,
-        )
-        valid_order_mask.scatter_(-1, valid_order_idxs.long(), 1)
-        valid_order_mask[:, :, 0] = 0  # remove EOS_TOKEN
-        return valid_order_mask
-
     def forward(
         self,
         x_bo,
@@ -88,7 +71,7 @@ class DipNet(nn.Module):
         - x_season_1h: shape [B, 3]
         - in_adj_phase: shape [B], bool
         - loc_idxs: shape [B, S], long, 0 <= idx < 81
-        - order_idxs: shape [B, S, 468]  padded with -1
+        - order_idxs: shape [B, S, 469]  padded with -1
         - temperature: softmax temp, lower = more deterministic; must be either
           a float or a tensor of shape [B, 1]
         - teacher_force_orders: shape [B, S] int or None
@@ -97,7 +80,6 @@ class DipNet(nn.Module):
         - order_idxs [B, S]: idx of sampled orders
         - order_scores [B, S, 13k]: masked pre-softmax logits of each order
         """
-        tic = time.time()
         enc = self.encoder(x_bo, x_po, x_power_1h, x_season_1h)  # [B, 81, 240]
         res = self.decoder(
             enc,
@@ -107,8 +89,25 @@ class DipNet(nn.Module):
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
         )
-        # print(f"DipNet forward time: {time.time() - tic}")
         return res
+
+    def valid_order_idxs_to_mask(self, valid_order_idxs, loc_idxs):
+        """
+        Arguments:
+        - valid_order_idxs: [B, S, 469] torch.int32, idxs into ORDER_VOCABULARY
+        - loc_idxs: [B, S] LongTensor, 0 <= idx < 81, -1 padded
+
+        Returns [B, S, 13k] bool mask
+        """
+        assert valid_order_idxs.dtype == torch.int32, valid_order_idxs.dtype
+        valid_order_mask = torch.zeros(
+            (valid_order_idxs.shape[0], valid_order_idxs.shape[1], self.orders_vocab_size),
+            dtype=torch.bool,
+            device=valid_order_idxs.device,
+        )
+        valid_order_mask.scatter_(-1, valid_order_idxs.long(), 1)
+        valid_order_mask[:, :, 0] = 0  # remove EOS_TOKEN
+        return valid_order_mask
 
 
 class LSTMDipNetDecoder(nn.Module):
@@ -161,7 +160,6 @@ class LSTMDipNetDecoder(nn.Module):
         self, enc, in_adj_phase, loc_idxs, order_masks, temperature=1.0, teacher_force_orders=None
     ):
         totaltic = time.time()
-        tic = time.time()
         device = next(self.parameters()).device
         self.lstm.flatten_parameters()
 
@@ -215,7 +213,7 @@ class LSTMDipNetDecoder(nn.Module):
             # losses at these points will be masked out later, so this is safe.
             invalid_mask = loc_idxs[:, step] == -1
             if invalid_mask.sum() == loc_idxs.shape[0]:
-                maybe_print(f"Breaking at step {step} because no more orders to give")
+                logging.debug(f"Breaking at step {step} because no more orders to give")
                 assert step > 0
                 # early exit
                 for _step in range(step, order_masks.shape[1]):  # fill in garbage
@@ -224,15 +222,11 @@ class LSTMDipNetDecoder(nn.Module):
                 break
             order_mask[invalid_mask] = 1
 
-            # make scores for invalid actions 0. This is faster  than order_scores[~order_mask] = float("-inf")
-            # use 1e9 instead of inf because 0*inf=nan
-            order_scores = torch.min(
-                order_scores,
-                order_mask.float() * 1e9 - 1e8
-            )
+            # make scores for invalid actions 0. This is faster than
+            # order_scores[~order_mask] = float("-inf") use 1e9 instead of inf
+            # because 0*inf=nan
+            order_scores = torch.min(order_scores, order_mask.float() * 1e9 - 1e8)
             all_order_scores.append(order_scores)
-
-            # print('order_scores', order_scores.min(), order_scores.max(), order_scores.mean())
 
             order_idxs = Categorical(logits=order_scores / temperature).sample()
             all_order_idxs.append(order_idxs)
@@ -248,14 +242,15 @@ class LSTMDipNetDecoder(nn.Module):
                 teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs
             )
 
-            # ugh, hack because I don't want to make compatible_orders_table a buffer (backwards-incompatible)
+            # ugh, hack because I don't want to make compatible_orders_table a
+            # buffer (backwards-incompatible)
             self.compatible_orders_table = self.compatible_orders_table.to(order_mask.device)
 
             compatible_mask = self.compatible_orders_table[dont_repeat_orders]  # B x 13k
             order_masks[:, step:] *= compatible_mask.unsqueeze(1)
 
         res = torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
-        maybe_print("total: ", time.time() - totaltic)
+        # logging.debug("total: {}".format(time.time() - totaltic))
         return res
 
 

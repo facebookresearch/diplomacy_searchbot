@@ -2,7 +2,6 @@ import argparse
 import atexit
 import glob
 import logging
-import numpy as np
 import os
 import random
 import torch
@@ -66,10 +65,11 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
 
     Returns:
     - loss: the output of loss_fn(logits, targets)
+    - order_scores: FIXME FIXME FIXME
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
     x_state, x_orders, x_power, x_season, x_in_adj_phase, y_actions = batch
-    valid_order_idxs, loc_idxs = build_order_mask(y_actions, x_in_adj_phase)
+    valid_order_idxs, loc_idxs = get_valid_order_idxs(y_actions, x_in_adj_phase)
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
@@ -84,7 +84,6 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
     )
-    # logger.warning("hi mom end forward")
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions.to(next(net.parameters()).device)
@@ -94,7 +93,9 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     observed_order_scores = order_scores.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
     if observed_order_scores.min() < -1e7:
         min_score, min_idx = observed_order_scores.min(0)
-        logging.warning(f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!")
+        logging.warning(
+            f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!"
+        )
 
     order_scores = order_scores[y_actions != EOS_IDX]
     y_actions = y_actions[y_actions != EOS_IDX]
@@ -103,15 +104,15 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     return loss_fn(order_scores, y_actions), order_scores, order_idxs
 
 
-def build_order_mask(y_actions, in_adj_phase):
-    """Build a mask of valid possible actions given a ground truth sequence
+def get_valid_order_idxs(y_actions, in_adj_phase):
+    """Build a list of valid possible actions given a ground truth sequence
 
     Arguments:
     - y_actions: [B, 17] LongTensor of order idxs
     - in_adj_phase: [B] BoolTensor, if actions were taken during an adjustment phase
 
     Returns:
-    - valid_order_idxs: [B, S, 485] int32 indexes, 0 < S <= 17, where idx
+    - valid_order_idxs: [B, S, 469] int32 indexes, 0 < S <= 17, where idx
       [b, s, :] contains indexes of ORDER_VOCABULARY[x] corresponding to orders
       originating from the same unit as y_actions[b, s]
     - loc_idxs: [B, S] LongTensor, 0 <= idx < 81, or idx = -1 where y_actions = 0
@@ -123,7 +124,6 @@ def build_order_mask(y_actions, in_adj_phase):
 
     max_step = 0
     for b in range(y_actions.shape[0]):
-        valid_idxs_offset = 0
         adj_offset = 0
         for step in range(y_actions.shape[1]):
             max_step = max(max_step, step)
@@ -200,7 +200,9 @@ def validate(net, val_set_loader, loss_fn):
         for batch in val_set_loader:
             _, _, _, _, _, y_actions = batch
             if y_actions.shape[0] == 0:
-                logging.warning("Got an empty validation batch! (???)")
+                logging.warning(
+                    "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
+                )
                 continue
             losses, order_scores, order_idxs = process_batch(
                 net, batch, loss_fn, temperature=0.001, p_teacher_force=1.0
@@ -311,7 +313,9 @@ def main_subproc(
             # learn
             logger.info("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
-            losses, order_scores, order_idxs = process_batch(net, batch, loss_fn, p_teacher_force=args.teacher_force)
+            losses, order_scores, order_idxs = process_batch(
+                net, batch, loss_fn, p_teacher_force=args.teacher_force
+            )
 
             loss = torch.mean(losses)
             loss.backward()

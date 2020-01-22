@@ -1,5 +1,6 @@
 import diplomacy
 import logging
+import time
 import torch
 
 from fairdiplomacy.agents.base_agent import BaseAgent
@@ -17,8 +18,7 @@ ORDER_VOCABULARY = get_order_vocabulary()
 
 class DipnetAgent(BaseAgent):
     def __init__(self, model_pth):
-        self.model = load_dipnet_model(model_pth, map_location="cpu", eval=True)
-        self.model.cuda()
+        self.model = load_dipnet_model(model_pth, map_location="cuda", eval=True)
 
     def get_orders(self, game, power, temperature=0.1, debug_probs=False, batch_size=1):
         if len(game.get_orderable_locations(power)) == 0:
@@ -59,14 +59,14 @@ def encode_inputs(game, power, all_possible_orders=None, game_state=None):
     x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
     loc_idxs: shape=[1, S], dtype=long, 0 < S <= 17
-    x_order_mask: shape=[1, S, 13k], dtype=bool, 0 < S <= 17
+    valid_orders: shape=[1, S, 469], dtype=bool, 0 < S <= 17
     """
     if game_state is None:
         game_state = encode_state(game)
     x_board_state, x_prev_orders, x_season, x_in_adj_phase = game_state
     x_power = torch.zeros(1, 7)
     x_power[0, POWERS.index(power)] = 1
-    order_mask, loc_idxs, seq_len = get_order_mask(game, power, all_possible_orders)
+    valid_orders, loc_idxs, seq_len = get_valid_orders(game, power, all_possible_orders)
     return (
         x_board_state,
         x_prev_orders,
@@ -74,7 +74,7 @@ def encode_inputs(game, power, all_possible_orders=None, game_state=None):
         x_season,
         x_in_adj_phase,
         loc_idxs[:, :seq_len],
-        order_mask[:, :seq_len, :],
+        valid_orders[:, :seq_len, :],
     )
 
 
@@ -106,17 +106,17 @@ def encode_state(game):
     return x_board_state, x_prev_orders, x_season, x_in_adj_phase
 
 
-def get_order_mask(game, power, all_possible_orders=None):
+def get_valid_orders(game, power, all_possible_orders=None):
     """Return a boolean mask of valid orders
 
     Returns:
-    - a [1, 17, 468] int tensor of valid move indexes (padded with -1)
+    - a [1, 17, 469] int tensor of valid move indexes (padded with -1)
     - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
-    - the actual lengh of the sequence == the number of orders to submit, <= 17
+    - the actual length of the sequence == the number of orders to submit, <= 17
     """
-    orderable_locs = sorted(game.get_orderable_locations(power), key=LOCS.index)
     if all_possible_orders is None:
         all_possible_orders = game.get_all_possible_orders()
+    orderable_locs = sorted(game.get_orderable_locations(power), key=LOCS.index)
     power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
     n_builds = game.get_state()["builds"][power]["count"]
     all_order_idxs = torch.zeros(
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_path", nargs="?", default="/checkpoint/jsgray/dipnet.pth")
+    parser.add_argument("model_path", nargs="?", default="/checkpoint/jsgray/dipnet.adam.pth")
     parser.add_argument("--temperature", "-t", type=float, default=1.0)
     args = parser.parse_args()
 
@@ -175,13 +175,12 @@ if __name__ == "__main__":
     logging.info("Submit orders: {}".format(orders))
 
     b, N = 1000, 100
-    import time
 
     tic = time.time()
     for i in range(N):
         orders = agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=b)
-    delta = time.time() - tic
-    print(f"batch {b} N {N} : forward'd {b*N} in {delta} s. {b*N/delta} forwards/s")
+    timing = time.time() - tic
+    print(f"batch {b} N {N} : forward'd {b*N} in {timing} s. {b*N/timing} forwards/s")
 
     # with torch.autograd.profiler.profile(use_cuda=True, record_shapes=True) as prof:
     #     agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=400)
