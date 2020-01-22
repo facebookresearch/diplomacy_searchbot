@@ -28,77 +28,6 @@ if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
         + f"for faster startup time!"
     )
 
-
-def server_handler(
-    q: torchbeast.ComputationQueue, load_model_fn, output_transform=None, seed=None, device=0
-):
-
-    logging.info(f"STARTED SERVER! {os.getpid()}")
-    if device != 0:
-        torch.cuda.set_device(device)
-    model = load_model_fn()
-    logging.info("LOADED MODEL")
-
-    if seed is not None:
-        torch.manual_seed(seed)
-
-    frame_count, batch_count, total_batches = 0, 0, 0
-    timings = TimingCtx()
-    totaltic = time.time()
-    with torch.no_grad():
-        while True:
-            logging.info("Waiting for batch")
-            try:
-                for batch in q:
-                    with timings("next_batch"):
-                        inputs = batch.get_inputs()[0]
-
-                    with timings("to_cuda"):
-                        inputs = tuple(x.to("cuda") for x in inputs)
-
-                    with timings("model"):
-                        y = model(*inputs)
-
-                    with timings("transform"):
-                        if output_transform is not None:
-                            y = output_transform(y)
-
-                    with timings("to_cpu"):
-                        y = tuple(x.to("cpu") for x in y)
-
-                    with timings("reply"):
-                        batch.set_outputs(y)
-
-                    # Do some performance logging here
-                    batch_count += 1
-                    total_batches += 1
-                    frame_count += inputs[0].shape[0]
-                    if (total_batches & (total_batches - 1)) == 0:
-                        delta = time.time() - totaltic
-                        logging.info(
-                            f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
-                            f"in {delta} s, {frame_count / delta} forward/s."
-                        )
-                        logging.info(str(timings))
-                        batch_count = frame_count = 0
-                        timings.clear()
-                        totaltic = time.time()
-
-            except TimeoutError as e:
-                logging.info("TimeoutError:", e)
-
-    logging.info("SERVER DONE")
-
-
-def run_server(hostport, batch_size, **kwargs):
-    logging.info(f"STARTED SERVER on {hostport} batch= {batch_size}")
-    server = torchbeast.Server(hostport)
-    eval_queue = torchbeast.ComputationQueue(batch_size)
-    server.bind_queue("evaluate", eval_queue)
-    server.run()
-    server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
-
-
 class SimpleSearchDipnetAgent(BaseAgent):
     """One-ply search with dipnet-policy rollouts
 
@@ -370,6 +299,77 @@ class SimpleSearchDipnetAgent(BaseAgent):
         return result
 
 
+def run_server(hostport, batch_size, **kwargs):
+    logging.info(f"STARTED SERVER on {hostport} batch= {batch_size}")
+    server = torchbeast.Server(hostport)
+    eval_queue = torchbeast.ComputationQueue(batch_size)
+    server.bind_queue("evaluate", eval_queue)
+    server.run()
+    server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
+
+
+def server_handler(
+    q: torchbeast.ComputationQueue, load_model_fn, output_transform=None, seed=None, device=0
+):
+
+    logging.info(f"STARTED SERVER! {os.getpid()}")
+    if device != 0:
+        torch.cuda.set_device(device)
+    model = load_model_fn()
+    logging.info("LOADED MODEL")
+
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    frame_count, batch_count, total_batches = 0, 0, 0
+    timings = TimingCtx()
+    totaltic = time.time()
+    with torch.no_grad():
+        while True:
+            logging.info("Waiting for batch")
+            try:
+                for batch in q:
+                    with timings("next_batch"):
+                        inputs = batch.get_inputs()[0]
+
+                    with timings("to_cuda"):
+                        inputs = tuple(x.to("cuda") for x in inputs)
+
+                    with timings("model"):
+                        y = model(*inputs)
+
+                    with timings("transform"):
+                        if output_transform is not None:
+                            y = output_transform(y)
+
+                    with timings("to_cpu"):
+                        y = tuple(x.to("cpu") for x in y)
+
+                    with timings("reply"):
+                        batch.set_outputs(y)
+
+                    # Do some performance logging here
+                    batch_count += 1
+                    total_batches += 1
+                    frame_count += inputs[0].shape[0]
+                    if (total_batches & (total_batches - 1)) == 0:
+                        delta = time.time() - totaltic
+                        logging.info(
+                            f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
+                            f"in {delta} s, {frame_count / delta} forward/s."
+                        )
+                        logging.info(str(timings))
+                        batch_count = frame_count = 0
+                        timings.clear()
+                        totaltic = time.time()
+
+            except TimeoutError as e:
+                logging.info("TimeoutError:", e)
+
+    logging.info("SERVER DONE")
+
+
+
 def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
     """
     Arguments:
@@ -449,7 +449,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
     logging.info("PID: {}".format(os.getpid()))
 
-    MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
+    MODEL_PTH = "/checkpoint/jsgray/dipnet.adam.pth"
     game = diplomacy.Game()
 
     mp.set_start_method("spawn")
