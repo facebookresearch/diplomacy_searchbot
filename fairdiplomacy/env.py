@@ -47,15 +47,10 @@ class Env:
     def process_turn(self, timeout=10):
         logging.info("process_turn {}".format(self.game.phase))
 
-        # TODO: this code is faster but harder to debug, leave it for now
-        #
-        # self.thread_pool_submit(agent.get_orders, self.game, possible_orders)
-        # futures = {
-        #     power: self.thread_pool.submit(agent.get_orders, self.game, all_possible_orders)
-        #     for power, agent in self.agents.items()
-        # }
-
         for power, agent in self.agents.items():
+            if not self.game.get_orderable_locations(power):
+                logging.info(f"Skipping orders for {power}")
+                continue
             orders = agent.get_orders(self.game, power)
             self.game.set_orders(power, orders)
             logging.info("Set orders {} {}".format(power, orders))
