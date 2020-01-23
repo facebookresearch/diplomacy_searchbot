@@ -459,7 +459,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
     logging.info("PID: {}".format(os.getpid()))
 
-    MODEL_PTH = "/checkpoint/jsgray/dipnet.adam.pth"
+    MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
     game = diplomacy.Game()
 
     mp.set_start_method("spawn")

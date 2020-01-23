@@ -165,7 +165,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_path", nargs="?", default="/checkpoint/jsgray/dipnet.adam.pth")
+    parser.add_argument("model_path", nargs="?", default="/checkpoint/jsgray/dipnet.pth")
     parser.add_argument("--temperature", "-t", type=float, default=1.0)
     args = parser.parse_args()
 
