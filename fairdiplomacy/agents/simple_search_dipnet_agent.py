@@ -268,7 +268,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
                                 game_state=game_state,
                             ),
                         )
-                        for p in other_powers
+                        for p in other_powers if game.get_orderable_locations(p)
                     ]
 
                 xs: List[Tuple] = [b[2] for b in batch_data]
