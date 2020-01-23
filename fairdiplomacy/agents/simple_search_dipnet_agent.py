@@ -59,11 +59,15 @@ class SimpleSearchDipnetAgent(BaseAgent):
     ):
         super().__init__()
 
+        self.n_rollout_procs = n_rollout_procs
+        self.n_server_procs = n_server_procs
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.max_rollout_length = max_rollout_length
+
         self.hostports = [gen_hostport() for _ in range(n_server_procs)]
         self.servers = []
         assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
+        mp.set_start_method("spawn")
         for i in range(n_server_procs):
             server = mp.Process(
                 target=run_server,
@@ -84,11 +88,9 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
         self.client = torchbeast.Client(self.hostports[0])
         logging.info(f"Connecting to {self.hostports[0]}")
-
         self.client.connect(20)
         logging.info(f"Connected to {self.hostports[0]}")
-        self.n_server_procs = n_server_procs
-        self.n_rollout_procs = n_rollout_procs
+
         self.proc_pool = mp.Pool(n_rollout_procs)
         logging.info("Warming up pool")
         self.proc_pool.map(float, range(n_rollout_procs))
@@ -155,7 +157,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
             orders: order_scores[orders] / order_counts[orders] for orders in order_scores
         }
         logging.info("order_avg_score: {}".format(order_avg_score))
-        return max(order_avg_score.items(), key=lambda kv: kv[1])[0]
+        return list(max(order_avg_score.items(), key=lambda kv: kv[1])[0])
 
     @classmethod
     def do_model_request(cls, client, x, temperature=1.0) -> List[Tuple[str]]:
@@ -462,7 +464,6 @@ if __name__ == "__main__":
     MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
     game = diplomacy.Game()
 
-    mp.set_start_method("spawn")
     agent = SimpleSearchDipnetAgent(MODEL_PTH)
     logging.info("Constructed agent")
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
