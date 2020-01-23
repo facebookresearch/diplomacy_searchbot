@@ -80,6 +80,13 @@ class DipNet(nn.Module):
         - order_idxs [B, S]: idx of sampled orders
         - order_scores [B, S, 13k]: masked pre-softmax logits of each order
         """
+        if (loc_idxs == -1).all():
+            logging.warning("foward called with all loc_idxs == -1")
+            return (
+                torch.zeros_like(loc_idxs),
+                torch.zeros(*loc_idxs.shape, self.orders_vocab_size, device=loc_idxs.device),
+            )
+
         enc = self.encoder(x_bo, x_po, x_power_1h, x_season_1h)  # [B, 81, 240]
         res = self.decoder(
             enc,
@@ -213,12 +220,14 @@ class LSTMDipNetDecoder(nn.Module):
             # losses at these points will be masked out later, so this is safe.
             invalid_mask = loc_idxs[:, step] == -1
             if invalid_mask.sum() == loc_idxs.shape[0]:
-                logging.debug(f"Breaking at step {step} because no more orders to give")
-                assert step > 0
                 # early exit
+                logging.debug(f"Breaking at step {step} because no more orders to give")
                 for _step in range(step, order_masks.shape[1]):  # fill in garbage
-                    all_order_idxs.append(all_order_idxs[-1])
-                    # FIXME(alerer): shouldn't we be filling in 0? (i.e. <EOS>)
+                    all_order_idxs.append(
+                        torch.zeros(
+                            order_masks.shape[0], dtype=torch.long, device=order_masks.device
+                        )
+                    )
                 break
             order_mask[invalid_mask] = 1
 
