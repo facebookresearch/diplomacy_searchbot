@@ -99,6 +99,10 @@ class SimpleSearchDipnetAgent(BaseAgent):
     def get_orders(self, game, power) -> List[str]:
         plausible_orders = self.get_plausible_orders(game, power)
         logging.info("Plausible orders: {}".format(plausible_orders))
+
+        if len(plausible_orders) == 1:
+            return list(plausible_orders.pop())
+
         game_json = to_saved_game_format(game)
 
         # divide up the rollouts among the processes
@@ -235,7 +239,6 @@ class SimpleSearchDipnetAgent(BaseAgent):
             client.connect(3)
 
         with timings("setup"):
-            logging.info("new proc {} -- {}".format(set_orders_dict, os.getpid()))
             faulthandler.register(signal.SIGUSR1)
             torch.set_num_threads(1)
 
@@ -268,27 +271,31 @@ class SimpleSearchDipnetAgent(BaseAgent):
                                 game_state=game_state,
                             ),
                         )
-                        for p in other_powers if game.get_orderable_locations(p)
+                        for p in other_powers
+                        if game.get_orderable_locations(p)
                     ]
 
-                xs: List[Tuple] = [b[2] for b in batch_data]
-                batch_inputs, seq_lens = cat_pad_inputs(xs)
+            if len(batch_data) > 0:
+                with timings("cat_pad"):
+                    xs: List[Tuple] = [b[2] for b in batch_data]
+                    batch_inputs, seq_lens = cat_pad_inputs(xs)
 
-            with timings("model"):
-                batch_orders = unpad_lists(
-                    cls.do_model_request(client, batch_inputs, temperature), seq_lens
-                )
+                with timings("model"):
+                    batch_orders = unpad_lists(
+                        cls.do_model_request(client, batch_inputs, temperature), seq_lens
+                    )
+            else:
+                logging.info("Skipping model with no orders for other_powers this turn")
+                batch_orders = []
 
             with timings("env"):
-                # process turn
-                assert len(batch_data) == len(
-                    batch_orders
-                ), f"{len(batch_data)} != {len(batch_orders)}"
-                for (game, other_power, _), orders, seq_len in zip(
-                    batch_data, batch_orders, seq_lens
-                ):
-                    game.set_orders(other_power, list(orders[:seq_len]))
+                assert len(batch_data) == len(batch_orders), "{} != {}".format(
+                    len(batch_data), len(batch_orders)
+                )
 
+                # set_orders and process
+                for (game, other_power, _), orders in zip(batch_data, batch_orders):
+                    game.set_orders(other_power, list(orders))
                 for game in games:
                     if not game.is_game_done:
                         game.process()
@@ -301,7 +308,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
             (set_orders_dict, {k: len(v) for k, v in game.get_state()["centers"].items()})
             for game in games
         ]
-        logging.info(
+        logging.debug(
             f"end do_rollout pid {os.getpid()} for {batch_size} games in {turn_idx} turns. timings: "
             f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }."
         )
@@ -309,7 +316,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
 
 def run_server(hostport, batch_size, **kwargs):
-    logging.info(f"STARTED SERVER on {hostport} batch= {batch_size}")
+    logging.info(f"STARTED SERVER on {hostport} batch={batch_size}")
     server = torchbeast.Server(hostport)
     eval_queue = torchbeast.ComputationQueue(batch_size)
     server.bind_queue("evaluate", eval_queue)
@@ -415,6 +422,7 @@ def cat_pad_inputs(xs):
 
     # first cat_pad_sequences on sequence inputs
     padded_loc_idxs_seqs, _ = cat_pad_sequences(batch[-2], pad_value=-1, pad_to_len=MAX_SEQ_LEN)
+
     padded_mask_seqs, seq_lens = cat_pad_sequences(
         batch[-1], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
     )
