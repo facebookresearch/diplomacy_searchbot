@@ -21,6 +21,7 @@ from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.profiling.timing_ctx import TimingCtx
+from fairdiplomacy.utils import ExceptionHandlingProcess
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     logging.warn(
@@ -69,7 +70,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
         assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
         mp.set_start_method("spawn")
         for i in range(n_server_procs):
-            server = mp.Process(
+            server = ExceptionHandlingProcess(
                 target=run_server,
                 kwargs=dict(
                     hostport=self.hostports[i],
