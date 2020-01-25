@@ -12,6 +12,7 @@ conda create -y --name fairdiplomacy python=3.7
 conda activate fairdiplomacy
 conda install -y nodejs
 pip install -e . -vv
+pip install /checkpoint/hnr/wheels/postman-0.1.1-cp37-cp37m-linux_x86_64.whl
 ```
 
 Install singularity 3.x, or on FAIR cluster run:

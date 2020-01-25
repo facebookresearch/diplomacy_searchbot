@@ -12,7 +12,7 @@ from typing import List, Tuple, Set, Dict
 import diplomacy.utils.export
 import torch
 import torch.multiprocessing as mp
-import torchbeast
+import postman
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 
 from fairdiplomacy.agents.base_agent import BaseAgent
@@ -86,7 +86,7 @@ class SimpleSearchDipnetAgent(BaseAgent):
             server.start()
             self.servers.append(server)
 
-        self.client = torchbeast.Client(self.hostports[0])
+        self.client = postman.Client(self.hostports[0])
         logging.info(f"Connecting to {self.hostports[0]}")
         self.client.connect(20)
         logging.info(f"Connected to {self.hostports[0]}")
@@ -234,8 +234,8 @@ class SimpleSearchDipnetAgent(BaseAgent):
         assert batch_size <= 8
         timings = TimingCtx()
 
-        with timings("torchbeast.client"):
-            client = torchbeast.Client(hostport)
+        with timings("postman.client"):
+            client = postman.Client(hostport)
             client.connect(3)
 
         with timings("setup"):
@@ -316,16 +316,20 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
 
 def run_server(hostport, batch_size, **kwargs):
-    logging.info(f"STARTED SERVER on {hostport} batch={batch_size}")
-    server = torchbeast.Server(hostport)
-    eval_queue = torchbeast.ComputationQueue(batch_size)
-    server.bind_queue("evaluate", eval_queue)
-    server.run()
-    server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
+    try:
+        logging.info(f"STARTED SERVER on {hostport} batch={batch_size}")
+        server = postman.Server(hostport)
+        eval_queue = postman.ComputationQueue(batch_size)
+        server.bind_queue_batched("evaluate", eval_queue)
+        server.run()
+        server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
+    except:
+        logging.exception("HI MOM run_server FAILED")
+        raise
 
 
 def server_handler(
-    q: torchbeast.ComputationQueue, load_model_fn, output_transform=None, seed=None, device=0
+    q: postman.ComputationQueue, load_model_fn, output_transform=None, seed=None, device=0
 ):
 
     logging.info(f"STARTED SERVER! {os.getpid()}")
@@ -344,40 +348,41 @@ def server_handler(
         while True:
             logging.info("Waiting for batch")
             try:
-                for batch in q:
-                    with timings("next_batch"):
-                        inputs = batch.get_inputs()[0]
+                batch = q.get()
 
-                    with timings("to_cuda"):
-                        inputs = tuple(x.to("cuda") for x in inputs)
+                with timings("next_batch"):
+                    inputs = batch.get_inputs()[0]
 
-                    with timings("model"):
-                        y = model(*inputs)
+                with timings("to_cuda"):
+                    inputs = tuple(x.to("cuda") for x in inputs)
 
-                    with timings("transform"):
-                        if output_transform is not None:
-                            y = output_transform(y)
+                with timings("model"):
+                    y = model(*inputs)
 
-                    with timings("to_cpu"):
-                        y = tuple(x.to("cpu") for x in y)
+                with timings("transform"):
+                    if output_transform is not None:
+                        y = output_transform(y)
 
-                    with timings("reply"):
-                        batch.set_outputs(y)
+                with timings("to_cpu"):
+                    y = tuple(x.to("cpu") for x in y)
 
-                    # Do some performance logging here
-                    batch_count += 1
-                    total_batches += 1
-                    frame_count += inputs[0].shape[0]
-                    if (total_batches & (total_batches - 1)) == 0:
-                        delta = time.time() - totaltic
-                        logging.info(
-                            f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
-                            f"in {delta} s, {frame_count / delta} forward/s."
-                        )
-                        logging.info(str(timings))
-                        batch_count = frame_count = 0
-                        timings.clear()
-                        totaltic = time.time()
+                with timings("reply"):
+                    batch.set_outputs(y)
+
+                # Do some performance logging here
+                batch_count += 1
+                total_batches += 1
+                frame_count += inputs[0].shape[0]
+                if (total_batches & (total_batches - 1)) == 0:
+                    delta = time.time() - totaltic
+                    logging.info(
+                        f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
+                        f"in {delta} s, {frame_count / delta} forward/s."
+                    )
+                    logging.info(str(timings))
+                    batch_count = frame_count = 0
+                    timings.clear()
+                    totaltic = time.time()
 
             except TimeoutError as e:
                 logging.info("TimeoutError:", e)
