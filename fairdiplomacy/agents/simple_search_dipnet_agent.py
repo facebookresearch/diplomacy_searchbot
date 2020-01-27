@@ -2,7 +2,6 @@ import faulthandler
 import logging
 import os
 import signal
-import socket
 import sys
 import time
 from collections import Counter
@@ -21,7 +20,7 @@ from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.profiling.timing_ctx import TimingCtx
-from fairdiplomacy.utils import ExceptionHandlingProcess
+from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     logging.warn(
@@ -65,15 +64,16 @@ class SimpleSearchDipnetAgent(BaseAgent):
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.max_rollout_length = max_rollout_length
 
-        self.hostports = [gen_hostport() for _ in range(n_server_procs)]
+        logging.info("Launching servers")
         self.servers = []
         assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
         mp.set_start_method("spawn")
         for i in range(n_server_procs):
+            q = mp.SimpleQueue()
             server = ExceptionHandlingProcess(
                 target=run_server,
                 kwargs=dict(
-                    hostport=self.hostports[i],
+                    port=12345 + 10 * i,
                     batch_size=max_batch_size,
                     load_model_fn=partial(
                         load_dipnet_model, model_path, map_location="cuda", eval=True
@@ -81,14 +81,20 @@ class SimpleSearchDipnetAgent(BaseAgent):
                     output_transform=model_output_transform,
                     seed=0,
                     device=i % n_gpu,
+                    port_q=q,
                 ),
                 daemon=True,
             )
             server.start()
-            self.servers.append(server)
+            self.servers.append((server, q))
+
+        logging.info("Waiting for servers")
+        ports = [q.get() for _, q in self.servers]
+        self.hostports = [f"localhost:{p}" for p in ports]
+        logging.info(f"Servers started on ports {ports}")
 
         self.client = postman.Client(self.hostports[0])
-        logging.info(f"Connecting to {self.hostports[0]}")
+        logging.info(f"Connecting to {self.hostports[0]} [{os.uname().nodename}]")
         self.client.connect(20)
         logging.info(f"Connected to {self.hostports[0]}")
 
@@ -316,28 +322,41 @@ class SimpleSearchDipnetAgent(BaseAgent):
         return result
 
 
-def run_server(hostport, batch_size, **kwargs):
+def run_server(port, batch_size, port_q=None, **kwargs):
+    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+    max_port = port + 10
     try:
-        logging.info(f"STARTED SERVER on {hostport} batch={batch_size}")
-        server = postman.Server(hostport)
+        logging.info(f"Starting server port={port} batch={batch_size}")
         eval_queue = postman.ComputationQueue(batch_size)
-        server.bind_queue_batched("evaluate", eval_queue)
-        server.run()
+        for p in range(port, max_port):
+            server = postman.Server(f"localhost:{p}")
+            server.bind_queue_batched("evaluate", eval_queue)
+            try:
+                server.run()
+                break  # port is good
+            except RuntimeError:
+                continue  # try a different port
+        else:
+            raise RuntimeError(f"Couldn't start server on ports {port}:{max_port}")
+
+        logging.info(f"Started server on port={p} pid={os.getpid()}")
+        if port_q is not None:
+            port_q.put(p)  # send port to parent proc
+
         server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
-    except:
-        logging.exception("HI MOM run_server FAILED")
-        raise
+    finally:
+        eval_queue.close()
+        server.stop()
 
 
 def server_handler(
     q: postman.ComputationQueue, load_model_fn, output_transform=None, seed=None, device=0
 ):
 
-    logging.info(f"STARTED SERVER! {os.getpid()}")
     if device != 0:
         torch.cuda.set_device(device)
     model = load_model_fn()
-    logging.info("LOADED MODEL")
+    logging.info(f"Server {os.getpid()} loaded model")
 
     if seed is not None:
         torch.manual_seed(seed)
@@ -349,41 +368,41 @@ def server_handler(
         while True:
             logging.info("Waiting for batch")
             try:
-                batch = q.get()
+                with q.get() as batch:
 
-                with timings("next_batch"):
-                    inputs = batch.get_inputs()[0]
+                    with timings("next_batch"):
+                        inputs = batch.get_inputs()[0]
 
-                with timings("to_cuda"):
-                    inputs = tuple(x.to("cuda") for x in inputs)
+                    with timings("to_cuda"):
+                        inputs = tuple(x.to("cuda") for x in inputs)
 
-                with timings("model"):
-                    y = model(*inputs)
+                    with timings("model"):
+                        y = model(*inputs)
 
-                with timings("transform"):
-                    if output_transform is not None:
-                        y = output_transform(y)
+                    with timings("transform"):
+                        if output_transform is not None:
+                            y = output_transform(y)
 
-                with timings("to_cpu"):
-                    y = tuple(x.to("cpu") for x in y)
+                    with timings("to_cpu"):
+                        y = tuple(x.to("cpu") for x in y)
 
-                with timings("reply"):
-                    batch.set_outputs(y)
+                    with timings("reply"):
+                        batch.set_outputs(y)
 
-                # Do some performance logging here
-                batch_count += 1
-                total_batches += 1
-                frame_count += inputs[0].shape[0]
-                if (total_batches & (total_batches - 1)) == 0:
-                    delta = time.time() - totaltic
-                    logging.info(
-                        f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
-                        f"in {delta} s, {frame_count / delta} forward/s."
-                    )
-                    logging.info(str(timings))
-                    batch_count = frame_count = 0
-                    timings.clear()
-                    totaltic = time.time()
+                    # Do some performance logging here
+                    batch_count += 1
+                    total_batches += 1
+                    frame_count += inputs[0].shape[0]
+                    if (total_batches & (total_batches - 1)) == 0:
+                        delta = time.time() - totaltic
+                        logging.info(
+                            f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
+                            f"in {delta} s, {frame_count / delta} forward/s."
+                        )
+                        logging.info(str(timings))
+                        batch_count = frame_count = 0
+                        timings.clear()
+                        totaltic = time.time()
 
             except TimeoutError as e:
                 logging.info("TimeoutError:", e)
@@ -441,15 +460,6 @@ def cat_pad_inputs(xs):
 def model_output_transform(y):
     # return only order_idxs, not order_scores
     return y[:1]
-
-
-def gen_hostport(host="localhost", port=12345):
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex((host, port)) == 0:  # socket already exists
-                port += 1
-            else:
-                return f"{host}:{port}"
 
 
 def call(f):

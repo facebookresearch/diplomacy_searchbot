@@ -5,8 +5,8 @@
 ###   SETUP   ###
 #################
 
-AGENT_A=/checkpoint/jsgray/dipnet.pth
-AGENT_B=search
+AGENT_A=search
+AGENT_B=mila
 NUM_TRIALS=10
 
 
