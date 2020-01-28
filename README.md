@@ -24,32 +24,16 @@ If you are getting warnings about `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION`, you 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
 ```
 
-# Running a Game
+# Training a Model
 
-Run:
-```
-cd fairdiplomacy
-python env.py
-```
+The model code is in [fairdiplomacy/models/dipnet/](fairdiplomacy/models/dipnet/). The most import files are:
+- [dipnet.py](fairdiplomacy/models/dipnet/dipnet.py): the model implementation
+- [train_sl.py](fairdiplomacy/models/dipnet/train_sl.py): the model training code
+- [launch_sbatch.sh](fairdiplomacy/models/dipnet/launch_sbatch.sh): run this script to train a model on the cluster
 
-This will run the MILA supervised learning agent against six random agents, and save the results to `game.json`. The code [in env.py](https://github.com/fairinternal/fairdiplomacy/blob/master/fairdiplomacy/env.py#L74-L87) that implements this is shown here:
+# Checking a Trained Model's Outputs
 
-```
-    env = Env(
-        {
-            "ITALY": MilaSLAgent(),
-            "ENGLAND": RandomAgent(),
-            "FRANCE": RandomAgent(),
-            "GERMANY": RandomAgent(),
-            "AUSTRIA": RandomAgent(),
-            "RUSSIA": RandomAgent(),
-            "TURKEY": RandomAgent(),
-        }
-    )
-    results = env.process_all_turns()
-    logging.info("Game over! Results: {}".format(results))
-    env.save("game.json")
-```
+Run [fairdiplomacy/agents/dipnet_agent.py](fairdiplomacy/agents/dipnet_agent.py)
 
 # Visualizing a Saved Game
 
@@ -73,11 +57,6 @@ After [opening the visualizer](#visualizing-a-saved-game), create a new standard
 ```
 python thirdparty/github/diplomacy/research/diplomacy_research/scripts/launch_bot.py
 ```
-
-# What's included so far
-
-An implementation of MILA's DipNet [https://arxiv.org/abs/1909.02128](https://arxiv.org/abs/1909.02128) is in progress at [models/dipnet/train_sl.py](https://github.com/fairinternal/fairdiplomacy/blob/master/fairdiplomacy/models/dipnet/train_sl.py)
-
 
 # A Primer on the diplomacy.Game object
 
