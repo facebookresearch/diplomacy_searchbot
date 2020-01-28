@@ -1,5 +1,6 @@
 #!/bin/bash
-TMPDIR=$(mktemp -d -p /checkpoint/jsgray/tmp)
+mkdir -p /checkpoint/$USER/tmp
+TMPDIR=$(mktemp -d -p /checkpoint/$USER/tmp)
 
 rsync -avz \
     --exclude-from ../../../.gitignore \
