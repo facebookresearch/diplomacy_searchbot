@@ -4,14 +4,11 @@ import time
 import torch
 
 from fairdiplomacy.agents.base_agent import BaseAgent
-from fairdiplomacy.data.dataset import smarter_order_index
-from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
+from fairdiplomacy.data.dataset import get_valid_orders_impl
+from fairdiplomacy.models.consts import SEASONS, POWERS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
-from fairdiplomacy.models.dipnet.order_vocabulary import (
-    get_order_vocabulary,
-    get_order_vocabulary_idxs_len,
-)
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
 
 ORDER_VOCABULARY = get_order_vocabulary()
 
@@ -116,47 +113,10 @@ def get_valid_orders(game, power, all_possible_orders=None):
     """
     if all_possible_orders is None:
         all_possible_orders = game.get_all_possible_orders()
-    orderable_locs = sorted(game.get_orderable_locations(power), key=LOCS.index)
-    power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
-    n_builds = game.get_state()["builds"][power]["count"]
-    all_order_idxs = torch.zeros(
-        1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32
+
+    return get_valid_orders_impl(
+        power, all_possible_orders, game.get_orderable_locations(), game.get_state()
     )
-    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long)
-
-    if n_builds > 0:
-        # build phase: all possible build orders, up to the number of allowed builds
-        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
-        return all_order_idxs, loc_idxs, n_builds
-
-    if n_builds < 0:
-        # disbands: all possible disband orders, up to the number of required disbands
-        n_disbands = -n_builds
-        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
-        return all_order_idxs, loc_idxs, n_disbands
-
-    # move phase: iterate through orderable_locs in topo order
-    for i, loc in enumerate(orderable_locs):
-        orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
-        all_order_idxs[0, i, : len(order_idxs)] = order_idxs
-        loc_idxs[0, i] = LOCS.index(loc)
-
-    return all_order_idxs, loc_idxs, len(orderable_locs)
-
-
-def filter_orders_in_vocab(orders):
-    """Return the subset of orders that are found in the vocab, and their idxs"""
-    ret, idxs = [], []
-    for order in orders:
-        try:
-            idx = smarter_order_index(order)
-            ret.append(order)
-            idxs.append(idx)
-        except KeyError:
-            continue
-    return ret, torch.tensor(idxs, dtype=torch.int32)
 
 
 if __name__ == "__main__":

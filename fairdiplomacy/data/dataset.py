@@ -6,7 +6,11 @@ import torch
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
-from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
+from fairdiplomacy.models.dipnet.order_vocabulary import (
+    get_order_vocabulary,
+    get_order_vocabulary_idxs_len,
+    EOS_IDX,
+)
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
@@ -59,18 +63,21 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
 
-    Return: tuple of six tensors
+    Return: tuple of eight tensors
     - board_state: shape=(7, 81, 35)
     - prev_orders: shape=(7, 81, 40)
     - power: shape=(7, 7)
     - season: shape=(7, 3)
     - in_adj_phase: shape=(7,)
+    - possible_actions: shape=(7, 17, 469), pad=-1
+    - loc_idxs: shape=(7, 17), 0 <= idx < 81, pad=-1
     - actions: shape=(7, 17) int order idxs
     """
     phase_name = str(list(game.state_history.keys())[phase_idx])
+    phase_state = game.state_history[phase_name]
 
     # encode board state
-    x_board_state = board_state_to_np(game.state_history[phase_name])
+    x_board_state = board_state_to_np(phase_state)
     x_board_state = torch.from_numpy(x_board_state).repeat(len(POWERS), 1, 1)
 
     # encode prev movement orders
@@ -96,6 +103,23 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
 
     # encode adjustment phase
     x_in_adj_phase = torch.zeros(len(POWERS), dtype=torch.bool).fill_(phase_name[-1] == "A")
+
+    # encode possible actions
+    tmp_game = diplomacy.Game()
+    tmp_game.set_state(phase_state)
+    all_possible_orders = tmp_game.get_all_possible_orders()
+    all_orderable_locations = tmp_game.get_orderable_locations()
+    x_possible_actions, x_loc_idxs = [
+        torch.stack(ts).squeeze(1)
+        for ts in zip(
+            *[
+                get_valid_orders_impl(
+                    power, all_possible_orders, all_orderable_locations, phase_state
+                )[:2]
+                for power in POWERS
+            ]
+        )
+    ]
 
     # encode actions
     y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int64).fill_(EOS_IDX)
@@ -133,8 +157,68 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
 
     return tuple(
         t[power_idxs]
-        for t in (x_board_state, x_prev_orders, x_power, x_season, x_in_adj_phase, y_actions)
+        for t in (
+            x_board_state,
+            x_prev_orders,
+            x_power,
+            x_season,
+            x_in_adj_phase,
+            x_possible_actions,
+            x_loc_idxs,
+            y_actions,
+        )
     )
+
+
+def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, game_state):
+    """Return a boolean mask of valid orders
+
+    Returns:
+    - a [1, 17, 469] int tensor of valid move indexes (padded with -1)
+    - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
+    - the actual length of the sequence == the number of orders to submit, <= 17
+    """
+    orderable_locs = sorted(all_orderable_locations[power], key=LOCS.index)
+    power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
+    n_builds = game_state["builds"][power]["count"]
+    all_order_idxs = torch.zeros(
+        1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32
+    )
+    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long)
+
+    if n_builds > 0:
+        # build phase: all possible build orders, up to the number of allowed builds
+        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
+        all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        return all_order_idxs, loc_idxs, n_builds
+
+    if n_builds < 0:
+        # disbands: all possible disband orders, up to the number of required disbands
+        n_disbands = -n_builds
+        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
+        all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        return all_order_idxs, loc_idxs, n_disbands
+
+    # move phase: iterate through orderable_locs in topo order
+    for i, loc in enumerate(orderable_locs):
+        orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
+        all_order_idxs[0, i, : len(order_idxs)] = order_idxs
+        loc_idxs[0, i] = LOCS.index(loc)
+
+    return all_order_idxs, loc_idxs, len(orderable_locs)
+
+
+def filter_orders_in_vocab(orders):
+    """Return the subset of orders that are found in the vocab, and their idxs"""
+    ret, idxs = [], []
+    for order in orders:
+        try:
+            idx = smarter_order_index(order)
+            ret.append(order)
+            idxs.append(idx)
+        except KeyError:
+            continue
+    return ret, torch.tensor(idxs, dtype=torch.int32)
 
 
 def smarter_order_index(order):

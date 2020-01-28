@@ -11,12 +11,11 @@ from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, collate_fn
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
-from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS, LOCS
+from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS
 from fairdiplomacy.models.dipnet.dipnet import DipNet
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
-    get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
 
@@ -68,8 +67,9 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     - order_scores: FIXME FIXME FIXME
     - order_idxs: [B, S] LongTensor of sampled order idxs
     """
-    x_state, x_orders, x_power, x_season, x_in_adj_phase, y_actions = batch
-    valid_order_idxs, loc_idxs = get_valid_order_idxs(y_actions, x_in_adj_phase)
+    x_state, x_orders, x_power, x_season, x_in_adj_phase, x_possible_actions, x_loc_idxs, y_actions = (
+        batch
+    )
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
@@ -79,8 +79,8 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
         x_power,
         x_season,
         x_in_adj_phase,
-        loc_idxs,
-        valid_order_idxs,
+        x_loc_idxs,
+        x_possible_actions,
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
     )
@@ -102,63 +102,6 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
 
     # calculate loss
     return loss_fn(order_scores, y_actions), order_scores, order_idxs
-
-
-def get_valid_order_idxs(y_actions, in_adj_phase):
-    """Build a list of valid possible actions given a ground truth sequence
-
-    Arguments:
-    - y_actions: [B, 17] LongTensor of order idxs
-    - in_adj_phase: [B] BoolTensor, if actions were taken during an adjustment phase
-
-    Returns:
-    - valid_order_idxs: [B, S, 469] int32 indexes, 0 < S <= 17, where idx
-      [b, s, :] contains indexes of ORDER_VOCABULARY[x] corresponding to orders
-      originating from the same unit as y_actions[b, s]
-    - loc_idxs: [B, S] LongTensor, 0 <= idx < 81, or idx = -1 where y_actions = 0
-    """
-    valid_order_idxs = torch.zeros(
-        y_actions.shape[0], y_actions.shape[1], get_order_vocabulary_idxs_len(), dtype=torch.int32
-    )
-    loc_idxs = torch.zeros_like(y_actions).fill_(-1)
-
-    max_step = 0
-    for b in range(y_actions.shape[0]):
-        adj_offset = 0
-        for step in range(y_actions.shape[1]):
-            max_step = max(max_step, step)
-            order_idx = y_actions[b, step]
-            if order_idx == EOS_IDX:
-                break
-            order = ORDER_VOCABULARY[order_idx]
-            unit = " ".join(order.split()[:2])
-            if in_adj_phase[b]:
-                valid_idxs = (
-                    ORDER_VOCABULARY_IDXS_BY_UNIT["_BUILD"]
-                    + ORDER_VOCABULARY_IDXS_BY_UNIT["_DISBAND"]
-                )
-            else:
-                try:
-                    valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit]
-                except KeyError:
-                    valid_idxs = ORDER_VOCABULARY_IDXS_BY_UNIT[unit.split("/")[0]]
-
-            valid_order_idxs[b, step, 0 : len(valid_idxs)] = torch.tensor(valid_idxs)
-
-            # determine loc_idx
-            loc = unit.split()[1]
-            try:
-                loc_idx = LOCS.index(loc)
-            except IndexError:
-                loc_idx = LOCS.index(loc.split("/")[0])
-            loc_idxs[b, step] = loc_idx
-
-    assert not torch.all(
-        loc_idxs == -1, dim=1
-    ).any(), "Bad row with no locs, loc_idxs={} in_adj_phase={} y_actions={}".format(
-        loc_idxs, in_adj_phase, y_actions
-    )
-    return valid_order_idxs[:, :max_step, :], loc_idxs[:, :max_step]
 
 
 def calculate_accuracy(order_idxs, y_truth):
@@ -198,7 +141,7 @@ def validate(net, val_set_loader, loss_fn):
         net.eval()
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
         for batch in val_set_loader:
-            _, _, _, _, _, y_actions = batch
+            y_actions = batch[-1]
             if y_actions.shape[0] == 0:
                 logging.warning(
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
