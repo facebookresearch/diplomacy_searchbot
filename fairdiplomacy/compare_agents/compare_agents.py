@@ -12,7 +12,17 @@ from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
 from fairdiplomacy.agents.simple_search_dipnet_agent import SimpleSearchDipnetAgent
 
 
-def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None, seed=0):
+def make_agent(agent_arg):
+    if agent_arg is None:
+        return None
+    elif type(agent_arg) == type:
+        return agent_arg()
+    else:
+        cls, args = agent_arg
+        return cls(*args)
+
+
+def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None, seed=0, cf_agent=None):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
     Arguments:
@@ -20,25 +30,20 @@ def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None,
     - agent_one_power: the power to assign agent_one (the other 6 will be agent_six)
     - save_path: if specified, save game.json to this path
     - seed: random seed
+    - cf_agent: print out the orders for each power assuming that this agent was in charge
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
-    if type(agent_one_arg) == type:
-        agent_one = agent_one_arg()
-    else:
-        cls, args = agent_one_arg
-        agent_one = cls(*args)
-
-    if type(agent_six_arg) == type:
-        agent_six = agent_six_arg()
-    else:
-        cls, args = agent_six_arg
-        agent_six = cls(*args)
+    agent_one = make_agent(agent_one_arg)
+    agent_six = make_agent(agent_six_arg)
+    cf_agent = make_agent(cf_agent)
 
     env = Env(
         {power: agent_one if power == agent_one_power else agent_six for power in POWERS},
         seed=seed,
+        cf_agent=cf_agent
     )
+
     scores = env.process_all_turns()
 
     if save_path is not None:
@@ -53,10 +58,14 @@ def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None,
             return "six"
 
     winning_power = max(scores, key=scores.get)
+    print(f"Scores: {scores} ; Winner: {winning_power} ; agent_one_power= {agent_one_power}")
     return "one" if winning_power == agent_one_power else "six"
 
 
 def parse_agent_cmdline(s):
+    if s is None:
+        return None
+
     s = s.lower()
 
     if s == "mila":
@@ -80,12 +89,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--out", "-o", help="Path to write game.json file")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--cf_agent", help="Either 'mila', 'search', or a path to a .pth file")
     args = parser.parse_args()
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
     agent_one = parse_agent_cmdline(args.agent_one)
     agent_six = parse_agent_cmdline(args.agent_six)
+    cf_agent = parse_agent_cmdline(args.cf_agent)
 
     result = run_1v6_trial(
         agent_one,
@@ -93,5 +104,6 @@ if __name__ == "__main__":
         args.power_one,
         save_path=args.out if args.out else None,
         seed=args.seed,
+        cf_agent=cf_agent,
     )
     logging.warning("Result: {}".format(result))

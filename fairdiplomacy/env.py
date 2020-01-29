@@ -15,7 +15,7 @@ logging.getLogger().setLevel(logging.INFO)
 
 
 class Env:
-    def __init__(self, agents, seed=0):
+    def __init__(self, agents, seed=0, cf_agent=None):
         """
         agents must be one of:
             1. a list of 7 Agent objects, which will be randomly assigned to powers
@@ -44,6 +44,7 @@ class Env:
             random.shuffle(agents)
             self.agents = dict(zip(self.game.powers.keys(), agents))
 
+        self.cf_agent = cf_agent
     def process_turn(self, timeout=10):
         logging.info("process_turn {}".format(self.game.phase))
 
@@ -52,8 +53,11 @@ class Env:
                 logging.info(f"Skipping orders for {power}")
                 continue
             orders = agent.get_orders(self.game, power)
-            self.game.set_orders(power, orders)
             logging.info("Set orders {} {}".format(power, orders))
+            if self.cf_agent:
+                cf_orders = self.cf_agent.get_orders(self.game, power)
+                logging.info("CF orders {} {}".format(power, cf_orders))
+            self.game.set_orders(power, orders)
 
         self.game.process()
 
