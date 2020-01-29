@@ -68,5 +68,5 @@ if __name__ == "__main__":
     from collections import Counter
     counts = Counter([w for w, _, _ in results])
     for k, v in sorted(counts.items()):
-        print(f'{k}: {v}, {v/len(results)}%')
+        print(f'{k}: {v}, {v/len(results)}')
 
