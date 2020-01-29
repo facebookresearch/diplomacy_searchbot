@@ -1,3 +1,4 @@
+import copy
 import diplomacy
 import logging
 import numpy as np
@@ -105,7 +106,7 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
     x_in_adj_phase = torch.zeros(len(POWERS), dtype=torch.bool).fill_(phase_name[-1] == "A")
 
     # encode possible actions
-    tmp_game = diplomacy.Game()
+    tmp_game = copy.deepcopy(game)
     tmp_game.set_state(phase_state)
     all_possible_orders = tmp_game.get_all_possible_orders()
     all_orderable_locations = tmp_game.get_orderable_locations()
@@ -178,13 +179,17 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
     - the actual length of the sequence == the number of orders to submit, <= 17
     """
-    orderable_locs = sorted(all_orderable_locations[power], key=LOCS.index)
-    power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
-    n_builds = game_state["builds"][power]["count"]
     all_order_idxs = torch.zeros(
         1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32
     )
     loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long)
+
+    if power not in all_orderable_locations:
+        return all_order_idxs, loc_idxs, 0
+
+    orderable_locs = sorted(all_orderable_locations[power], key=LOCS.index)
+    power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
+    n_builds = game_state["builds"][power]["count"]
 
     if n_builds > 0:
         # build phase: all possible build orders, up to the number of allowed builds
