@@ -1,3 +1,6 @@
 [submodule "thirdparty/github/diplomacy/research"]
 	path = thirdparty/github/diplomacy/research
 	url = git@github.com:fairinternal/diplomacy_research.git
+[submodule "thirdparty/github/fairinternal/postman"]
+	path = thirdparty/github/fairinternal/postman
+	url = git@github.com:fairinternal/postman.git
