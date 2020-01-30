@@ -189,23 +189,13 @@ class LSTMDipNetDecoder(nn.Module):
                 # no attention: average across loc embeddings
                 loc_enc = torch.mean(enc, dim=1)
             else:
-                # do static attention
-
-                # adj_alignments averages over all locations in all steps
-                # (hence we use all of loc_idxs to index at every step, unlike
-                # not_adj_alignments). However, some sequences are longer than
-                # others, and loc_idxs = -1 where y_actions = EOS_IDX. This
-                # indexing/summation works only because loc_idxs = -1 and we
-                # added an 82nd row (index -1) of zeros to master_alignments
-                adj_alignments = torch.sum(self.master_alignments[loc_idxs], dim=1)
-                not_adj_alignments = self.master_alignments[loc_idxs[:, step]]
-
-                # gather row from adj_alignments where in_adj_phase = 1, else not_adj_alignments
-                alignments = torch.gather(
-                    torch.stack([not_adj_alignments, adj_alignments]),
-                    0,
-                    in_adj_phase.long().reshape(1, -1, 1).repeat(1, 1, adj_alignments.shape[-1]),
-                ).squeeze(0)
+                # do static attention; set alignments to:
+                # - master_alignments for the right loc_idx when not in_adj_phase
+                # - 1/81 when in adj_phase (i.e. avg across all locations)
+                in_adj_phase = in_adj_phase.view(-1, 1)
+                alignments = (
+                    ~in_adj_phase * self.master_alignments[loc_idxs[:, step]] + in_adj_phase
+                )
                 alignments /= torch.sum(alignments, dim=1, keepdim=True)
                 alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
