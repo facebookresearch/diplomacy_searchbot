@@ -15,9 +15,8 @@ CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
-actual season/power emb
-fixed loc_idxs, with fixed adj, fixed tf masking
-fixed incompatible builds masking
+1/81 adj alignment
+proper train masking
 ENDNOTE
 
 srun --label \
