@@ -8,6 +8,7 @@ rsync -avz \
     --exclude '*.db' \
     --exclude fairdiplomacy/data/out/ \
     --exclude fairdiplomacy/data/mila_dataset/ \
+    --exclude thirdparty/github/fairinternal/postman \
     ../../../ $TMPDIR
 
 cd $TMPDIR/fairdiplomacy/models/dipnet
