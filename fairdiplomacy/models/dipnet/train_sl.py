@@ -7,9 +7,8 @@ import random
 import torch
 from collections import Counter
 from functools import reduce
-from torch.utils.data.distributed import DistributedSampler
 
-from fairdiplomacy.data.dataset import Dataset, collate_fn
+from fairdiplomacy.data.dataset import Dataset
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS
 from fairdiplomacy.models.dipnet.dipnet import DipNet
@@ -142,11 +141,13 @@ def calculate_split_accuracy_counts(order_idxs, y_truth):
     return counts
 
 
-def validate(net, val_set_loader, loss_fn):
+def validate(net, val_set, loss_fn, batch_size):
     with torch.no_grad():
         net.eval()
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
-        for batch in val_set_loader:
+
+        for batch_idxs in torch.arange(len(val_set)).split(batch_size):
+            batch = val_set[batch_idxs]
             y_actions = batch[-1]
             if y_actions.shape[0] == 0:
                 logger.warning(
@@ -181,15 +182,7 @@ def validate(net, val_set_loader, loss_fn):
     return val_loss, val_accuracy, split_pcts
 
 
-def main_subproc(
-    rank,
-    world_size,
-    args,
-    train_game_jsons,
-    train_game_json_lengths,
-    val_game_jsons,
-    val_game_json_lengths,
-):
+def main_subproc(rank, world_size, args, train_set, val_set):
     # distributed training setup
     mp_setup(rank, world_size)
     atexit.register(mp_cleanup)
@@ -223,38 +216,12 @@ def main_subproc(
     if checkpoint:
         optim.load_state_dict(checkpoint["optim"])
 
-    # Create datasets / loaders
-    train_set = Dataset(
-        train_game_jsons,
-        train_game_json_lengths,
-        debug_only_opening_phase=args.debug_only_opening_phase,
-    )
-    val_set = Dataset(
-        val_game_jsons,
-        val_game_json_lengths,
-        debug_only_opening_phase=args.debug_only_opening_phase,
-    )
-    train_set_sampler = DistributedSampler(train_set)
-    train_set_loader = torch.utils.data.DataLoader(
-        train_set,
-        num_workers=args.num_dataloader_workers,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        pin_memory=True,
-        sampler=train_set_sampler,
-    )
-    val_set_loader = torch.utils.data.DataLoader(
-        val_set,
-        num_workers=args.num_dataloader_workers,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        pin_memory=True,
-    )
-
     for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 10000):
-        train_set_sampler.set_epoch(epoch)
 
-        for batch_i, batch in enumerate(train_set_loader):
+        batches = torch.randperm(len(train_set)).split(args.batch_size)
+        for batch_i, batch_idxs in enumerate(batches):
+            batch = train_set[batch_idxs]
+
             # check batch is not empty
             if (batch[-1] == EOS_IDX).all():
                 logger.warning("Skipping empty epoch {} batch {}".format(epoch, batch_i))
@@ -275,10 +242,12 @@ def main_subproc(
             # calculate validation loss/accuracy
             if (
                 not args.skip_validation
-                and (epoch * len(train_set_loader) + batch_i) % args.validate_every == 0
+                and (epoch * len(batches) + batch_i) % args.validate_every == 0
             ):
                 logger.info("Calculating val loss...")
-                val_loss, val_accuracy, split_pcts = validate(net, val_set_loader, loss_fn)
+                val_loss, val_accuracy, split_pcts = validate(
+                    net, val_set, loss_fn, args.batch_size
+                )
                 logger.info(
                     "Validation epoch={} batch={} loss={} acc={}".format(
                         epoch, batch_i, val_loss, val_accuracy
@@ -321,9 +290,13 @@ if __name__ == "__main__":
     random.seed(0)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True, help="Path to dir containing game.json files")
+    parser.add_argument("--data-dir", help="Path to dir containing game.json files")
+    parser.add_argument("--data-cache", help="Path to dir containing dataset cache")
     parser.add_argument(
-        "--num-dataloader-workers", type=int, default=32, help="# Dataloader procs"
+        "--num-dataloader-workers",
+        type=int,
+        default=1,
+        help="Dataloader procs (1 means load in the main process)",
     )
     parser.add_argument("--batch-size", type=int, default=200, help="Batch size per GPU")
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
@@ -359,16 +332,22 @@ if __name__ == "__main__":
     logger.info("Using {} GPUs".format(n_gpus))
 
     # search for data and create train/val splits
-    game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
-    assert len(game_jsons) > 0
-    logger.info("Found dataset of {} games...".format(len(game_jsons)))
-    val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
-    train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
+    if args.data_cache and os.path.exists(args.data_cache):
+        logger.info(f"Found dataset cache at {args.data_cache}")
+        train_dataset, val_dataset = torch.load(args.data_cache)
+    else:
+        assert args.data_dir is not None
+        game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
+        assert len(game_jsons) > 0
+        logger.info(f"Found dataset of {len(game_jsons)} games...")
+        val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
+        train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
 
-    # Calculate dataset sizes
-    logger.info("Calculating dataset sizes")
-    train_game_json_lengths = get_all_game_lengths(train_game_jsons)
-    val_game_json_lengths = get_all_game_lengths(val_game_jsons)
+        train_dataset = Dataset(train_game_jsons, n_jobs=args.num_dataloader_workers)
+        val_dataset = Dataset(val_game_jsons, n_jobs=args.num_dataloader_workers)
+        if args.data_cache:
+            logger.info(f"Saving datasets to {args.data_cache}")
+            torch.save((train_dataset, val_dataset), args.data_cache)
 
     # required when using multithreaded DataLoader
     try:
@@ -377,25 +356,8 @@ if __name__ == "__main__":
         pass
 
     if args.debug_no_mp:
-        main_subproc(
-            0,
-            1,
-            args,
-            train_game_jsons,
-            train_game_json_lengths,
-            val_game_jsons,
-            val_game_json_lengths,
-        )
+        main_subproc(0, 1, args, train_dataset, val_dataset)
     else:
         torch.multiprocessing.spawn(
-            main_subproc,
-            nprocs=n_gpus,
-            args=(
-                n_gpus,
-                args,
-                train_game_jsons,
-                train_game_json_lengths,
-                val_game_jsons,
-                val_game_json_lengths,
-            ),
+            main_subproc, nprocs=n_gpus, args=(n_gpus, args, train_dataset, val_dataset)
         )

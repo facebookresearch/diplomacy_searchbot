@@ -1,10 +1,11 @@
 import copy
 import diplomacy
+import joblib
 import logging
 import numpy as np
 import torch
+from typing import Union, List, Optional
 
-from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.order_vocabulary import (
@@ -19,43 +20,87 @@ ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULA
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, game_json_paths, game_json_lengths=None, debug_only_opening_phase=False):
+    def __init__(self, game_json_paths: List[str], debug_only_opening_phase=False, n_jobs=20):
         self.game_json_paths = game_json_paths
         self.debug_only_opening_phase = debug_only_opening_phase
 
-        if game_json_lengths is not None:
-            self.game_json_lengths = game_json_lengths
-        else:
-            logging.info("Calculating dataset size...")
-            self.game_json_lengths = get_all_game_lengths(game_json_paths)
+        encoded_games = joblib.Parallel(n_jobs=n_jobs)(
+            joblib.delayed(encode_game)(p) for p in game_json_paths
+        )
 
-        self.len = sum(self.game_json_lengths)
-        self.cumsum = np.cumsum(self.game_json_lengths)
+        if self.debug_only_opening_phase:
+            encoded_games = [[x[:1] for x in y] for y in encoded_games]
 
-    def __getitem__(self, idx):
-        game_idx = np.searchsorted(self.cumsum, idx, side="right")
-        phase_idx = idx - (self.cumsum[game_idx - 1] if game_idx > 0 else 0)
+        print(f"Got {len(encoded_games)} games")
 
-        path = self.game_json_paths[game_idx]
-        game = diplomacy.utils.export.load_saved_games_from_disk(path)[0]
-        try:
-            if self.debug_only_opening_phase:
-                return encode_phase(game, 0)
-            else:
-                return encode_phase(game, phase_idx)
-        except Exception:
-            logging.exception(
-                "Skipping dataset game_idx={} path={} phase_idx={}".format(
-                    game_idx, path, phase_idx
-                )
-            )
-            return None
+        encoded_games = [g for g in encoded_games if g[-1][0].any()]
+        print(f"{len(encoded_games)} games had data for at least one power")
+
+        game_idxs, phase_idxs, power_idxs, x_idxs = [], [], [], []
+        x_idx = 0
+        for game_idx, encoded_game in enumerate(encoded_games):
+            for phase_idx, valid_power_idxs in enumerate(encoded_game[-1]):
+                assert valid_power_idxs.nelement() == 7
+                # assert valid_power_idxs.sum() > 0
+                for power_idx in valid_power_idxs.nonzero()[:, 0]:
+                    game_idxs.append(game_idx)
+                    phase_idxs.append(phase_idx)
+                    power_idxs.append(power_idx)
+                    x_idxs.append(x_idx)
+                x_idx += 1
+
+        self.game_idxs = torch.tensor(game_idxs, dtype=torch.long)
+        self.phase_idxs = torch.tensor(phase_idxs, dtype=torch.long)
+        self.power_idxs = torch.tensor(power_idxs, dtype=torch.long)
+        self.x_idxs = torch.tensor(x_idxs, dtype=torch.long)
+
+        # now collate the data into giant tensors!
+        self.encoded_games = [torch.cat(x) for x in zip(*encoded_games)]
+
+        self.num_games = len(encoded_games)
+        self.num_phases = len(self.encoded_games[0])
+        self.num_elements = len(self.x_idxs)
+
+        assert all(len(e) == self.num_phases for e in self.encoded_games), [
+            len(e) for e in self.encoded_games
+        ]
+        # last data point should point to the last game/phase
+        # assert self.x_idxs[-1] + 1 == len(self.x_board_state), f"{self.x_idxs[-1] + 1} == {len(self.x_board_state)}"
+
+        print(
+            f"Created data cache of {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements. Last element points to phase {self.x_idxs[-1]}"
+        )
+
+    def __getitem__(self, idx: Union[int, torch.Tensor]):
+        if isinstance(idx, int):
+            idx = torch.tensor([idx], dtype=torch.long)
+
+        assert isinstance(idx, torch.Tensor) and idx.dtype == torch.long
+        assert idx.max() < self.num_elements
+
+        x_idx = self.x_idxs[idx]
+        power_idx = self.power_idxs[idx]
+
+        fields = [x[x_idx] for x in self.encoded_games[:-1]]
+        assert len(fields) == 8
+
+        # for these fields we need to select out the correct power
+        for f in [2, 5, 6, 7]:
+            fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
+
+        # cast fields
+        for i in range(len(fields) - 3):
+            fields[i] = fields[i].to(torch.float32)
+        for i in [5, 7]:
+            fields[i] = fields[i].to(torch.long)
+
+        return fields
 
     def __len__(self):
-        return self.len
+        return self.num_elements
 
 
-def encode_phase(game, phase_idx, only_with_min_final_score=7):
+def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     """
     Arguments:
     - game: diplomacy.Game object
@@ -64,22 +109,58 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
 
-    Return: tuple of eight tensors
-    - board_state: shape=(7, 81, 35)
-    - prev_orders: shape=(7, 81, 40)
+    Return: tuple of nine tensors
+    L is game length, P is # of powers above min_final_score
+    - board_state: shape=(L, 81, 35)
+    - prev_orders: shape=(L, 81, 40)
+    - power: shape=(L, 7, 7)
+    - season: shape=(L, 3)
+    - in_adj_phase: shape=(L, 1)
+    - possible_actions: shape=(L, 7, 17, 469)
+    - loc_idxs: shape=(L, 7, 17, 81), bool
+    - actions: shape=(L, 7, 17) int order idxs
+    - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
+    """
+
+    if isinstance(game, str):
+        print(f"Encoding {game}")
+        game = diplomacy.utils.export.load_saved_games_from_disk(game)[0]
+
+    num_phases = len(game.state_history)
+    phase_encodings = [
+        encode_phase(game, phase_idx, only_with_min_final_score) for phase_idx in range(num_phases)
+    ]
+
+    stacked_encodings = [torch.stack(x, dim=0) for x in zip(*phase_encodings)]
+    return stacked_encodings
+
+
+def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int]):
+    """
+    Arguments:
+    - game: diplomacy.Game object
+    - phase_idx: int, the index of the phase to encode
+    - only_with_min_final_score: if specified, only encode for powers who
+      finish the game with some # of supply centers (i.e. only learn from
+      winners). MILA uses 7.
+
+    Return: tuple of nine tensors
+    - board_state: shape=(81, 35)
+    - prev_orders: shape=(81, 40)
     - power: shape=(7, 7)
-    - season: shape=(7, 3)
-    - in_adj_phase: shape=(7,)
-    - possible_actions: shape=(7, 17, 469), pad=-1
-    - loc_idxs: shape=(7, 17), 0 <= idx < 81, pad=-1
+    - season: shape=(3,)
+    - in_adj_phase: shape=(1,)
+    - possible_actions: shape=(7, 17, 469)
+    - loc_idxs: shape=(7, 17, 81), bool
     - actions: shape=(7, 17) int order idxs
+    - valid_power_idxs: shape=(7,) bool mask of valid powers at this phase
     """
     phase_name = str(list(game.state_history.keys())[phase_idx])
     phase_state = game.state_history[phase_name]
 
     # encode board state
-    x_board_state = board_state_to_np(phase_state)
-    x_board_state = torch.from_numpy(x_board_state).repeat(len(POWERS), 1, 1)
+    x_board_state = board_state_to_np(game.state_history[phase_name])
+    x_board_state = torch.from_numpy(x_board_state).to(bool)
 
     # encode prev movement orders
     prev_move_phases = [
@@ -90,20 +171,20 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
     if len(prev_move_phases) > 0:
         move_phase = prev_move_phases[-1]
         x_prev_orders = prev_orders_to_np(move_phase)
-        x_prev_orders = torch.from_numpy(x_prev_orders).repeat(len(POWERS), 1, 1)
+        x_prev_orders = torch.from_numpy(x_prev_orders).to(bool)
     else:
-        x_prev_orders = torch.zeros(len(POWERS), 81, 40)
+        x_prev_orders = torch.zeros(81, 40, dtype=torch.bool)
 
-    # encode powers 1-hot
-    x_power = torch.eye(len(POWERS))
+    # encode powers one-hot
+    x_power = torch.eye(len(POWERS), dtype=torch.bool)
 
     # encode season 1-hot
-    x_season = torch.zeros(len(POWERS), len(SEASONS))
+    x_season = torch.zeros(len(SEASONS), dtype=torch.bool)
     season_idx = [s[0] for s in SEASONS].index(phase_name[0])
-    x_season[:, season_idx] = 1
+    x_season[season_idx] = 1
 
     # encode adjustment phase
-    x_in_adj_phase = torch.zeros(len(POWERS), dtype=torch.bool).fill_(phase_name[-1] == "A")
+    x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(phase_name[-1] == "A")
 
     # encode possible actions
     tmp_game = copy.deepcopy(game)
@@ -123,7 +204,7 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
     ]
 
     # encode actions
-    y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int64).fill_(EOS_IDX)
+    y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
     for power_i, power in enumerate(POWERS):
         orders = game.order_history[phase_name].get(power, [])
         order_idxs = []
@@ -150,7 +231,8 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
             y_actions[power_i, i] = order_idx
 
     # filter away powers that have no orders
-    power_idxs = torch.nonzero(torch.any(y_actions != EOS_IDX, dim=1)).squeeze(1).tolist()
+    valid_power_idxs = torch.any(y_actions != EOS_IDX, dim=1)
+    assert valid_power_idxs.ndimension() == 1
 
     # filter away powers whose orders are not in valid_orders
     # most common reasons why this happens:
@@ -163,7 +245,7 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
             .all(dim=1)
         )
     ).nonzero():
-        power_idxs = [idx for idx in power_idxs if idx != power_idx]  # rm from output
+        valid_power_idxs[power_idx] = 0
         # logging.warning(
         #     "Order not possible: {} {} {} {}".format(
         #         y_actions[power_idx],
@@ -177,25 +259,20 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
     # maybe filter away powers that don't finish with enough SC
     if only_with_min_final_score is not None:
         final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        winner_idxs = [
-            i
-            for i, power in enumerate(POWERS)
-            if final_score.get(power, 0) >= only_with_min_final_score
-        ]
-        power_idxs = [idx for idx in power_idxs if idx in winner_idxs]
+        for i in range(len(POWERS)):
+            if final_score.get(power, 0) < only_with_min_final_score:
+                valid_power_idxs[i] = 0
 
-    return tuple(
-        t[power_idxs]
-        for t in (
-            x_board_state,
-            x_prev_orders,
-            x_power,
-            x_season,
-            x_in_adj_phase,
-            x_possible_actions,
-            x_loc_idxs,
-            y_actions,
-        )
+    return (
+        x_board_state,
+        x_prev_orders,
+        x_power,
+        x_season,
+        x_in_adj_phase,
+        x_possible_actions,
+        x_loc_idxs,
+        y_actions,
+        valid_power_idxs,
     )
 
 
@@ -277,18 +354,26 @@ def smarter_order_index(order):
         return ORDER_VOCABULARY_TO_IDX[order]
 
 
-def collate_fn(items):
-    # items is a list of 6-tuples, one tuple from each dataset
-    # lsts is a 6-tuple of lists of tensors
-    lsts = zip(*(x for x in items if x is not None))
-    try:
-        return tuple(torch.cat(lst, dim=0) for lst in lsts)
-    except:
-        logging.exception([tuple(t.shape for t in item) for item in items])
-        raise
-
-
 if __name__ == "__main__":
-    game = diplomacy.utils.export.load_saved_games_from_disk("out/game_3232.json")[0]
-    for t in encode_phase(game, 3):
-        print(t.shape)
+    import glob
+    import time
+
+    game_jsons = glob.glob(
+        "/private/home/jsgray/code/fairdiplomacy/fairdiplomacy/data/mila_dataset/data/*000.json"
+    )
+    cache = Dataset(game_jsons)
+    feats = cache[torch.tensor([100, 2], dtype=torch.long)]
+    print([(f.shape, f.dtype) for f in feats])
+    torch.save(cache, "test_cache.pt")
+    cache2 = torch.load("test_cache.pt")
+    feats2 = cache[torch.tensor([100, 2], dtype=torch.long)]
+    assert all((f1 == f2).all() for f1, f2 in zip(feats, feats2))
+
+    N = len(cache2)
+    tic = time.time()
+    B, k = 1000, 100
+    for i in range(k):
+        idx = (torch.rand(B) * 0.99 * N).to(torch.long)
+        data = cache2[idx]
+    delta = time.time() - tic
+    print(f"Looked up {B*k} in {delta} s. {B*k/delta} / s")

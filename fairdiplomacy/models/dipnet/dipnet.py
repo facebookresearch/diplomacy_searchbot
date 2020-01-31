@@ -105,7 +105,6 @@ class DipNet(nn.Module):
 
         Returns [B, S, 13k] bool mask
         """
-        assert valid_order_idxs.dtype == torch.int32, valid_order_idxs.dtype
         valid_order_mask = torch.zeros(
             (valid_order_idxs.shape[0], valid_order_idxs.shape[1], self.orders_vocab_size),
             dtype=torch.bool,
