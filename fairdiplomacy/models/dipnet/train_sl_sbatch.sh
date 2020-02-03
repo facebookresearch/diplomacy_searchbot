@@ -13,6 +13,7 @@
 
 CHECKPOINT_DIR=/checkpoint/$USER/jobs/$SLURM_JOB_ID
 mkdir -p $CHECKPOINT_DIR
+ln -s $PWD cwd.dir
 
 cat <<ENDNOTE >$CHECKPOINT_DIR/note.txt
 1/81 adj alignment
