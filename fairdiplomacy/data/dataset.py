@@ -131,17 +131,12 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
             try:
                 order_idxs.append(smarter_order_index(order))
             except KeyError:
-                # logging.warn(
-                #     'Order "{}" not in vocab, game_id={} phase_idx={} phase={}'.format(
-                #         order, game.game_id, phase_idx, phase
-                #     )
-                # )
                 continue
 
         # fill in Hold for invalid or missing orders
         if not x_in_adj_phase[0]:
             filled_locs = set(ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs)
-            unfilled_locs = set(LOCS[x] for x in x_loc_idxs[power_i] if x != -1) - filled_locs
+            unfilled_locs = {LOCS[x] for _, x in x_loc_idxs[power_i, :, :].nonzero()} - filled_locs
             for loc in unfilled_locs:
                 unit = next(unit for unit in phase_state["units"][power] if loc in unit)
                 if "*" in unit:
@@ -206,13 +201,13 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
 
     Returns:
     - a [1, 17, 469] int tensor of valid move indexes (padded with -1)
-    - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
+    - a [1, 17, 81] bool tensor of orderable locs
     - the actual length of the sequence == the number of orders to submit, <= 17
     """
     all_order_idxs = torch.zeros(
         1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32
     )
-    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long).fill_(-1)
+    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, len(LOCS), dtype=torch.bool)
 
     if power not in all_orderable_locations:
         return all_order_idxs, loc_idxs, 0
@@ -237,6 +232,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         # build phase: all possible build orders, up to the number of allowed builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
         all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        loc_idxs[0, :n_builds, [LOCS.index(l) for l in orderable_locs]] = 1
         return all_order_idxs, loc_idxs, n_builds
 
     if n_builds < 0:
@@ -244,13 +240,14 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         n_disbands = -n_builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
         all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        loc_idxs[0, :n_builds, [LOCS.index(l) for l in orderable_locs]] = 1
         return all_order_idxs, loc_idxs, n_disbands
 
     # move phase: iterate through orderable_locs in topo order
     for i, loc in enumerate(orderable_locs):
         orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
         all_order_idxs[0, i, : len(order_idxs)] = order_idxs
-        loc_idxs[0, i] = LOCS.index(loc)
+        loc_idxs[0, i, LOCS.index(loc)] = 1
 
     return all_order_idxs, loc_idxs, len(orderable_locs)
 

@@ -70,7 +70,7 @@ class DipNet(nn.Module):
         - x_power_1h: shape [B, 7]
         - x_season_1h: shape [B, 3]
         - in_adj_phase: shape [B], bool
-        - loc_idxs: shape [B, S], long, 0 <= idx < 81
+        - loc_idxs: shape [B, S, 81], bool
         - order_idxs: shape [B, S, 469]  padded with -1
         - temperature: softmax temp, lower = more deterministic; must be either
           a float or a tensor of shape [B, 1]
@@ -80,10 +80,10 @@ class DipNet(nn.Module):
         - order_idxs [B, S]: idx of sampled orders
         - order_scores [B, S, 13k]: masked pre-softmax logits of each order
         """
-        if (loc_idxs == -1).all():
-            logging.warning("foward called with all loc_idxs == -1")
+        if (loc_idxs == 0).all():
+            logging.warning("foward called with all loc_idxs == 0")
             return (
-                torch.zeros_like(loc_idxs),
+                torch.zeros(*(loc_idxs.shape[:2]), dtype=order_idxs.dtype, device=loc_idxs.device),
                 torch.zeros(*loc_idxs.shape, self.orders_vocab_size, device=loc_idxs.device),
             )
 
@@ -92,17 +92,16 @@ class DipNet(nn.Module):
             enc,
             in_adj_phase,
             loc_idxs,
-            self.valid_order_idxs_to_mask(valid_order_idxs, loc_idxs),
+            self.valid_order_idxs_to_mask(valid_order_idxs),
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
         )
         return res
 
-    def valid_order_idxs_to_mask(self, valid_order_idxs, loc_idxs):
+    def valid_order_idxs_to_mask(self, valid_order_idxs):
         """
         Arguments:
         - valid_order_idxs: [B, S, 469] torch.int32, idxs into ORDER_VOCABULARY
-        - loc_idxs: [B, S] LongTensor, 0 <= idx < 81, -1 padded
 
         Returns [B, S, 13k] bool mask
         """
@@ -144,13 +143,6 @@ class LSTMDipNetDecoder(nn.Module):
         # complains about unused parameters, so only set self.master_alignments
         # when avg_embedding is False
         if not avg_embedding:
-            # add a zero row, to make master_alignments 82 x 81, where alignments[-1] is zeros
-            master_alignments = torch.cat(
-                [
-                    master_alignments,
-                    torch.zeros(1, master_alignments.shape[1], dtype=master_alignments.dtype),
-                ]
-            )
             self.master_alignments = nn.Parameter(master_alignments).requires_grad_(
                 learnable_alignments
             )
@@ -193,9 +185,7 @@ class LSTMDipNetDecoder(nn.Module):
                 # - master_alignments for the right loc_idx when not in_adj_phase
                 # - 1/81 when in adj_phase (i.e. avg across all locations)
                 in_adj_phase = in_adj_phase.view(-1, 1)
-                alignments = (
-                    ~in_adj_phase * self.master_alignments[loc_idxs[:, step]] + in_adj_phase
-                )
+                alignments = torch.matmul(loc_idxs[:, step].float(), self.master_alignments)
                 alignments /= torch.sum(alignments, dim=1, keepdim=True)
                 alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
@@ -208,8 +198,8 @@ class LSTMDipNetDecoder(nn.Module):
 
             # unmask where there are no actions or the sampling will crash. The
             # losses at these points will be masked out later, so this is safe.
-            invalid_mask = loc_idxs[:, step] == -1
-            if invalid_mask.sum() == loc_idxs.shape[0]:
+            invalid_mask = ~loc_idxs[:, step].any(dim=1)
+            if invalid_mask.all():
                 # early exit
                 logging.debug(f"Breaking at step {step} because no more orders to give")
                 for _step in range(step, order_masks.shape[1]):  # fill in garbage
