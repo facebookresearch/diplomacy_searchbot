@@ -138,6 +138,17 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
                 # )
                 continue
 
+        # fill in Hold for invalid or missing orders
+        if not x_in_adj_phase[0]:
+            filled_locs = set(ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs)
+            unfilled_locs = set(LOCS[x] for x in x_loc_idxs[power_i] if x != -1) - filled_locs
+            for loc in unfilled_locs:
+                unit = next(unit for unit in phase_state["units"][power] if loc in unit)
+                if "*" in unit:
+                    order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
+                else:
+                    order_idxs.append(smarter_order_index(f"{unit} H"))
+
         # sort by topo order
         order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
         for i, order_idx in enumerate(order_idxs):
@@ -145,6 +156,25 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
 
     # filter away powers that have no orders
     power_idxs = torch.nonzero(torch.any(y_actions != EOS_IDX, dim=1)).squeeze(1).tolist()
+
+    # filter away powers whose orders are not in valid_orders
+    for power_idx in (
+        ~(
+            ((y_actions.unsqueeze(2) == x_possible_actions) | (y_actions.unsqueeze(2) == 0))
+            .any(dim=2)
+            .all(dim=1)
+        )
+    ).nonzero():
+        power_idxs = [idx for idx in power_idxs if idx != power_idx]  # rm from output
+        logging.warning(
+            "Order not possible: {} {} {} {}".format(
+                y_actions[power_idx],
+                game.order_history[phase_name].get(POWERS[power_idx]),
+                x_possible_actions[power_idx, :5, :50],
+                phase_state,
+                all_possible_orders,
+            )
+        )
 
     # maybe filter away powers that don't finish with enough SC
     if only_with_min_final_score is not None:
@@ -182,12 +212,24 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     all_order_idxs = torch.zeros(
         1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32
     )
-    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long)
+    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.long).fill_(-1)
 
     if power not in all_orderable_locations:
         return all_order_idxs, loc_idxs, 0
 
-    orderable_locs = sorted(all_orderable_locations[power], key=LOCS.index)
+    # strip "WAIVE" from possible orders
+    all_possible_orders = {
+        k: [x for x in v if x != "WAIVE"] for k, v in all_possible_orders.items()
+    }
+
+    # sort by index in LOCS using the right coastal variant!
+    # all_orderable_locations may give the root loc even if the possible orders
+    # are from a coastal fleet
+    orderable_locs = sorted(
+        all_orderable_locations[power],
+        key=lambda loc: LOCS.index(all_possible_orders[loc][0].split()[1]),
+    )
+
     power_possible_orders = [x for loc in orderable_locs for x in all_possible_orders[loc]]
     n_builds = game_state["builds"][power]["count"]
 

@@ -87,8 +87,14 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions.to(next(net.parameters()).device)
-    y_actions = y_actions[:, : order_idxs.shape[1]].reshape(-1)  # [B * S]
-    order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
+    y_actions = y_actions[:, : order_scores.shape[1]].reshape(-1)  # [B * S]
+    try:
+        order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
+    except RuntimeError:
+        logging.error(
+            f"Bad view: {order_scores.shape} != {len(y_actions)} * {len(ORDER_VOCABULARY)}, {order_idxs.shape}, {order_scores.shape}"
+        )
+        raise
 
     observed_order_scores = order_scores.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
     if observed_order_scores.min() < -1e7:
@@ -267,7 +273,10 @@ def main_subproc(
             logger.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
 
             # calculate validation loss/accuracy
-            if (epoch * len(train_set_loader) + batch_i) % args.validate_every == 0:
+            if (
+                not args.skip_validation
+                and (epoch * len(train_set_loader) + batch_i) % args.validate_every == 0
+            ):
                 logger.info("Calculating val loss...")
                 val_loss, val_accuracy, split_pcts = validate(net, val_set_loader, loss_fn)
                 logger.info(
@@ -342,6 +351,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Average across location embedding instead of using attention",
     )
+    parser.add_argument("--skip-validation", action="store_true", help="Skip validation / save")
     args = parser.parse_args()
     logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
 
