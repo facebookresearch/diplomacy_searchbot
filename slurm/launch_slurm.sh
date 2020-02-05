@@ -12,6 +12,8 @@ ROOT="$(dirname $0)/.."
 
 SCRIPT=${SCRIPT:-fairdiplomacy/models/dipnet/train_sl.py}
 PARTITION=${PARTITION:-learnfair}
+CHECKPOINT_BASE=${CHECKPOINT_BASE:-/checkpoint/$USER/fairdiplomacy}
+
 GPU=${GPU:-8}
 CPU=${CPU:-80}
 MEM=${MEM:-0}
@@ -22,7 +24,7 @@ if [ x"$NAME" == x ]; then
   exit 1
 fi
 
-CHECKPOINT_DIR="/checkpoint/$USER/fairdiplomacy/$NAME"
+CHECKPOINT_DIR="$CHECKPOINT_BASE/$NAME"
 if [ -e $CHECKPOINT_DIR ]; then
   echo "$CHECKPOINT_DIR already exists."
   exit 1
