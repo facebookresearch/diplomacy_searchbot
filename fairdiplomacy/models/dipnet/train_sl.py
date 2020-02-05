@@ -306,8 +306,8 @@ if __name__ == "__main__":
         help="Dataloader procs (1 means load in the main process)",
     )
     parser.add_argument("--batch-size", type=int, default=1000, help="Batch size per GPU")
-    parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
-    parser.add_argument("--checkpoint", help="Path to load/save the model")
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--checkpoint", default="./checkpoint.pth", help="Path to load/save the model")
     parser.add_argument(
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
