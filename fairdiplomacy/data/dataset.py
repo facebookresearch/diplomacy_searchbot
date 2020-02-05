@@ -64,12 +64,9 @@ class Dataset(torch.utils.data.Dataset):
         assert all(len(e) == self.num_phases for e in self.encoded_games), [
             len(e) for e in self.encoded_games
         ]
-        # last data point should point to the last game/phase
-        # assert self.x_idxs[-1] + 1 == len(self.x_board_state), f"{self.x_idxs[-1] + 1} == {len(self.x_board_state)}"
 
-        print(
-            f"Created data cache of {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements. Last element points to phase {self.x_idxs[-1]}"
-        )
+    def stats_str(self):
+        return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
 
     def __getitem__(self, idx: Union[int, torch.Tensor]):
         if isinstance(idx, int):

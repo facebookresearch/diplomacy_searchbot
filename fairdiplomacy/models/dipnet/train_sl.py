@@ -7,6 +7,7 @@ import random
 import torch
 from collections import Counter
 from functools import reduce
+from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset
 from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
@@ -216,11 +217,15 @@ def main_subproc(rank, world_size, args, train_set, val_set):
     if checkpoint:
         optim.load_state_dict(checkpoint["optim"])
 
+    train_set_sampler = DistributedSampler(train_set)
     for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 10000):
-
-        batches = torch.randperm(len(train_set)).split(args.batch_size)
+        train_set_sampler.set_epoch(epoch)
+        batches = torch.tensor(list(iter(train_set_sampler)), dtype=torch.long).split(
+            args.batch_size
+        )
         for batch_i, batch_idxs in enumerate(batches):
             batch = train_set[batch_idxs]
+            logger.debug(f"Zero grad {batch_i} ...")
 
             # check batch is not empty
             if (batch[-1] == EOS_IDX).all():
@@ -236,27 +241,29 @@ def main_subproc(rank, world_size, args, train_set, val_set):
 
             loss = torch.mean(losses)
             loss.backward()
+            logger.debug(f"Running step {batch_i} ...")
             optim.step()
-            logger.info("epoch {} batch {} loss={}".format(epoch, batch_i, loss))
+            logger.debug(f"Rank: {rank} {rank == 0}")
+            if rank == 0:
+                logger.info(f"epoch {epoch} batch {batch_i} / {len(batches)} loss= {loss}")
 
             # calculate validation loss/accuracy
             if (
                 not args.skip_validation
                 and (epoch * len(batches) + batch_i) % args.validate_every == 0
             ):
-                logger.info("Calculating val loss...")
+                if rank == 0:
+                    logger.info("Calculating val loss...")
                 val_loss, val_accuracy, split_pcts = validate(
                     net, val_set, loss_fn, args.batch_size
                 )
-                logger.info(
-                    "Validation epoch={} batch={} loss={} acc={}".format(
-                        epoch, batch_i, val_loss, val_accuracy
+
+                if rank == 0:
+                    logger.info(
+                        f"Validation epoch= {epoch} batch= {batch_i} loss= {val_loss} acc= {val_accuracy}"
                     )
-                )
-                for k, v in sorted(split_pcts.items()):
-                    logger.debug(
-                        "val split epoch={} batch={}: {} = {}".format(epoch, batch_i, k, v)
-                    )
+                    for k, v in sorted(split_pcts.items()):
+                        logger.info(f"val split epoch= {epoch} batch= {batch_i}: {k} = {v}")
 
                 # save model
                 if args.checkpoint and rank == 0:
@@ -348,6 +355,9 @@ if __name__ == "__main__":
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")
             torch.save((train_dataset, val_dataset), args.data_cache)
+
+    logger.info(f"Train dataset: {train_dataset.stats_str()}")
+    logger.info(f"Val dataset: {val_dataset.stats_str()}")
 
     # required when using multithreaded DataLoader
     try:
