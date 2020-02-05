@@ -91,7 +91,7 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     try:
         order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
     except RuntimeError:
-        logging.error(
+        logger.error(
             f"Bad view: {order_scores.shape} != {len(y_actions)} * {len(ORDER_VOCABULARY)}, {order_idxs.shape}, {order_scores.shape}"
         )
         raise
@@ -99,7 +99,7 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     observed_order_scores = order_scores.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
     if observed_order_scores.min() < -1e7:
         min_score, min_idx = observed_order_scores.min(0)
-        logging.warning(
+        logger.warning(
             f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!"
         )
 
@@ -149,7 +149,7 @@ def validate(net, val_set_loader, loss_fn):
         for batch in val_set_loader:
             y_actions = batch[-1]
             if y_actions.shape[0] == 0:
-                logging.warning(
+                logger.warning(
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
                 )
                 continue
