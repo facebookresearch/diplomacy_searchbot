@@ -305,14 +305,14 @@ if __name__ == "__main__":
         default=1,
         help="Dataloader procs (1 means load in the main process)",
     )
-    parser.add_argument("--batch-size", type=int, default=200, help="Batch size per GPU")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Batch size per GPU")
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--checkpoint", help="Path to load/save the model")
     parser.add_argument(
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     parser.add_argument(
-        "--teacher-force", type=float, default=1, help="Prob[teacher forcing] during training"
+        "--teacher-force", type=float, default=1.0, help="Prob[teacher forcing] during training"
     )
     parser.add_argument("--lstm-dropout", type=float, default=0, help="LSTM dropout pct")
     parser.add_argument(
