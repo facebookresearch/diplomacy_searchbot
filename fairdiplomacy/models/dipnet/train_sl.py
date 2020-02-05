@@ -196,12 +196,8 @@ def main_subproc(
     else:
         checkpoint = None
 
-    # create model, from checkpoint if specified
     logger.info("Init model...")
     net = new_model(args)
-    if checkpoint:
-        logger.debug("net.load_state_dict")
-        net.load_state_dict(checkpoint["model"], strict=True)
 
     # send model to GPU
     logger.debug("net.cuda({})".format(rank))
@@ -209,6 +205,11 @@ def main_subproc(
     logger.debug("net {} DistributedDataParallel".format(rank))
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank])
     logger.debug("net {} DistributedDataParallel done".format(rank))
+
+    # load from checkpoint if specified
+    if checkpoint:
+        logger.debug("net.load_state_dict")
+        net.load_state_dict(checkpoint["model"], strict=True)
 
     # create optimizer, from checkpoint if specified
     loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
