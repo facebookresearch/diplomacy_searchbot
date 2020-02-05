@@ -153,6 +153,9 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
     power_idxs = torch.nonzero(torch.any(y_actions != EOS_IDX, dim=1)).squeeze(1).tolist()
 
     # filter away powers whose orders are not in valid_orders
+    # most common reasons why this happens:
+    # - actual garbage orders (e.g. moves between non-adjacent locations)
+    # - too many orders (e.g. three build orders with only two allowed builds)
     for power_idx in (
         ~(
             ((y_actions.unsqueeze(2) == x_possible_actions) | (y_actions.unsqueeze(2) == 0))
@@ -161,15 +164,15 @@ def encode_phase(game, phase_idx, only_with_min_final_score=7):
         )
     ).nonzero():
         power_idxs = [idx for idx in power_idxs if idx != power_idx]  # rm from output
-        logging.warning(
-            "Order not possible: {} {} {} {}".format(
-                y_actions[power_idx],
-                game.order_history[phase_name].get(POWERS[power_idx]),
-                x_possible_actions[power_idx, :5, :50],
-                phase_state,
-                all_possible_orders,
-            )
-        )
+        # logging.warning(
+        #     "Order not possible: {} {} {} {}".format(
+        #         y_actions[power_idx],
+        #         game.order_history[phase_name].get(POWERS[power_idx]),
+        #         x_possible_actions[power_idx, :5, :50],
+        #         phase_state,
+        #         all_possible_orders,
+        #     )
+        # )
 
     # maybe filter away powers that don't finish with enough SC
     if only_with_min_final_score is not None:
