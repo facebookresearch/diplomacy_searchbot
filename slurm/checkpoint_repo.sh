@@ -15,4 +15,4 @@ rsync -az \
     --exclude thirdparty/github/fairinternal/postman \
     $ROOT $TMPDIR
 
-echo $TMPDIR
+echo "$TMPDIR/fairdiplomacy"

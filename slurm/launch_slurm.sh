@@ -10,7 +10,7 @@ set -e
 
 ROOT="$(dirname $0)/.."
 
-SCRIPT=${SCRIPT:-fairdiplomacy/models/dipnet}
+SCRIPT=${SCRIPT:-fairdiplomacy/models/dipnet/train_sl.py}
 PARTITION=${PARTITION:-learnfair}
 GPU=${GPU:-8}
 CPU=${CPU:-80}
@@ -28,7 +28,10 @@ if [ -e $CHECKPOINT_DIR ]; then
   exit 1
 fi
 
-SRUN_DEFAULTS="--job-name $NAME --partition=$PARTITION --cpus-per-task=$CPU --gres=gpu:$GPU --mem=$MEM --time=$TIME --open-mode=append"
+SRUN_DEFAULTS="--job-name $NAME --partition=$PARTITION --cpus-per-task=$CPU \
+               --gres=gpu:$GPU --mem=$MEM --time=$TIME --open-mode=append \
+               --chdir=$CHECKPOINT_DIR \
+               --output $CHECKPOINT_DIR/stdout.log --error $CHECKPOINT_DIR/stderr.log"
 
 if [ x"$CODE_CHECKPOINT" == x ]; then
   CODE_CHECKPOINT=$($ROOT/slurm/checkpoint_repo.sh)
@@ -38,7 +41,7 @@ fi
 mkdir -p $CHECKPOINT_DIR
 
 # log some stuff locally to make it easier to see what's going on
-ln -sf $TMPDIR $CHECKPOINT_DIR/code
+ln -sf $CODE_CHECKPOINT $CHECKPOINT_DIR/code
 echo "$SCRIPT $@" > $CHECKPOINT_DIR/args.inp
 echo $(env) > $CHECKPOINT_DIR/env.inp
 git log --graph --decorate --pretty=oneline --abbrev-commit --all > $CHECKPOINT_DIR/gitlog.inp
@@ -46,7 +49,6 @@ git diff $ROOT > $CHECKPOINT_DIR/gitdiff.inp
 
 cd $CHECKPOINT_DIR
 
-PYTHONPATH=$TMPDIR srun $SRUN_DEFAULTS $SRUN_ARGS -- $TMPDIR/$SCRIPT $@ \
-  > $CHECKPOINT_DIR/stdout.log 2> $CHECKPOINT_DIR/stderr.log &
+PYTHONPATH=$CODE_CHECKPOINT srun $SRUN_DEFAULTS $SRUN_ARGS -- python $CODE_CHECKPOINT/$SCRIPT $@ &
 
 echo "Launched $NAME"
