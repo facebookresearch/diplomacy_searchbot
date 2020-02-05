@@ -305,7 +305,7 @@ if __name__ == "__main__":
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )
     parser.add_argument(
-        "--teacher-force", type=float, default=0, help="Prob[teacher forcing] during training"
+        "--teacher-force", type=float, default=1, help="Prob[teacher forcing] during training"
     )
     parser.add_argument("--lstm-dropout", type=float, default=0, help="LSTM dropout pct")
     parser.add_argument(
