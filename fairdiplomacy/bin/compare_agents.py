@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import logging
 import os
@@ -22,7 +23,9 @@ def make_agent(agent_arg):
         return cls(*args)
 
 
-def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None, seed=0, cf_agent=None):
+def run_1v6_trial(
+    agent_one_arg, agent_six_arg, agent_one_power, save_path=None, seed=0, cf_agent=None
+):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
     Arguments:
@@ -41,7 +44,7 @@ def run_1v6_trial(agent_one_arg, agent_six_arg, agent_one_power, save_path=None,
     env = Env(
         {power: agent_one if power == agent_one_power else agent_six for power in POWERS},
         seed=seed,
-        cf_agent=cf_agent
+        cf_agent=cf_agent,
     )
 
     scores = env.process_all_turns()

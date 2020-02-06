@@ -13,7 +13,7 @@ LAUNCH="$(dirname $0)/launch_slurm.sh"
 
 # it's more efficient to do this once in advance
 export CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
-export SCRIPT="fairdiplomacy/compare_agents/compare_agents.py"
+export SCRIPT="fairdiplomacy/bin/compare_agents.py"
 
 
 NUM_TRIALS=${NUM_TRIALS:-10}

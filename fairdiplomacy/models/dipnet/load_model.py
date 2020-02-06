@@ -1,6 +1,37 @@
 import torch
 
-from .train_sl import new_model
+from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
+from fairdiplomacy.models.dipnet.dipnet import DipNet
+
+BOARD_STATE_SIZE = 35
+PREV_ORDERS_SIZE = 40
+INTER_EMB_SIZE = 120
+POWER_EMB_SIZE = 60
+SEASON_EMB_SIZE = 20
+NUM_ENCODER_BLOCKS = 16
+LSTM_SIZE = 200
+ORDER_EMB_SIZE = 80
+
+
+def new_model(args):
+    return DipNet(
+        BOARD_STATE_SIZE,
+        PREV_ORDERS_SIZE,
+        INTER_EMB_SIZE,
+        POWER_EMB_SIZE,
+        SEASON_EMB_SIZE,
+        NUM_ENCODER_BLOCKS,
+        torch.from_numpy(ADJACENCY_MATRIX).float(),
+        torch.from_numpy(MASTER_ALIGNMENTS).float(),
+        len(get_order_vocabulary()),
+        ORDER_EMB_SIZE,
+        LSTM_SIZE,
+        args.lstm_dropout,
+        learnable_A=args.learnable_A,
+        learnable_alignments=args.learnable_alignments,
+        avg_embedding=args.avg_embedding,
+    )
 
 
 def load_dipnet_model(checkpoint_path, map_location="cpu", eval=False):

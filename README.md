@@ -28,14 +28,26 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
 
 # Training a Model
 
-The model code is in [fairdiplomacy/models/dipnet/](fairdiplomacy/models/dipnet/). The most import files are:
-- [dipnet.py](fairdiplomacy/models/dipnet/dipnet.py): the model implementation
-- [train_sl.py](fairdiplomacy/models/dipnet/train_sl.py): the model training code
-- [launch_sbatch.sh](fairdiplomacy/models/dipnet/launch_sbatch.sh): run this script to train a model on the cluster
+The model code is in [fairdiplomacy/models/dipnet/](fairdiplomacy/models/dipnet/). The model architecture is defined in [dipnet.py](fairdiplomacy/models/dipnet/dipnet.py)
 
-# Checking a Trained Model's Outputs
+The script to train a model is in [fairdiplomacy/bin/train_sl.py](fairdiplomacy/bin/train_sl.py)
 
-Run [fairdiplomacy/agents/dipnet_agent.py](fairdiplomacy/agents/dipnet_agent.py)
+To train a model on the cluster, see the scripts in [slurm/](slurm/), specifically [example_train_sl.sh](slurm/example_train_sl.sh).
+
+
+# Comparing Agents
+
+See [fairdiplomacy/bin/compare_agents.py](fairdiplomacy/bin/compare_agents.py)
+
+e.g. to compare a trained dipnet model to the mila bot, run:
+```
+python fairdiplomacy/bin/compare_agents.py /path/to/dipnet.pth mila ITALY --seed 0 -o output.json
+```
+
+This plays a game with one dipnet bot (playing Italy) vs. 6 mila bots, and writes the output to `output.json`
+
+To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slurm/compare_agents.sh)
+
 
 # Visualizing a Saved Game
 

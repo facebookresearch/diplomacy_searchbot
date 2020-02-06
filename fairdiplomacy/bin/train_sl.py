@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import atexit
 import glob
@@ -10,9 +11,7 @@ from functools import reduce
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset
-from fairdiplomacy.data.get_game_lengths import get_all_game_lengths
-from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS
-from fairdiplomacy.models.dipnet.dipnet import DipNet
+from fairdiplomacy.models.dipnet.load_model import new_model
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
@@ -26,37 +25,8 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
 logger.addHandler(handler)
 
-BOARD_STATE_SIZE = 35
-PREV_ORDERS_SIZE = 40
-INTER_EMB_SIZE = 120
-POWER_EMB_SIZE = 60
-SEASON_EMB_SIZE = 20
-NUM_ENCODER_BLOCKS = 16
-LSTM_SIZE = 200
-ORDER_EMB_SIZE = 80
-
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
-
-
-def new_model(args):
-    return DipNet(
-        BOARD_STATE_SIZE,
-        PREV_ORDERS_SIZE,
-        INTER_EMB_SIZE,
-        POWER_EMB_SIZE,
-        SEASON_EMB_SIZE,
-        NUM_ENCODER_BLOCKS,
-        torch.from_numpy(ADJACENCY_MATRIX).float(),
-        torch.from_numpy(MASTER_ALIGNMENTS).float(),
-        len(ORDER_VOCABULARY),
-        ORDER_EMB_SIZE,
-        LSTM_SIZE,
-        args.lstm_dropout,
-        learnable_A=args.learnable_A,
-        learnable_alignments=args.learnable_alignments,
-        avg_embedding=args.avg_embedding,
-    )
 
 
 def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
@@ -296,8 +266,11 @@ if __name__ == "__main__":
     random.seed(0)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", default="/checkpoint/jsgray/diplomacy/mila_dataset/data",
-                        help="Path to dir containing game.json files")
+    parser.add_argument(
+        "--data-dir",
+        default="/checkpoint/jsgray/diplomacy/mila_dataset/data",
+        help="Path to dir containing game.json files",
+    )
     parser.add_argument("--data-cache", help="Path to dir containing dataset cache")
     parser.add_argument(
         "--num-dataloader-workers",
@@ -307,7 +280,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--batch-size", type=int, default=1000, help="Batch size per GPU")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--checkpoint", default="./checkpoint.pth", help="Path to load/save the model")
+    parser.add_argument(
+        "--checkpoint", default="./checkpoint.pth", help="Path to load/save the model"
+    )
     parser.add_argument(
         "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
     )

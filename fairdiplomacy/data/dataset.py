@@ -20,14 +20,6 @@ ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULA
 MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
-def _cat(x):
-    return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.cat(x)
-
-
-def _stack(x):
-    return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.stack(x)
-
-
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, game_json_paths: List[str], debug_only_opening_phase=False, n_jobs=20):
         self.game_json_paths = game_json_paths
@@ -378,24 +370,9 @@ def smarter_order_index(order):
         return ORDER_VOCABULARY_TO_IDX[order]
 
 
-if __name__ == "__main__":
-    import glob
-    import time
+def _cat(x):
+    return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.cat(x)
 
-    game_jsons = glob.glob("/checkpoint/jsgray/diplomacy/mila_dataset/data/*000.json")
-    cache = Dataset(game_jsons)
-    feats = cache[torch.tensor([100, 2], dtype=torch.long)]
-    print([(f.shape, f.dtype) for f in feats])
-    torch.save(cache, "test_cache.pt")
-    cache2 = torch.load("test_cache.pt")
-    feats2 = cache[torch.tensor([100, 2], dtype=torch.long)]
-    assert all((f1 == f2).all() for f1, f2 in zip(feats, feats2))
 
-    N = len(cache2)
-    tic = time.time()
-    B, k = 1000, 10
-    for i in range(k):
-        idx = (torch.rand(B) * 0.99 * N).to(torch.long)
-        data = cache2[idx]
-    delta = time.time() - tic
-    print(f"Looked up {B*k} in {delta} s. {B*k/delta} / s")
+def _stack(x):
+    return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.stack(x)

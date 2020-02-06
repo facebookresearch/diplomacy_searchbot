@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import json
 import re
@@ -48,25 +49,26 @@ if __name__ == "__main__":
     for d in [args.results_dir, "/fairdiplomacy", "/compare_agents"]:
         results_dir += d
         paths = glob.glob(os.path.join(results_dir, "game.*.json"))
-        if len(paths ) > 0:
+        if len(paths) > 0:
             break
 
     results = [get_result(path) for path in paths]
 
     # print each result
     from pprint import pprint
+
     pprint(results)
     print()
 
     # print args
-    for x in ['A', 'B']:
-        with open(os.path.join(results_dir, f'AGENT_{x}.arg')) as f:
-            print('ARG', x, f.read().strip())
+    for x in ["A", "B"]:
+        with open(os.path.join(results_dir, f"AGENT_{x}.arg")) as f:
+            print("ARG", x, f.read().strip())
     print()
 
     # print win percentages
     from collections import Counter
+
     counts = Counter([w for w, _, _ in results])
     for k, v in sorted(counts.items()):
-        print(f'{k}: {v}, {v/len(results)}')
-
+        print(f"{k}: {v}, {v/len(results)}")

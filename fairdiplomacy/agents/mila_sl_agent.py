@@ -55,8 +55,3 @@ class Player(ModelBasedPlayer):
         # Building benchmark model
         super().__init__(policy_adapter=policy_adapter, temperature=temperature, use_beam=False)
 
-
-if __name__ == "__main__":
-    agent = MilaSLAgent()
-    game = diplomacy.Game()
-    print(agent.get_orders(game, "ITALY"))

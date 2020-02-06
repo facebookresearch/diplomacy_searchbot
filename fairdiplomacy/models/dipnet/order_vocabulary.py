@@ -261,11 +261,3 @@ def _get_order_vocabulary():
 
     return final_orders, orders_by_unit
 
-
-if __name__ == "__main__":
-    for order in get_order_vocabulary():
-        print(order)
-
-    for unit, orders in get_order_vocabulary_by_unit().items():
-        print(f"{unit}: {len(orders)}")
-    print(f"Max: {max(len(o) for o in get_order_vocabulary_by_unit().values())}")

@@ -10,7 +10,7 @@ set -e
 
 ROOT="$(dirname $0)/.."
 
-SCRIPT=${SCRIPT:-fairdiplomacy/models/dipnet/train_sl.py}
+SCRIPT=${SCRIPT:-fairdiplomacy/bin/train_sl.py}
 PARTITION=${PARTITION:-learnfair}
 CHECKPOINT_BASE=${CHECKPOINT_BASE:-/checkpoint/$USER/fairdiplomacy}
 

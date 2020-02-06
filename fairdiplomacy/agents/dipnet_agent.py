@@ -117,31 +117,3 @@ def get_valid_orders(game, power, all_possible_orders=None):
     return get_valid_orders_impl(
         power, all_possible_orders, game.get_orderable_locations(), game.get_state()
     )
-
-
-if __name__ == "__main__":
-    import argparse
-
-    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("model_path", nargs="?", default="/checkpoint/jsgray/dipnet.pth")
-    parser.add_argument("--temperature", "-t", type=float, default=1.0)
-    args = parser.parse_args()
-
-    agent = DipnetAgent(args.model_path)
-    game = diplomacy.Game()
-    orders = agent.get_orders(game, "ITALY", temperature=args.temperature, debug_probs=True)
-    logging.info("Submit orders: {}".format(orders))
-
-    b, N = 1000, 100
-
-    tic = time.time()
-    for i in range(N):
-        orders = agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=b)
-    timing = time.time() - tic
-    print(f"batch {b} N {N} : forward'd {b*N} in {timing} s. {b*N/timing} forwards/s")
-
-    # with torch.autograd.profiler.profile(use_cuda=True, record_shapes=True) as prof:
-    #     agent.get_orders(game, "ITALY", temperature=args.temperature, batch_size=400)
-    # print(prof.table(row_limit=10000))
