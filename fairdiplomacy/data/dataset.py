@@ -12,6 +12,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
+from fairdiplomacy.utils.custom_packed_sequence import CustomPackedSequence
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
@@ -53,7 +54,9 @@ class Dataset(torch.utils.data.Dataset):
         self.x_idxs = torch.tensor(x_idxs, dtype=torch.long)
 
         # now collate the data into giant tensors!
-        self.encoded_games = [torch.cat(x) for x in zip(*encoded_games)]
+        # exclude tensor #5 = possible_actions
+        self.encoded_games = [torch.cat(x) for i, x in enumerate(zip(*encoded_games)) if i != 5]
+        self.encoded_possible_actions = [g[5] for g in encoded_games]
 
         self.num_games = len(encoded_games)
         self.num_phases = len(self.encoded_games[0])
@@ -75,12 +78,23 @@ class Dataset(torch.utils.data.Dataset):
 
         x_idx = self.x_idxs[idx]
         power_idx = self.power_idxs[idx]
+        game_idx = self.game_idxs[idx]
+        phase_idx = self.phase_idxs[idx]
 
         fields = [x[x_idx] for x in self.encoded_games[:-1]]
+
+        # unpack the possible_actions, insert it into fields[5]
+        uniq_game_idxs = set(game_idx.tolist())
+        unpacked = {i: self.encoded_possible_actions[i].unpack() for i in uniq_game_idxs}
+        possible_actions = torch.stack(
+            [unpacked[g][s][p] for (g, s, p) in zip(game_idx.tolist(), phase_idx, power_idx)]
+        )
+        fields = fields[:5] + [possible_actions] + fields[5:]
+
         assert len(fields) == 8
 
         # for these fields we need to select out the correct power
-        for f in [2, 5, 6, 7]:
+        for f in [2, 6, 7]:
             fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
 
         # cast fields
@@ -111,7 +125,7 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     - power: shape=(L, 7, 7)
     - season: shape=(L, 3)
     - in_adj_phase: shape=(L, 1)
-    - possible_actions: shape=(L, 7, 17, 469)
+    - possible_actions: shape=(L, 7, 17, 469), wrapped in CustomPackedSequence
     - loc_idxs: shape=(L, 7, 17, 81), bool
     - actions: shape=(L, 7, 17) int order idxs
     - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
@@ -127,6 +141,10 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     ]
 
     stacked_encodings = [torch.stack(x, dim=0) for x in zip(*phase_encodings)]
+
+    # pack possible_actions
+    stacked_encodings[5] = CustomPackedSequence(stacked_encodings[5])
+
     return stacked_encodings
 
 
@@ -275,7 +293,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     """Return a boolean mask of valid orders
 
     Returns:
-    - a [1, 17, 469] int tensor of valid move indexes (padded with -1)
+    - a [1, 17, 469] int tensor of valid move indexes (padded with 0)
     - a [1, 17, 81] bool tensor of orderable locs
     - the actual length of the sequence == the number of orders to submit, <= 17
     """
