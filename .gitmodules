@@ -4,3 +4,4 @@
 [submodule "thirdparty/github/fairinternal/postman"]
 	path = thirdparty/github/fairinternal/postman
 	url = git@github.com:fairinternal/postman.git
+    ignore = dirty
