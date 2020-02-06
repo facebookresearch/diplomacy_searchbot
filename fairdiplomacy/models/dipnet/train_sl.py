@@ -322,6 +322,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--validate-every", type=int, default=1000, help="Validate/save every # of batches"
     )
+    parser.add_argument("--skip-validation", action="store_true", help="Skip validation / save")
     parser.add_argument("--learnable-A", action="store_true", help="Learn adjacency matrix")
     parser.add_argument(
         "--learnable-alignments", action="store_true", help="Learn attention alignment matrix"
@@ -331,7 +332,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Average across location embedding instead of using attention",
     )
-    parser.add_argument("--skip-validation", action="store_true", help="Skip validation / save")
     args = parser.parse_args()
     logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
 
