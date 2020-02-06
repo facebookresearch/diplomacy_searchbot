@@ -217,6 +217,7 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
     ]
 
     # encode actions
+    valid_power_idxs = torch.ones(len(POWERS), dtype=torch.bool)
     y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
     for power_i, power in enumerate(POWERS):
         orders = game.order_history[phase_name].get(power, [])
@@ -231,12 +232,17 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
         if not x_in_adj_phase[0]:
             filled_locs = set(ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs)
             unfilled_locs = {LOCS[x] for _, x in x_loc_idxs[power_i, :, :].nonzero()} - filled_locs
-            for loc in unfilled_locs:
-                unit = next(unit for unit in phase_state["units"][power] if loc in unit)
-                if "*" in unit:
-                    order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
-                else:
-                    order_idxs.append(smarter_order_index(f"{unit} H"))
+            try:
+                for loc in unfilled_locs:
+                    unit = next(unit for unit in phase_state["units"][power] if loc in unit)
+                    if "*" in unit:
+                        order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
+                    else:
+                        order_idxs.append(smarter_order_index(f"{unit} H"))
+            except Exception:
+                logging.exception("Error filling unfilled_locs")
+                valid_power_idxs[power_i] = 0
+                continue
 
         # sort by topo order
         order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
