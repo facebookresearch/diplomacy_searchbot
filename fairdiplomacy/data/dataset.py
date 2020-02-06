@@ -1,4 +1,3 @@
-import copy
 import diplomacy
 import joblib
 import logging
@@ -41,7 +40,6 @@ class Dataset(torch.utils.data.Dataset):
         for game_idx, encoded_game in enumerate(encoded_games):
             for phase_idx, valid_power_idxs in enumerate(encoded_game[-1]):
                 assert valid_power_idxs.nelement() == 7
-                # assert valid_power_idxs.sum() > 0
                 for power_idx in valid_power_idxs.nonzero()[:, 0]:
                     game_idxs.append(game_idx)
                     phase_idxs.append(phase_idx)
@@ -184,7 +182,7 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
     x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(phase_name[-1] == "A")
 
     # encode possible actions
-    tmp_game = copy.deepcopy(game)
+    tmp_game = diplomacy.Game(map_name=game.map_name)
     tmp_game.set_state(phase_state)
     all_possible_orders = tmp_game.get_all_possible_orders()
     all_orderable_locations = tmp_game.get_orderable_locations()
