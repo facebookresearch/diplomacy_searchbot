@@ -355,9 +355,7 @@ if __name__ == "__main__":
     import glob
     import time
 
-    game_jsons = glob.glob(
-        "/private/home/jsgray/code/fairdiplomacy/fairdiplomacy/data/mila_dataset/data/*000.json"
-    )
+    game_jsons = glob.glob("/checkpoint/jsgray/diplomacy/mila_dataset/data/*000.json")
     cache = Dataset(game_jsons)
     feats = cache[torch.tensor([100, 2], dtype=torch.long)]
     print([(f.shape, f.dtype) for f in feats])

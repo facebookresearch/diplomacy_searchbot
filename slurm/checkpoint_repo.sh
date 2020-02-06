@@ -11,7 +11,6 @@ rsync -az \
     --exclude .git \
     --exclude '*.db' \
     --exclude fairdiplomacy/data/out/ \
-    --exclude fairdiplomacy/data/mila_dataset/ \
     --exclude thirdparty/github/fairinternal/postman \
     $ROOT $TMPDIR
 

@@ -3,7 +3,7 @@ set -e
 
 LAUNCH="$(dirname $0)/launch_slurm.sh"
 
-DEFAULT_ARGS="--data-dir /private/home/jsgray/code/fairdiplomacy/fairdiplomacy/data/mila_dataset/data \
+DEFAULT_ARGS="--data-dir /checkpoint/jsgray/diplomacy/mila_dataset/data \
 --data-cache /private/home/alerer/git/fairdiplomacy/local/data_cache.pt \
 --batch-size 1000"
 
