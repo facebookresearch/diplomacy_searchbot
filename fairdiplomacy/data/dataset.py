@@ -19,8 +19,10 @@ ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULARY)}
 MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
+
 def _cat(x):
     return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.cat(x)
+
 
 def _stack(x):
     return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.stack(x)
@@ -35,10 +37,10 @@ class Dataset(torch.utils.data.Dataset):
             joblib.delayed(encode_game)(p) for p in game_json_paths
         )
 
-        print(f"Got {len(encoded_games)} games")
+        logging.info(f"Got {len(encoded_games)} games")
 
         encoded_games = [g for g in encoded_games if g[-1][0].any()]
-        print(f"{len(encoded_games)} games had data for at least one power")
+        logging.info(f"{len(encoded_games)} games had data for at least one power")
 
         game_idxs, phase_idxs, power_idxs, x_idxs = [], [], [], []
         x_idx = 0
@@ -70,7 +72,6 @@ class Dataset(torch.utils.data.Dataset):
             else:
                 assert len(e) == self.num_phases
 
-
     def stats_str(self):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
 
@@ -89,8 +90,9 @@ class Dataset(torch.utils.data.Dataset):
         fields = [x[x_idx] for x in self.encoded_games[:-1]]
 
         # unpack the possible_actions, insert it into fields[5]
-        possible_actions_idx = ((x_idx * len(POWERS) + power_idx) * MAX_SEQ_LEN).unsqueeze(1) + \
-            torch.arange(MAX_SEQ_LEN).unsqueeze(0)
+        possible_actions_idx = ((x_idx * len(POWERS) + power_idx) * MAX_SEQ_LEN).unsqueeze(
+            1
+        ) + torch.arange(MAX_SEQ_LEN).unsqueeze(0)
         x_possible_actions = self.encoded_games[5][possible_actions_idx.view(-1)]
         x_possible_actions_padded = x_possible_actions.to_padded(total_length=MAX_VALID_LEN)
         fields[5] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
@@ -136,7 +138,7 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     """
 
     if isinstance(game, str):
-        print(f"Encoding {game}")
+        logging.debug(f"Encoding {game}")
         game = diplomacy.utils.export.load_saved_games_from_disk(game)[0]
 
     num_phases = len(game.state_history)
@@ -283,7 +285,9 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
             if final_score.get(power, 0) < only_with_min_final_score:
                 valid_power_idxs[i] = 0
 
-    x_possible_actions = TensorList.from_padded(x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN))
+    x_possible_actions = TensorList.from_padded(
+        x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN)
+    )
 
     return (
         x_board_state,
@@ -306,9 +310,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     - a [1, 17, 81] bool tensor of orderable locs
     - the actual length of the sequence == the number of orders to submit, <= 17
     """
-    all_order_idxs = torch.zeros(
-        1, MAX_SEQ_LEN, MAX_VALID_LEN, dtype=torch.int32
-    )
+    all_order_idxs = torch.zeros(1, MAX_SEQ_LEN, MAX_VALID_LEN, dtype=torch.int32)
     loc_idxs = torch.zeros(1, MAX_SEQ_LEN, len(LOCS), dtype=torch.bool)
 
     if power not in all_orderable_locations:
