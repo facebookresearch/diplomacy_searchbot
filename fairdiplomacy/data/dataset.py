@@ -12,24 +12,28 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
-from fairdiplomacy.utils.custom_packed_sequence import CustomPackedSequence
+from fairdiplomacy.utils.tensorlist import TensorList
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULARY)}
+MAX_VALID_LEN = get_order_vocabulary_idxs_len()
+
+def _cat(x):
+    return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.cat(x)
+
+def _stack(x):
+    return TensorList.cat(x) if isinstance(x[0], TensorList) else torch.stack(x)
 
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, game_json_paths: List[str], debug_only_opening_phase=False, n_jobs=20):
         self.game_json_paths = game_json_paths
-        self.debug_only_opening_phase = debug_only_opening_phase
+        assert not debug_only_opening_phase, "FIXME"
 
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(encode_game)(p) for p in game_json_paths
         )
-
-        if self.debug_only_opening_phase:
-            encoded_games = [[x[:1] for x in y] for y in encoded_games]
 
         print(f"Got {len(encoded_games)} games")
 
@@ -54,17 +58,18 @@ class Dataset(torch.utils.data.Dataset):
         self.x_idxs = torch.tensor(x_idxs, dtype=torch.long)
 
         # now collate the data into giant tensors!
-        # exclude tensor #5 = possible_actions
-        self.encoded_games = [torch.cat(x) for i, x in enumerate(zip(*encoded_games)) if i != 5]
-        self.encoded_possible_actions = [g[5] for g in encoded_games]
+        self.encoded_games = [_cat(x) for x in zip(*encoded_games)]
 
         self.num_games = len(encoded_games)
         self.num_phases = len(self.encoded_games[0])
         self.num_elements = len(self.x_idxs)
 
-        assert all(len(e) == self.num_phases for e in self.encoded_games), [
-            len(e) for e in self.encoded_games
-        ]
+        for i, e in enumerate(self.encoded_games):
+            if isinstance(e, TensorList):
+                assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
+            else:
+                assert len(e) == self.num_phases
+
 
     def stats_str(self):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
@@ -78,18 +83,17 @@ class Dataset(torch.utils.data.Dataset):
 
         x_idx = self.x_idxs[idx]
         power_idx = self.power_idxs[idx]
-        game_idx = self.game_idxs[idx]
-        phase_idx = self.phase_idxs[idx]
+        # game_idx = self.game_idxs[idx]
+        # phase_idx = self.phase_idxs[idx]
 
         fields = [x[x_idx] for x in self.encoded_games[:-1]]
 
         # unpack the possible_actions, insert it into fields[5]
-        uniq_game_idxs = set(game_idx.tolist())
-        unpacked = {i: self.encoded_possible_actions[i].unpack() for i in uniq_game_idxs}
-        possible_actions = torch.stack(
-            [unpacked[g][s][p] for (g, s, p) in zip(game_idx.tolist(), phase_idx, power_idx)]
-        )
-        fields = fields[:5] + [possible_actions] + fields[5:]
+        possible_actions_idx = ((x_idx * len(POWERS) + power_idx) * MAX_SEQ_LEN).unsqueeze(1) + \
+            torch.arange(MAX_SEQ_LEN).unsqueeze(0)
+        x_possible_actions = self.encoded_games[5][possible_actions_idx.view(-1)]
+        x_possible_actions_padded = x_possible_actions.to_padded(total_length=MAX_VALID_LEN)
+        fields[5] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
 
         assert len(fields) == 8
 
@@ -125,7 +129,7 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     - power: shape=(L, 7, 7)
     - season: shape=(L, 3)
     - in_adj_phase: shape=(L, 1)
-    - possible_actions: shape=(L, 7, 17, 469), wrapped in CustomPackedSequence
+    - possible_actions: TensorList shape=(L x 7, 17 x 469)
     - loc_idxs: shape=(L, 7, 17, 81), bool
     - actions: shape=(L, 7, 17) int order idxs
     - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
@@ -140,10 +144,7 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
         encode_phase(game, phase_idx, only_with_min_final_score) for phase_idx in range(num_phases)
     ]
 
-    stacked_encodings = [torch.stack(x, dim=0) for x in zip(*phase_encodings)]
-
-    # pack possible_actions
-    stacked_encodings[5] = CustomPackedSequence(stacked_encodings[5])
+    stacked_encodings = [_stack(x) for x in zip(*phase_encodings)]
 
     return stacked_encodings
 
@@ -163,7 +164,7 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
     - power: shape=(7, 7)
     - season: shape=(3,)
     - in_adj_phase: shape=(1,)
-    - possible_actions: shape=(7, 17, 469)
+    - possible_actions: Tensorlist shape=(7 x 17, 469)
     - loc_idxs: shape=(7, 17, 81), bool
     - actions: shape=(7, 17) int order idxs
     - valid_power_idxs: shape=(7,) bool mask of valid powers at this phase
@@ -282,6 +283,8 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
             if final_score.get(power, 0) < only_with_min_final_score:
                 valid_power_idxs[i] = 0
 
+    x_possible_actions = TensorList.from_padded(x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN))
+
     return (
         x_board_state,
         x_prev_orders,
@@ -304,7 +307,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     - the actual length of the sequence == the number of orders to submit, <= 17
     """
     all_order_idxs = torch.zeros(
-        1, MAX_SEQ_LEN, get_order_vocabulary_idxs_len(), dtype=torch.int32
+        1, MAX_SEQ_LEN, MAX_VALID_LEN, dtype=torch.int32
     )
     loc_idxs = torch.zeros(1, MAX_SEQ_LEN, len(LOCS), dtype=torch.bool)
 

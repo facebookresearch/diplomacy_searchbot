@@ -203,3 +203,43 @@ class TensorList(object):
             dim = self.data.ndimension() + dim
         assert dim > 0, "Can't sum along the 'list' dimension"
         return self.__class__(self.offsets, self.data.sum(dim, keepdim=keepdim))
+
+
+    def to_padded(self, padding_value=0, total_length=None):
+        """
+        Convert to a B x D padded sequence.
+
+        We'll be lazy for now and assume 1D elements, because that's all we use.
+        """
+
+        N = len(self)
+        lengths = self.lengths()
+        if total_length is None:
+            total_length = int(lengths.max())
+        res = self.data.new_empty(N, total_length).fill_(padding_value)
+
+        # be lazy for now and use a loop
+        for i in range(N):
+            res[i, :lengths[i]].copy_(
+                self.data[self.offsets[i]:self.offsets[i+1]]
+            )
+        return res
+
+    @classmethod
+    def from_padded(cls, data, padding_value=0):
+        """
+        Convert a B x D padded sequence to TensorList.
+
+        We'll be lazy for now and assume 1D elements, because that's all we use.
+        """
+        assert data.ndimension() == 2
+        flat = data.view(-1, data.shape[-1])
+        valid_mask = (data != padding_value)
+        lengths = valid_mask.sum(dim=1)
+        offsets = lengths.cumsum(0)
+        offsets = torch.cat((offsets.new_zeros(1), offsets), dim=0)
+
+        flat = data.view(-1)
+        packed = data.view(-1)[valid_mask.view(-1)]
+
+        return cls(offsets, packed)

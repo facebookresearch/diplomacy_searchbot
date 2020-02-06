@@ -21,7 +21,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
 logger.addHandler(handler)
@@ -243,7 +243,6 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             loss.backward()
             logger.debug(f"Running step {batch_i} ...")
             optim.step()
-            logger.debug(f"Rank: {rank} {rank == 0}")
             if rank == 0:
                 logger.info(f"epoch {epoch} batch {batch_i} / {len(batches)} loss= {loss}")
 
@@ -302,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-dataloader-workers",
         type=int,
-        default=1,
+        default=20,
         help="Dataloader procs (1 means load in the main process)",
     )
     parser.add_argument("--batch-size", type=int, default=1000, help="Batch size per GPU")
