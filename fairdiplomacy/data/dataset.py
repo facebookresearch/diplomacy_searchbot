@@ -251,7 +251,7 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
             y_actions[power_i, i] = order_idx
 
     # filter away powers that have no orders
-    valid_power_idxs = torch.any(y_actions != EOS_IDX, dim=1)
+    valid_power_idxs &= torch.any(y_actions != EOS_IDX, dim=1)
     assert valid_power_idxs.ndimension() == 1
 
     # filter away powers whose orders are not in valid_orders
@@ -279,7 +279,7 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
     # maybe filter away powers that don't finish with enough SC
     if only_with_min_final_score is not None:
         final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        for i in range(len(POWERS)):
+        for i, power in enumerate(POWERS):
             if final_score.get(power, 0) < only_with_min_final_score:
                 valid_power_idxs[i] = 0
 
