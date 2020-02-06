@@ -391,7 +391,7 @@ if __name__ == "__main__":
 
     N = len(cache2)
     tic = time.time()
-    B, k = 1000, 100
+    B, k = 1000, 10
     for i in range(k):
         idx = (torch.rand(B) * 0.99 * N).to(torch.long)
         data = cache2[idx]

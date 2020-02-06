@@ -296,7 +296,8 @@ if __name__ == "__main__":
     random.seed(0)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", help="Path to dir containing game.json files")
+    parser.add_argument("--data-dir", default="/checkpoint/jsgray/diplomacy/mila_dataset/data",
+                        help="Path to dir containing game.json files")
     parser.add_argument("--data-cache", help="Path to dir containing dataset cache")
     parser.add_argument(
         "--num-dataloader-workers",
