@@ -210,19 +210,34 @@ class TensorList(object):
         Convert to a B x D padded sequence.
 
         We'll be lazy for now and assume 1D elements, because that's all we use.
+
+        The way we do this is a bit tricky. Basically, we solve for a 1D tensor
+        that codes for the offsets of each element of self.data in the padded
+        tensor, and then we do an index copy of data into the padded tensor.
+
+        This only works when all rows are non-empty, so we have to first remove
+        the empty rows.
         """
 
         N = len(self)
         lengths = self.lengths()
         if total_length is None:
             total_length = int(lengths.max())
+
         res = self.data.new_empty(N, total_length).fill_(padding_value)
 
-        # be lazy for now and use a loop
-        for i in range(N):
-            res[i, :lengths[i]].copy_(
-                self.data[self.offsets[i]:self.offsets[i+1]]
-            )
+        nz_rows = lengths.nonzero()[:, 0]
+        if len(nz_rows) != len(lengths):
+            # operate on the non-empty rows, and insert back in
+            res_nz = self[nz_rows].to_padded(padding_value, total_length)
+            res[nz_rows] = res_nz
+        else:
+            insertion_delta = torch.ones(self.data.shape, dtype=torch.long)
+            insertion_delta[self.offsets[1:-1]] += (total_length - lengths[:-1])
+            insertion_delta[0] = 0
+            insertion_idx = insertion_delta.cumsum(0)
+            res.view(-1)[insertion_idx] = self.data
+
         return res
 
     @classmethod
@@ -238,8 +253,14 @@ class TensorList(object):
         lengths = valid_mask.sum(dim=1)
         offsets = lengths.cumsum(0)
         offsets = torch.cat((offsets.new_zeros(1), offsets), dim=0)
-
         flat = data.view(-1)
         packed = data.view(-1)[valid_mask.view(-1)]
 
         return cls(offsets, packed)
+
+if __name__ == "__main__":
+    tl = TensorList(
+        torch.tensor([0,0,3,9,9,11], dtype=torch.long),
+        torch.tensor([1,2,3,1,2,3,4,5,6,1,2])
+    )
+    print(tl.to_padded())

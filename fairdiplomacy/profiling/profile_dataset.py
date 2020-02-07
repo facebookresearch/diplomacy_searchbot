@@ -14,7 +14,7 @@ if __name__ == "__main__":
     for _ in range(k):
         cache = Dataset(game_jsons)
     delta = time.time() - tic
-    print(f"Encoded {k*len(game_jsons)} games in {delta}s ~ {k*len(game_jsons)/delta} games/s")
+    print(f"Encoded {k*len(game_jsons)} games in {delta}s. {k*len(game_jsons)/delta} games/s")
 
     feats = cache[torch.tensor([100, 2], dtype=torch.long)]
 
