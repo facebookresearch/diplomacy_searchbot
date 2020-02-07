@@ -6,13 +6,18 @@ git clone --recursive git@github.com:fairinternal/fairdiplomacy.git
 cd fairdiplomacy
 ```
 
-Create a conda env:
+The following command will create/activate conda env with all needed modules:
+```
+. fair_activate.sh
+```
+
+Or you can do this manually:
 ```
 conda create -y --name fairdiplomacy python=3.7
 conda activate fairdiplomacy
 conda install -y nodejs
 pip install -e . -vv
-pip install ./thirdparty/github/fairinternal/postman/nest/
+pip install -e ./thirdparty/github/fairinternal/postman/nest/
 pip install /checkpoint/hnr/wheels/postman-0.1.1-cp37-cp37m-linux_x86_64.whl
 ```
 
