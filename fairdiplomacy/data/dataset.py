@@ -1,7 +1,6 @@
 import diplomacy
 import joblib
 import logging
-import numpy as np
 import torch
 from typing import Union, List, Optional
 
@@ -124,7 +123,7 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     - season: shape=(L, 3)
     - in_adj_phase: shape=(L, 1)
     - possible_actions: TensorList shape=(L x 7, 17 x 469)
-    - loc_idxs: shape=(L, 7, 17, 81), bool
+    - loc_idxs: shape=(L, 7, 81), int8
     - actions: shape=(L, 7, 17) int order idxs
     - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
     """
@@ -159,7 +158,7 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
     - season: shape=(3,)
     - in_adj_phase: shape=(1,)
     - possible_actions: Tensorlist shape=(7 x 17, 469)
-    - loc_idxs: shape=(7, 17, 81), bool
+    - loc_idxs: shape=(7, 81), int8
     - actions: shape=(7, 17) int order idxs
     - valid_power_idxs: shape=(7,) bool mask of valid powers at this phase
     """
@@ -225,12 +224,14 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
 
         # fill in Hold for invalid or missing orders
         if not x_in_adj_phase[0]:
-            filled_locs = set(ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs)
-            unfilled_locs = {LOCS[x] for _, x in x_loc_idxs[power_i, :, :].nonzero()} - filled_locs
+            all_locs = {LOCS[x] for x in (x_loc_idxs[power_i] != -1).nonzero().squeeze(1)}
+            filled_locs = {ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs}
+            unfilled_locs = all_locs - filled_locs
             try:
                 for loc in unfilled_locs:
                     unit = next(unit for unit in phase_state["units"][power] if loc in unit)
                     if "*" in unit:
+                        # FIXME: unit may be e.g. "F STP" when it should be "F STP/NC", and this will fail
                         order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
                     else:
                         order_idxs.append(smarter_order_index(f"{unit} H"))
@@ -299,11 +300,15 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
 
     Returns:
     - a [1, 17, 469] int tensor of valid move indexes (padded with 0)
-    - a [1, 17, 81] bool tensor of orderable locs
+    - a [1, 81] int8 tensor of orderable locs, described below
     - the actual length of the sequence == the number of orders to submit, <= 17
+
+    loc_idxs:
+    - not adj phase: X[i] = s if LOCS[i] is orderable at step s (0 <= s < 17), -1 otherwise
+    - in adj phase: X[i] = -2 if LOCS[i] is orderable this phase, -1 otherwise
     """
     all_order_idxs = torch.zeros(1, MAX_SEQ_LEN, MAX_VALID_LEN, dtype=torch.int32)
-    loc_idxs = torch.zeros(1, MAX_SEQ_LEN, len(LOCS), dtype=torch.bool)
+    loc_idxs = torch.zeros(1, len(LOCS), dtype=torch.int8).fill_(-1)
 
     if power not in all_orderable_locations:
         return all_order_idxs, loc_idxs, 0
@@ -328,7 +333,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         # build phase: all possible build orders, up to the number of allowed builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
         all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
-        loc_idxs[0, :n_builds, [LOCS.index(l) for l in orderable_locs]] = 1
+        loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_builds
 
     if n_builds < 0:
@@ -336,14 +341,14 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         n_disbands = -n_builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
         all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
-        loc_idxs[0, :n_builds, [LOCS.index(l) for l in orderable_locs]] = 1
+        loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_disbands
 
     # move phase: iterate through orderable_locs in topo order
     for i, loc in enumerate(orderable_locs):
         orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
         all_order_idxs[0, i, : len(order_idxs)] = order_idxs
-        loc_idxs[0, i, LOCS.index(loc)] = 1
+        loc_idxs[0, LOCS.index(loc)] = i
 
     return all_order_idxs, loc_idxs, len(orderable_locs)
 
