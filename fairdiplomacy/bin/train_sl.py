@@ -24,6 +24,7 @@ logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
 logger.addHandler(handler)
+logger.propagate = False
 
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
@@ -203,7 +204,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                 continue
 
             # learn
-            logger.info("Starting epoch {} batch {}".format(epoch, batch_i))
+            logger.debug("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
             losses, order_scores, order_idxs = process_batch(
                 net, batch, loss_fn, p_teacher_force=args.teacher_force
