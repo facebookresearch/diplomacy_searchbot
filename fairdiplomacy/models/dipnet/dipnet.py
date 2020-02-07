@@ -370,6 +370,7 @@ class GraphConv(nn.Module):
         """
         self.A = nn.Parameter(A).requires_grad_(learnable_A)
         self.W = nn.Linear(in_size, out_size)
+        self.b = nn.Parameter(torch.zeros(1, A.shape[1], out_size))
 
     def forward(self, x):
         """Computes A*x*W + b
@@ -383,8 +384,7 @@ class GraphConv(nn.Module):
         # res = torch.matmul(self.A, Wx)
         Wx_shape = Wx.shape
         res = self.A @ Wx.transpose(0, 1).reshape(Wx_shape[1], -1)
-        res = res.view(Wx_shape[1], Wx_shape[0], Wx_shape[2]).transpose(0, 1).contiguous()
-
+        res = res.view(Wx_shape[1], Wx_shape[0], Wx_shape[2]).transpose(0, 1).contiguous() + self.b
         return res
 
 

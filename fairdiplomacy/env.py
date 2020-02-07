@@ -56,7 +56,7 @@ class Env:
             logging.info("Set orders {} {}".format(power, orders))
             if self.cf_agent:
                 cf_orders = self.cf_agent.get_orders(self.game, power)
-                logging.info("CF orders {} {}".format(power, cf_orders))
+                logging.info("CF  orders {} {}".format(power, cf_orders))
             self.game.set_orders(power, orders)
 
         self.game.process()
