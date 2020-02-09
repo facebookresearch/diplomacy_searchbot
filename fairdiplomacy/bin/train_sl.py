@@ -189,7 +189,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         optim.load_state_dict(checkpoint["optim"])
 
     train_set_sampler = DistributedSampler(train_set)
-    for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, 10000):
+    for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, args.num_epochs):
         train_set_sampler.set_epoch(epoch)
         batches = torch.tensor(list(iter(train_set_sampler)), dtype=torch.long).split(
             args.batch_size
@@ -307,6 +307,12 @@ if __name__ == "__main__":
         "--avg-embedding",
         action="store_true",
         help="Average across location embedding instead of using attention",
+    )
+    parser.add_argument(
+        "--num-encoder-blocks", type=int, default=16
+    )
+    parser.add_argument(
+        '--num-epochs', type=int, default=100
     )
     args = parser.parse_args()
     logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))

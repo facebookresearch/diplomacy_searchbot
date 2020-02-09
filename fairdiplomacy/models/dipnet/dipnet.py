@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 import torch
 import torch.nn.functional as F
@@ -362,6 +363,12 @@ class DipNetBlock(nn.Module):
         return y
 
 
+def he_init(shape):
+
+    fan_in = shape[-2] if len(shape) >= 2 else shape[-1]
+    init_range = math.sqrt(2. / fan_in)
+    return torch.randn(shape) * init_range
+
 class GraphConv(nn.Module):
     def __init__(self, in_size, out_size, A, learnable_A=False):
         super().__init__()
@@ -369,8 +376,8 @@ class GraphConv(nn.Module):
         A -> (81, 81)
         """
         self.A = nn.Parameter(A).requires_grad_(learnable_A)
-        self.W = nn.Linear(in_size, out_size)
-        self.b = nn.Parameter(torch.zeros(1, A.shape[1], out_size))
+        self.W = nn.Parameter(he_init((len(self.A), in_size, out_size)))
+        self.b = nn.Parameter(torch.zeros(1, 1, out_size))
 
     def forward(self, x):
         """Computes A*x*W + b
@@ -378,14 +385,14 @@ class GraphConv(nn.Module):
         x -> (B, 81, in_size)
         returns (B, 81, out_size)
         """
-        Wx = self.W(x)
 
-        # following 3 lines are equivalent to (but faster than)
-        # res = torch.matmul(self.A, Wx)
-        Wx_shape = Wx.shape
-        res = self.A @ Wx.transpose(0, 1).reshape(Wx_shape[1], -1)
-        res = res.view(Wx_shape[1], Wx_shape[0], Wx_shape[2]).transpose(0, 1).contiguous() + self.b
-        return res
+        x = x.transpose(0, 1)         # (b, N, in )               => (N, b, in )
+        x = torch.matmul(x, self.W)   # (N, b, in) * (N, in, out) => (N, b, out)
+        x = x.transpose(0, 1)         # (N, b, out)               => (b, N, out)
+        x = torch.matmul(self.A, x)   # (b, N, N) * (b, N, out)   => (b, N, out)
+        x += self.b
+
+        return x
 
 
 class FiLM(nn.Module):
