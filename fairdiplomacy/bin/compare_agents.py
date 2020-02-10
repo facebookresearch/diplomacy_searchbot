@@ -69,8 +69,6 @@ def parse_agent_cmdline(s):
     if s is None:
         return None
 
-    s = s.lower()
-
     if s == "mila":
         return MilaSLAgent
     elif s.startswith("mila:"):

@@ -70,7 +70,7 @@ def encode_inputs(game, power, all_possible_orders=None, game_state=None):
         x_power,
         x_season,
         x_in_adj_phase,
-        loc_idxs[:, :seq_len],
+        loc_idxs,
         valid_orders[:, :seq_len, :],
     )
 

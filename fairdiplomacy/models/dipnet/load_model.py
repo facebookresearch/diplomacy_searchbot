@@ -9,7 +9,7 @@ PREV_ORDERS_SIZE = 40
 INTER_EMB_SIZE = 120
 POWER_EMB_SIZE = 60
 SEASON_EMB_SIZE = 20
-# NUM_ENCODER_BLOCKS = 16
+NUM_ENCODER_BLOCKS = 16
 LSTM_SIZE = 200
 ORDER_EMB_SIZE = 80
 
@@ -21,7 +21,7 @@ def new_model(args):
         INTER_EMB_SIZE,
         POWER_EMB_SIZE,
         SEASON_EMB_SIZE,
-        args.num_encoder_blocks,
+        args.num_encoder_blocks if hasattr(args, 'num_encoder_blocks') else NUM_ENCODER_BLOCKS,
         torch.from_numpy(ADJACENCY_MATRIX).float(),
         torch.from_numpy(MASTER_ALIGNMENTS).float(),
         len(get_order_vocabulary()),
