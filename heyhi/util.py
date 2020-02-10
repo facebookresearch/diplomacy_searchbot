@@ -351,7 +351,7 @@ def _build_slurm_executor(exp_handle, cfg):
         ntasks_per_node = gpus
 
     slurm_params = dict(
-        job_name=exp_handle.exp_id,
+        job_name="heyhi",
         partition=cfg.partition,
         time=int(cfg.hours * 60),
         nodes=nodes,
