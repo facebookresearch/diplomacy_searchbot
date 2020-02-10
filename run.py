@@ -1,6 +1,38 @@
 import logging
+import os
 
+import fairdiplomacy.bin.compare_agents
 import heyhi
+
+
+TASKS = {}
+
+
+def _register(f):
+    TASKS[f.__name__] = f
+    return f
+
+
+@_register
+def compare_agents(cfg):
+    def _instantiate(agent_stanza):
+        builder = getattr(fairdiplomacy.bin.compare_agents, agent_stanza.classname)
+        kwargs = agent_stanza.kwargs or {}
+        return builder(**kwargs)
+
+    agent_one = _instantiate(cfg.agent_one)
+    agent_six = _instantiate(cfg.agent_six)
+    cf_agent = _instantiate(cfg.cf_agent)
+
+    result = fairdiplomacy.bin.compare_agents.run_1v6_trial(
+        agent_one,
+        agent_six,
+        cfg.power_one,
+        save_path=cfg.out if cfg.out else None,
+        seed=cfg.seed,
+        cf_agent=cf_agent,
+    )
+    logging.warning("Result: {}".format(result))
 
 
 @heyhi.save_result_in_cwd
@@ -14,14 +46,11 @@ def main(cfg):
         logging.info("Slurm job id: %s", heyhi.get_slurm_job_id())
     logging.info("Is master: %s", heyhi.is_master())
 
-    task_dict = {}
-
     if cfg.task is None:
         raise ValueError('Config has to define "task" field')
-    if cfg.task not in task_dict:
-        raise ValueError("Unknown task: %s. Known tasks: %s" % (cfg.task, sorted(task_dict)))
-    task = getattr(task_dict, cfg.task)
-    return task(cfg)
+    if cfg.task not in TASKS:
+        raise ValueError("Unknown task: %s. Known tasks: %s" % (cfg.task, sorted(TASKS)))
+    return TASKS[cfg.task](cfg)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ if ! conda env list --json | jq ".envs | .[]" | grep -qE "/${xxx_env_name}\""; t
     git submodule update
     pip install -e . -vv
     pip install -e ./thirdparty/github/fairinternal/postman/nest/
+    pip install -e "git+ssh://git@github.com/fairinternal/submitit@master#egg=submitit"
+    pip install -e "git+git@github.com:akhti/hydra.git#egg=hydra"
     pip install /checkpoint/hnr/wheels/postman-0.1.1-cp37-cp37m-linux_x86_64.whl
 fi
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp

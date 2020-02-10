@@ -8,6 +8,7 @@ from tabulate import tabulate
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import DipnetAgent
 from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
 from fairdiplomacy.agents.simple_search_dipnet_agent import SimpleSearchDipnetAgent
@@ -16,6 +17,8 @@ from fairdiplomacy.agents.simple_search_dipnet_agent import SimpleSearchDipnetAg
 def make_agent(agent_arg):
     if agent_arg is None:
         return None
+    elif isinstance(agent_arg, BaseAgent):
+        return agent_arg
     elif type(agent_arg) == type:
         return agent_arg()
     else:

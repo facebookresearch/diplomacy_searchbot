@@ -1,0 +1,13 @@
+task: compare_agents
+agent_one:
+  classname: MilaSLAgent
+  kwags: {}
+agent_six:
+  classname: MilaSLAgent
+  kwargs: {}
+cf_agent:
+  classname: MilaSLAgent
+  kwags: {}
+power_one: AUSTRIA
+out: null
+seed: 0
