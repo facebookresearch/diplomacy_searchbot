@@ -301,6 +301,11 @@ if __name__ == "__main__":
     parser.add_argument("--skip-validation", action="store_true", help="Skip validation / save")
     parser.add_argument("--learnable-A", action="store_true", help="Learn adjacency matrix")
     parser.add_argument(
+        "--fill-missing-orders",
+        action="store_true",
+        help="If dataset orders are missing for an orderable loc, fill in H or D",
+    )
+    parser.add_argument(
         "--learnable-alignments", action="store_true", help="Learn attention alignment matrix"
     )
     parser.add_argument(
@@ -308,12 +313,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Average across location embedding instead of using attention",
     )
-    parser.add_argument(
-        "--num-encoder-blocks", type=int, default=16
-    )
-    parser.add_argument(
-        '--num-epochs', type=int, default=100
-    )
+    parser.add_argument("--num-encoder-blocks", type=int, default=16)
+    parser.add_argument("--num-epochs", type=int, default=100)
     args = parser.parse_args()
     logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
 
@@ -332,8 +333,16 @@ if __name__ == "__main__":
         val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
         train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
 
-        train_dataset = Dataset(train_game_jsons, n_jobs=args.num_dataloader_workers)
-        val_dataset = Dataset(val_game_jsons, n_jobs=args.num_dataloader_workers)
+        train_dataset = Dataset(
+            train_game_jsons,
+            fill_missing_orders=args.fill_missing_orders,
+            n_jobs=args.num_dataloader_workers,
+        )
+        val_dataset = Dataset(
+            val_game_jsons,
+            fill_missing_orders=args.fill_missing_orders,
+            n_jobs=args.num_dataloader_workers,
+        )
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")
             torch.save((train_dataset, val_dataset), args.data_cache)

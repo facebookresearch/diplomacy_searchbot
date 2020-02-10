@@ -20,12 +20,19 @@ MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, game_json_paths: List[str], debug_only_opening_phase=False, n_jobs=20):
+    def __init__(
+        self,
+        game_json_paths: List[str],
+        debug_only_opening_phase=False,
+        fill_missing_orders=False,
+        n_jobs=20,
+    ):
         self.game_json_paths = game_json_paths
         assert not debug_only_opening_phase, "FIXME"
 
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(encode_game)(p) for p in game_json_paths
+            joblib.delayed(encode_game)(p, fill_missing_orders=fill_missing_orders)
+            for p in game_json_paths
         )
 
         logging.info(f"Got {len(encoded_games)} games")
@@ -106,7 +113,9 @@ class Dataset(torch.utils.data.Dataset):
         return self.num_elements
 
 
-def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
+def encode_game(
+    game: Union[str, diplomacy.Game], only_with_min_final_score=7, fill_missing_orders=False
+):
     """
     Arguments:
     - game: diplomacy.Game object
@@ -114,6 +123,9 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     - only_with_min_final_score: if specified, only encode for powers who
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
+    - fill_missing_orders: if True, missing orders for orderable locs will be
+      explicitly set as H or D (depending on the phase). If False, powers with
+      missing orders will be marked invalid.
 
     Return: tuple of nine tensors
     L is game length, P is # of powers above min_final_score
@@ -134,7 +146,8 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
 
     num_phases = len(game.state_history)
     phase_encodings = [
-        encode_phase(game, phase_idx, only_with_min_final_score) for phase_idx in range(num_phases)
+        encode_phase(game, phase_idx, only_with_min_final_score, fill_missing_orders)
+        for phase_idx in range(num_phases)
     ]
 
     stacked_encodings = [_stack(x) for x in zip(*phase_encodings)]
@@ -142,7 +155,9 @@ def encode_game(game: Union[str, diplomacy.Game], only_with_min_final_score=7):
     return stacked_encodings
 
 
-def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int]):
+def encode_phase(
+    game, phase_idx: int, only_with_min_final_score: Optional[int], fill_missing_orders=False
+):
     """
     Arguments:
     - game: diplomacy.Game object
@@ -150,6 +165,9 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
     - only_with_min_final_score: if specified, only encode for powers who
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
+    - fill_missing_orders: if True, missing orders for orderable locs will be
+      explicitly set as H or D (depending on the phase). If False, powers with
+      missing orders will be marked invalid.
 
     Return: tuple of nine tensors
     - board_state: shape=(81, 35)
@@ -222,21 +240,26 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
             except KeyError:
                 continue
 
-        # fill in Hold for invalid or missing orders
-        if not x_in_adj_phase[0]:
-            all_locs = {LOCS[x] for x in (x_loc_idxs[power_i] != -1).nonzero().squeeze(1)}
-            filled_locs = {ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs}
-            unfilled_locs = all_locs - filled_locs
-            try:
-                for loc in unfilled_locs:
-                    unit = next(unit for unit in phase_state["units"][power] if loc in unit)
-                    if "*" in unit:
-                        # FIXME: unit may be e.g. "F STP" when it should be "F STP/NC", and this will fail
-                        order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
-                    else:
-                        order_idxs.append(smarter_order_index(f"{unit} H"))
-            except Exception:
-                logging.exception("Error filling unfilled_locs")
+        # maybe fill in Hold/Disband for invalid or missing orders
+        all_locs = {LOCS[x] for x in (x_loc_idxs[power_i] != -1).nonzero().squeeze(1)}
+        filled_locs = {ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs}
+        unfilled_locs = all_locs - filled_locs
+        if unfilled_locs:
+            if fill_missing_orders and not x_in_adj_phase[0]:
+                try:
+                    for loc in unfilled_locs:
+                        unit = next(unit for unit in phase_state["units"][power] if loc in unit)
+                        if "*" in unit:
+                            # FIXME: unit may be e.g. "F STP" when it should be "F STP/NC", and this will fail
+                            order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
+                        else:
+                            order_idxs.append(smarter_order_index(f"{unit} H"))
+                except Exception:
+                    logging.exception("Error filling missing orders")
+                    valid_power_idxs[power_i] = 0
+                    continue
+            else:
+                # unfilled locs and not fill_missing_orders, skip this power
                 valid_power_idxs[power_i] = 0
                 continue
 
