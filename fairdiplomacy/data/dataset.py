@@ -271,12 +271,15 @@ def encode_phase(game, phase_idx: int, only_with_min_final_score: Optional[int])
         #     )
         # )
 
-    # maybe filter away powers that don't finish with enough SC
+    # Maybe filter away powers that don't finish with enough SC.
+    # If all players finish with fewer SC, include everybody.
+    # cf. get_top_victors() in mila's state_space.py
     if only_with_min_final_score is not None:
         final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        for i, power in enumerate(POWERS):
-            if final_score.get(power, 0) < only_with_min_final_score:
-                valid_power_idxs[i] = 0
+        if max(final_score.values()) >= only_with_min_final_score:
+            for i, power in enumerate(POWERS):
+                if final_score.get(power, 0) < only_with_min_final_score:
+                    valid_power_idxs[i] = 0
 
     x_possible_actions = TensorList.from_padded(
         x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN)
