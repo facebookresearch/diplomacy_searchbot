@@ -14,11 +14,11 @@ from fairdiplomacy.agents.base_agent import BaseAgent
 
 
 class MilaSLAgent(BaseAgent):
-    def __init__(self, temperature=0.1):
+    def __init__(self, temperature=0.1, host="devfair0304"):
         self.q_in = queue.Queue()
         self.q_out = queue.Queue()
         self.thread = threading.Thread(
-            target=thread_main, args=(self.q_in, self.q_out, temperature), daemon=True
+            target=thread_main, args=(self.q_in, self.q_out, temperature, host), daemon=True
         )
         self.thread.start()
 
@@ -28,10 +28,10 @@ class MilaSLAgent(BaseAgent):
         return orders
 
 
-def thread_main(q_in, q_out, temperature):
+def thread_main(q_in, q_out, temperature, host):
     @gen.coroutine
     def coroutine():
-        player = Player()
+        player = Player(host=host)
         while True:
             game, power = q_in.get()
             orders = yield player.get_orders(game, power, temperature=temperature)
@@ -54,4 +54,3 @@ class Player(ModelBasedPlayer):
 
         # Building benchmark model
         super().__init__(policy_adapter=policy_adapter, temperature=temperature, use_beam=False)
-
