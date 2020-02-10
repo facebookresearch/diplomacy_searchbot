@@ -1,0 +1,4 @@
+launcher:
+  driver: local
+  num_gpus: 2
+  single_task_per_node: true
