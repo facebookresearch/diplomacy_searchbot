@@ -140,9 +140,11 @@ class LSTMDipNetDecoder(nn.Module):
         self.avg_embedding = avg_embedding
 
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
+        self.dropout_in = nn.Dropout(lstm_dropout)
         self.lstm = nn.LSTM(
-            2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True, dropout=lstm_dropout
+            2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True
         )
+        self.dropout_out = nn.Dropout(lstm_dropout)
         self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
 
         # if avg_embedding is True, alignments are not used, and pytorch
@@ -199,7 +201,9 @@ class LSTMDipNetDecoder(nn.Module):
 
             lstm_input = torch.cat((loc_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
 
+            lstm_input = self.dropout_in(lstm_input)
             out, hidden = self.lstm(lstm_input, hidden)
+            out = self.dropout_out(out)
 
             order_scores = self.lstm_out_linear(out.squeeze(1))  # [B, 13k]
 
