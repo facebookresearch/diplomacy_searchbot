@@ -214,9 +214,12 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             loss = torch.mean(losses)
             loss.backward()
             logger.debug(f"Running step {batch_i} ...")
+            grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip_grad_norm)
             optim.step()
             if rank == 0:
-                logger.info(f"epoch {epoch} batch {batch_i} / {len(batches)} loss= {loss}")
+                logger.info(
+                    f"epoch {epoch} batch {batch_i} / {len(batches)} grad_norm= {grad_norm} loss= {loss}"
+                )
 
             # calculate validation loss/accuracy
             if (
@@ -287,6 +290,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lr-decay", type=float, default=0.93, help="Learning rate decay per epoch"
     )
+    parser.add_argument("--clip-grad-norm", type=float, default=5.0, help="Max gradient norm")
     parser.add_argument(
         "--checkpoint", default="./checkpoint.pth", help="Path to load/save the model"
     )
