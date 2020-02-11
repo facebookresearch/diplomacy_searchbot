@@ -220,41 +220,34 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                 logger.info(
                     f"epoch {epoch} batch {batch_i} / {len(batches)} grad_norm= {grad_norm} loss= {loss}"
                 )
+                logger.info("hi mom {}".format(optim.state_dict()["param_groups"][0]["lr"]))
 
-            # calculate validation loss/accuracy
-            if (
-                not args.skip_validation
-                and (epoch * len(batches) + batch_i) % args.validate_every == 0
-            ):
-                if rank == 0:
-                    logger.info("Calculating val loss...")
-                val_loss, val_accuracy, split_pcts = validate(
-                    net, val_set, loss_fn, args.batch_size
+        # calculate validation loss/accuracy
+        if not args.skip_validation and rank == 0:
+            logger.info("Calculating val loss...")
+            val_loss, val_accuracy, split_pcts = validate(net, val_set, loss_fn, args.batch_size)
+            logger.info(
+                f"Validation epoch= {epoch} batch= {batch_i} loss= {val_loss} acc= {val_accuracy}"
+            )
+            for k, v in sorted(split_pcts.items()):
+                logger.info(f"val split epoch= {epoch} batch= {batch_i}: {k} = {v}")
+
+            # save model
+            if args.checkpoint and rank == 0:
+                logger.info("Saving checkpoint to {}".format(args.checkpoint))
+                torch.save(
+                    {
+                        "model": net.state_dict(),
+                        "optim": optim.state_dict(),
+                        "epoch": epoch,
+                        "batch_i": batch_i,
+                        "val_accuracy": val_accuracy,
+                        "args": args,
+                    },
+                    args.checkpoint,
                 )
 
-                if rank == 0:
-                    logger.info(
-                        f"Validation epoch= {epoch} batch= {batch_i} loss= {val_loss} acc= {val_accuracy}"
-                    )
-                    for k, v in sorted(split_pcts.items()):
-                        logger.info(f"val split epoch= {epoch} batch= {batch_i}: {k} = {v}")
-
-                # save model
-                if args.checkpoint and rank == 0:
-                    logger.info("Saving checkpoint to {}".format(args.checkpoint))
-                    torch.save(
-                        {
-                            "model": net.state_dict(),
-                            "optim": optim.state_dict(),
-                            "epoch": epoch,
-                            "batch_i": batch_i,
-                            "val_accuracy": val_accuracy,
-                            "args": args,
-                        },
-                        args.checkpoint,
-                    )
-
-    lr_scheduler.step()
+        lr_scheduler.step()
 
 
 def mp_setup(rank, world_size):
@@ -305,9 +298,6 @@ if __name__ == "__main__":
         "--debug-only-opening-phase", action="store_true", help="If set, restrict data to S1901M"
     )
     parser.add_argument("--debug-no-mp", action="store_true", help="If set, use a single process")
-    parser.add_argument(
-        "--validate-every", type=int, default=1000, help="Validate/save every # of batches"
-    )
     parser.add_argument("--skip-validation", action="store_true", help="Skip validation / save")
     parser.add_argument("--learnable-A", action="store_true", help="Learn adjacency matrix")
     parser.add_argument(
