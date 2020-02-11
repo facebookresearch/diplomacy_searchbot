@@ -137,14 +137,11 @@ class LSTMDipNetDecoder(nn.Module):
         super().__init__()
         self.lstm_size = lstm_size
         self.order_emb_size = order_emb_size
+        self.lstm_dropout = lstm_dropout
         self.avg_embedding = avg_embedding
 
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
-        self.dropout_in = nn.Dropout(lstm_dropout)
-        self.lstm = nn.LSTM(
-            2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True
-        )
-        self.dropout_out = nn.Dropout(lstm_dropout)
+        self.lstm = nn.LSTM(2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True)
         self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
 
         # if avg_embedding is True, alignments are not used, and pytorch
@@ -182,6 +179,20 @@ class LSTMDipNetDecoder(nn.Module):
         all_order_idxs = []
         all_order_scores = []
 
+        # reuse same dropout weights for all steps
+        dropout_in = (
+            torch.zeros(enc.shape[0], 1, enc.shape[2] + self.order_emb_size, device=enc.device)
+            .bernoulli_(1 - self.lstm_dropout)
+            .div_(1 - self.lstm_dropout)
+            .requires_grad_(False)
+        )
+        dropout_out = (
+            torch.zeros(enc.shape[0], 1, self.lstm_size, device=enc.device)
+            .bernoulli_(1 - self.lstm_dropout)
+            .div_(1 - self.lstm_dropout)
+            .requires_grad_(False)
+        )
+
         for step in range(order_masks.shape[1]):
             order_mask = order_masks[:, step].contiguous()
 
@@ -200,11 +211,12 @@ class LSTMDipNetDecoder(nn.Module):
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             lstm_input = torch.cat((loc_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
+            if self.training and self.lstm_dropout < 1.0:
+                lstm_input = lstm_input * dropout_in
 
-            lstm_input = self.dropout_in(lstm_input)
             out, hidden = self.lstm(lstm_input, hidden)
-            out = self.dropout_out(out)
-
+            if self.training and self.lstm_dropout < 1.0:
+                out = out * dropout_out
             order_scores = self.lstm_out_linear(out.squeeze(1))  # [B, 13k]
 
             # unmask where there are no actions or the sampling will crash. The
@@ -370,8 +382,9 @@ class DipNetBlock(nn.Module):
 def he_init(shape):
 
     fan_in = shape[-2] if len(shape) >= 2 else shape[-1]
-    init_range = math.sqrt(2. / fan_in)
+    init_range = math.sqrt(2.0 / fan_in)
     return torch.randn(shape) * init_range
+
 
 class GraphConv(nn.Module):
     def __init__(self, in_size, out_size, A, learnable_A=False):
@@ -390,10 +403,10 @@ class GraphConv(nn.Module):
         returns (B, 81, out_size)
         """
 
-        x = x.transpose(0, 1)         # (b, N, in )               => (N, b, in )
-        x = torch.matmul(x, self.W)   # (N, b, in) * (N, in, out) => (N, b, out)
-        x = x.transpose(0, 1)         # (N, b, out)               => (b, N, out)
-        x = torch.matmul(self.A, x)   # (b, N, N) * (b, N, out)   => (b, N, out)
+        x = x.transpose(0, 1)  # (b, N, in )               => (N, b, in )
+        x = torch.matmul(x, self.W)  # (N, b, in) * (N, in, out) => (N, b, out)
+        x = x.transpose(0, 1)  # (N, b, out)               => (b, N, out)
+        x = torch.matmul(self.A, x)  # (b, N, N) * (b, N, out)   => (b, N, out)
         x += self.b
 
         return x
