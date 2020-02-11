@@ -218,9 +218,15 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             optim.step()
             if rank == 0:
                 logger.info(
-                    f"epoch {epoch} batch {batch_i} / {len(batches)} grad_norm= {grad_norm} loss= {loss}"
+                    "epoch {} batch {} / {} lr= {} grad_norm= {} loss= {}".format(
+                        epoch,
+                        batch_i,
+                        len(batches),
+                        optim.state_dict()["param_groups"][0]["lr"],
+                        grad_norm,
+                        loss,
+                    )
                 )
-                logger.info("hi mom {}".format(optim.state_dict()["param_groups"][0]["lr"]))
 
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
