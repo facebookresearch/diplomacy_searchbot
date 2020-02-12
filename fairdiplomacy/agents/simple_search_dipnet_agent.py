@@ -366,7 +366,6 @@ def server_handler(
     totaltic = time.time()
     with torch.no_grad():
         while True:
-            logging.info("Waiting for batch")
             try:
                 with q.get() as batch:
 
