@@ -23,7 +23,10 @@ from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
-    os.remove(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH)
+    try:
+        os.remove(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH)
+    except FileNotFoundError:
+        pass
 
 
 class SimpleSearchDipnetAgent(BaseAgent):
