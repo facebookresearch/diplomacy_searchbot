@@ -23,10 +23,7 @@ from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
-    logging.warn(
-        f"You should delete {diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH}"
-        + f"for faster startup time!"
-    )
+    os.remove(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH)
 
 
 class SimpleSearchDipnetAgent(BaseAgent):
