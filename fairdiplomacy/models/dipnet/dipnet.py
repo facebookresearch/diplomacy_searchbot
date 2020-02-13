@@ -25,6 +25,7 @@ class DipNet(nn.Module):
         lstm_size,  # 200
         order_emb_size,  # 80
         lstm_dropout=0,
+        encoder_dropout=0,
         learnable_A=False,
         learnable_alignments=False,
         avg_embedding=False,
@@ -39,6 +40,7 @@ class DipNet(nn.Module):
             season_emb_size=season_emb_size,
             num_blocks=num_blocks,
             A=A,
+            dropout=encoder_dropout,
             learnable_A=learnable_A,
         )
 
@@ -279,6 +281,7 @@ class DipNetEncoder(nn.Module):
         season_emb_size,  # 20
         num_blocks,  # 16
         A,  # 81x81
+        dropout,
         learnable_A=False,
     ):
         super().__init__()
@@ -298,6 +301,7 @@ class DipNetEncoder(nn.Module):
                 A=A,
                 residual=False,
                 learnable_A=learnable_A,
+                dropout=dropout,
             )
         )
         for _ in range(num_blocks - 1):
@@ -310,6 +314,7 @@ class DipNetEncoder(nn.Module):
                     A=A,
                     residual=True,
                     learnable_A=learnable_A,
+                    dropout=dropout,
                 )
             )
 
@@ -324,6 +329,7 @@ class DipNetEncoder(nn.Module):
                 A=A,
                 residual=False,
                 learnable_A=learnable_A,
+                dropout=dropout,
             )
         )
         for _ in range(num_blocks - 1):
@@ -336,6 +342,7 @@ class DipNetEncoder(nn.Module):
                     A=A,
                     residual=True,
                     learnable_A=learnable_A,
+                    dropout=dropout,
                 )
             )
 
@@ -364,6 +371,7 @@ class DipNetBlock(nn.Module):
         power_emb_size,
         season_emb_size,
         A,
+        dropout,
         residual=True,
         learnable_A=False,
     ):
@@ -371,6 +379,7 @@ class DipNetBlock(nn.Module):
         self.graph_conv = GraphConv(in_size, out_size, A, learnable_A=learnable_A)
         self.batch_norm = nn.BatchNorm1d(A.shape[0])
         self.film = FiLM(power_emb_size, season_emb_size, out_size)
+        self.dropout = nn.Dropout(dropout)
         self.residual = residual
 
     def forward(self, x, power_emb, season_emb):
@@ -378,6 +387,7 @@ class DipNetBlock(nn.Module):
         y = self.batch_norm(y)
         y = self.film(y, power_emb, season_emb)
         y = F.relu(y)
+        y = self.dropout(y)
         if self.residual:
             y += x
         return y

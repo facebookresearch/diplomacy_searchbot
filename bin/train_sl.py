@@ -299,7 +299,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--teacher-force", type=float, default=1.0, help="Prob[teacher forcing] during training"
     )
-    parser.add_argument("--lstm-dropout", type=float, default=0.5, help="LSTM dropout pct")
+    parser.add_argument("--lstm-dropout", type=float, default=0.1, help="LSTM dropout pct")
+    parser.add_argument("--encoder-dropout", type=float, default=0.2, help="Encoder dropout pct")
     parser.add_argument(
         "--debug-only-opening-phase", action="store_true", help="If set, restrict data to S1901M"
     )

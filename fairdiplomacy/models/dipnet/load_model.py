@@ -30,6 +30,7 @@ def new_model(args):
         lstm_size=LSTM_SIZE,
         order_emb_size=ORDER_EMB_SIZE,
         lstm_dropout=args.lstm_dropout,
+        encoder_dropout=args.encoder_dropout,
         learnable_A=args.learnable_A,
         learnable_alignments=args.learnable_alignments,
         avg_embedding=args.avg_embedding,
