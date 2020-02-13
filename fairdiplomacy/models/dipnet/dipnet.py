@@ -12,6 +12,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import get_incompatible_build_
 class DipNet(nn.Module):
     def __init__(
         self,
+        *,
         board_state_size,  # 35
         prev_orders_size,  # 40
         inter_emb_size,  # 120
@@ -31,23 +32,23 @@ class DipNet(nn.Module):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
         self.encoder = DipNetEncoder(
-            board_state_size,
-            prev_orders_size,
-            inter_emb_size,
-            power_emb_size,
-            season_emb_size,
-            num_blocks,
-            A,
+            board_state_size=board_state_size,
+            prev_orders_size=prev_orders_size,
+            inter_emb_size=inter_emb_size,
+            power_emb_size=power_emb_size,
+            season_emb_size=season_emb_size,
+            num_blocks=num_blocks,
+            A=A,
             learnable_A=learnable_A,
         )
 
         self.decoder = LSTMDipNetDecoder(
-            inter_emb_size,
-            orders_vocab_size,
-            lstm_size,
-            order_emb_size,
-            lstm_dropout,
-            master_alignments,
+            inter_emb_size=inter_emb_size,
+            orders_vocab_size=orders_vocab_size,
+            lstm_size=lstm_size,
+            order_emb_size=order_emb_size,
+            lstm_dropout=lstm_dropout,
+            master_alignments=master_alignments,
             learnable_alignments=learnable_alignments,
             avg_embedding=avg_embedding,
         )
@@ -125,6 +126,7 @@ class DipNet(nn.Module):
 class LSTMDipNetDecoder(nn.Module):
     def __init__(
         self,
+        *,
         inter_emb_size,
         orders_vocab_size,
         lstm_size,
@@ -269,6 +271,7 @@ class LSTMDipNetDecoder(nn.Module):
 class DipNetEncoder(nn.Module):
     def __init__(
         self,
+        *,
         board_state_size,  # 35
         prev_orders_size,  # 40
         inter_emb_size,  # 120
@@ -288,11 +291,11 @@ class DipNetEncoder(nn.Module):
         self.board_blocks = nn.ModuleList()
         self.board_blocks.append(
             DipNetBlock(
-                board_state_size,
-                inter_emb_size,
-                power_emb_size,
-                season_emb_size,
-                A,
+                in_size=board_state_size,
+                out_size=inter_emb_size,
+                power_emb_size=power_emb_size,
+                season_emb_size=season_emb_size,
+                A=A,
                 residual=False,
                 learnable_A=learnable_A,
             )
@@ -300,11 +303,11 @@ class DipNetEncoder(nn.Module):
         for _ in range(num_blocks - 1):
             self.board_blocks.append(
                 DipNetBlock(
-                    inter_emb_size,
-                    inter_emb_size,
-                    power_emb_size,
-                    season_emb_size,
-                    A,
+                    in_size=inter_emb_size,
+                    out_size=inter_emb_size,
+                    power_emb_size=power_emb_size,
+                    season_emb_size=season_emb_size,
+                    A=A,
                     residual=True,
                     learnable_A=learnable_A,
                 )
@@ -314,11 +317,11 @@ class DipNetEncoder(nn.Module):
         self.prev_orders_blocks = nn.ModuleList()
         self.prev_orders_blocks.append(
             DipNetBlock(
-                prev_orders_size,
-                inter_emb_size,
-                power_emb_size,
-                season_emb_size,
-                A,
+                in_size=prev_orders_size,
+                out_size=inter_emb_size,
+                power_emb_size=power_emb_size,
+                season_emb_size=season_emb_size,
+                A=A,
                 residual=False,
                 learnable_A=learnable_A,
             )
@@ -326,11 +329,11 @@ class DipNetEncoder(nn.Module):
         for _ in range(num_blocks - 1):
             self.prev_orders_blocks.append(
                 DipNetBlock(
-                    inter_emb_size,
-                    inter_emb_size,
-                    power_emb_size,
-                    season_emb_size,
-                    A,
+                    in_size=inter_emb_size,
+                    out_size=inter_emb_size,
+                    power_emb_size=power_emb_size,
+                    season_emb_size=season_emb_size,
+                    A=A,
                     residual=True,
                     learnable_A=learnable_A,
                 )
@@ -355,6 +358,7 @@ class DipNetEncoder(nn.Module):
 class DipNetBlock(nn.Module):
     def __init__(
         self,
+        *,
         in_size,
         out_size,
         power_emb_size,

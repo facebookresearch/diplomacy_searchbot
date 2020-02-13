@@ -16,18 +16,20 @@ ORDER_EMB_SIZE = 80
 
 def new_model(args):
     return DipNet(
-        BOARD_STATE_SIZE,
-        PREV_ORDERS_SIZE,
-        INTER_EMB_SIZE,
-        POWER_EMB_SIZE,
-        SEASON_EMB_SIZE,
-        args.num_encoder_blocks if hasattr(args, "num_encoder_blocks") else NUM_ENCODER_BLOCKS,
-        torch.from_numpy(ADJACENCY_MATRIX).float(),
-        torch.from_numpy(MASTER_ALIGNMENTS).float(),
-        len(get_order_vocabulary()),
-        LSTM_SIZE,
-        ORDER_EMB_SIZE,
-        args.lstm_dropout,
+        board_state_size=BOARD_STATE_SIZE,
+        prev_orders_size=PREV_ORDERS_SIZE,
+        inter_emb_size=INTER_EMB_SIZE,
+        power_emb_size=POWER_EMB_SIZE,
+        season_emb_size=SEASON_EMB_SIZE,
+        num_blocks=args.num_encoder_blocks
+        if hasattr(args, "num_encoder_blocks")
+        else NUM_ENCODER_BLOCKS,
+        A=torch.from_numpy(ADJACENCY_MATRIX).float(),
+        master_alignments=torch.from_numpy(MASTER_ALIGNMENTS).float(),
+        orders_vocab_size=len(get_order_vocabulary()),
+        lstm_size=LSTM_SIZE,
+        order_emb_size=ORDER_EMB_SIZE,
+        lstm_dropout=args.lstm_dropout,
         learnable_A=args.learnable_A,
         learnable_alignments=args.learnable_alignments,
         avg_embedding=args.avg_embedding,
