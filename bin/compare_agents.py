@@ -2,6 +2,7 @@
 import argparse
 import logging
 import os
+from ast import literal_eval
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from tabulate import tabulate
@@ -14,25 +15,11 @@ from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
 from fairdiplomacy.agents.simple_search_dipnet_agent import SimpleSearchDipnetAgent
 
 
-def make_agent(agent_arg):
-    if agent_arg is None:
-        return None
-    elif isinstance(agent_arg, BaseAgent):
-        return agent_arg
-    elif type(agent_arg) == type:
-        return agent_arg()
-    else:
-        cls, args = agent_arg
-        return cls(*args)
-
-
-def run_1v6_trial(
-    agent_one_arg, agent_six_arg, agent_one_power, save_path=None, seed=0, cf_agent=None
-):
+def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
     Arguments:
-    - agent_one/six_arg: fairdiplomacy.agents.BaseAgent inheritor class, or (class, [args])
+    - agent_one/six: fairdiplomacy.agents.BaseAgent inheritor objects
     - agent_one_power: the power to assign agent_one (the other 6 will be agent_six)
     - save_path: if specified, save game.json to this path
     - seed: random seed
@@ -40,10 +27,6 @@ def run_1v6_trial(
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
-    agent_one = make_agent(agent_one_arg)
-    agent_six = make_agent(agent_six_arg)
-    cf_agent = make_agent(cf_agent)
-
     env = Env(
         {power: agent_one if power == agent_one_power else agent_six for power in POWERS},
         seed=seed,
@@ -64,23 +47,23 @@ def run_1v6_trial(
             return "six"
 
     winning_power = max(scores, key=scores.get)
-    print(f"Scores: {scores} ; Winner: {winning_power} ; agent_one_power= {agent_one_power}")
+    logging.info(
+        f"Scores: {scores} ; Winner: {winning_power} ; agent_one_power= {agent_one_power}"
+    )
     return "one" if winning_power == agent_one_power else "six"
 
 
-def parse_agent_cmdline(s):
-    if s is None:
-        return None
+def parse_agent_class(s):
+    return {
+        "mila": MilaSLAgent,
+        "search": SimpleSearchDipnetAgent,
+        "diptorch": DipnetAgent,
+        None: None,
+    }[s]
 
-    if s == "mila":
-        return MilaSLAgent
-    elif s.startswith("mila:"):
-        temp = float(s.split(":")[1])
-        return (MilaSLAgent, (temp,))
-    elif s == "search":
-        return (SimpleSearchDipnetAgent, ("/checkpoint/jsgray/diplomacy/dipnet.pth",))
-    else:
-        return (DipnetAgent, (s,))
+
+def parse_kwargs(args):
+    return {k: literal_eval(v) for k, v in (a.split("=", 1) for a in args)}
 
 
 if __name__ == "__main__":
@@ -94,13 +77,17 @@ if __name__ == "__main__":
     parser.add_argument("--out", "-o", help="Path to write game.json file")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--cf_agent", help="Either 'mila', 'search', or a path to a .pth file")
+    parser.add_argument("--kwargs-one", nargs="+", default=[], help="kwargs to pass to agent one")
+    parser.add_argument("--kwargs-six", nargs="+", default=[], help="kwargs to pass to agent six")
     args = parser.parse_args()
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
+    logging.info(f"Args: {args}")
 
-    agent_one = parse_agent_cmdline(args.agent_one)
-    agent_six = parse_agent_cmdline(args.agent_six)
-    cf_agent = parse_agent_cmdline(args.cf_agent)
+    agent_one = parse_agent_class(args.agent_one)(**parse_kwargs(args.kwargs_one))
+    agent_six = parse_agent_class(args.agent_six)(**parse_kwargs(args.kwargs_six))
+    cf_agent_cls = parse_agent_class(args.cf_agent)
+    cf_agent = cf_agent_cls() if cf_agent_cls else None
 
     result = run_1v6_trial(
         agent_one,

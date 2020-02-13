@@ -14,7 +14,7 @@ ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class DipnetAgent(BaseAgent):
-    def __init__(self, model_pth):
+    def __init__(self, model_pth="/checkpoint/jsgray/diplomacy/dipnet.pth"):
         self.model = load_dipnet_model(model_pth, map_location="cuda", eval=True)
 
     def get_orders(self, game, power, temperature=0.1, debug_probs=False, batch_size=1):

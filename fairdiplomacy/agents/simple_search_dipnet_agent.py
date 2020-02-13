@@ -49,7 +49,8 @@ class SimpleSearchDipnetAgent(BaseAgent):
 
     def __init__(
         self,
-        model_path,
+        *,
+        model_path="/checkpoint/jsgray/diplomacy/dipnet.pth",
         n_rollout_procs=70,
         n_server_procs=1,
         n_gpu=1,
