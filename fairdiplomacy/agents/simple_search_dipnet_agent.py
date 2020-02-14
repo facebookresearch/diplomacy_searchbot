@@ -1,10 +1,6 @@
 import logging
 from collections import Counter
-from functools import partial
-from typing import List
-
-import torch
-from diplomacy.utils.export import to_saved_game_format
+from typing import List, Tuple
 
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 
@@ -56,46 +52,17 @@ class SimpleSearchDipnetAgent(BaseSearchAgent):
         if len(plausible_orders) == 1:
             return list(plausible_orders.pop())
 
-        game_json = to_saved_game_format(game)
-
-        # divide up the rollouts among the processes
-        procs_per_order = max(1, self.n_rollout_procs // len(plausible_orders))
-        logging.info(
-            f"num_plausible_orders={len(plausible_orders)} , procs_per_order={procs_per_order}"
+        results = self.distribute_rollouts(
+            game, power, plausible_orders, self.rollouts_per_plausible_order
         )
-        batch_sizes = [
-            len(x)
-            for x in torch.arange(self.rollouts_per_plausible_order).chunk(procs_per_order)
-            if len(x) > 0
-        ]
-        logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
-        results = self.proc_pool.map(
-            call,
-            [
-                partial(
-                    self.do_rollout,
-                    game_json=game_json,
-                    set_orders_dict={power: orders},
-                    hostport=self.hostports[i % self.n_server_procs],
-                    max_rollout_length=self.max_rollout_length,
-                    batch_size=batch_size,
-                )
-                for orders in plausible_orders
-                for i, batch_size in enumerate(batch_sizes)
-            ],
-        )
-        results = [
-            (order_dict[power], scores) for result in results for (order_dict, scores) in result
-        ]
-
         return self.best_order_from_results(results, power)
 
     @classmethod
-    def best_order_from_results(cls, results, power) -> List[str]:
+    def best_order_from_results(cls, results: List[Tuple], power) -> List[str]:
         """Given a set of rollout results, choose the move to play
 
         Arguments:
-        - results: Tuple[orders, all_scores], where
+        - results: List[Tuple[orders, all_scores]], where
             -> orders: a complete set of orders, e.g. ("A ROM H", "F NAP - ION", "A VEN H")
             -> all_scores: Dict[power, supply count], e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         - power: the power making the orders, e.g. "ITALY"
@@ -115,12 +82,3 @@ class SimpleSearchDipnetAgent(BaseSearchAgent):
         }
         logging.info("order_avg_score: {}".format(order_avg_score))
         return list(max(order_avg_score.items(), key=lambda kv: kv[1])[0])
-
-
-def call(f):
-    """Helper to be able to do pool.map(call, [partial(f, foo=42)])
-
-    Using pool.starmap(f, [(42,)]) is shorter, but it doesn't support keyword
-    arguments. It appears going through partial is the only way to do that.
-    """
-    return f()

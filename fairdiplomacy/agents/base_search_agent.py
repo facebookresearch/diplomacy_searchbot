@@ -12,7 +12,7 @@ import diplomacy.utils.export
 import torch
 import torch.multiprocessing as mp
 import postman
-from diplomacy.utils.export import from_saved_game_format
+from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, ORDER_VOCABULARY
@@ -118,6 +118,47 @@ class BaseSearchAgent(BaseAgent):
             )
         )
         return set([orders for orders, _ in unique_orders.most_common(max_return_size)])
+
+    def distribute_rollouts(self, game, power, orders, rollouts_per_order) -> List[Tuple]:
+        """Run rollouts of each order in `orders` in the proc pool
+
+        Arguments:
+        - game: diplomacy.Game
+        - power: str
+        - orders: list of order tuples
+        - rollouts_per_order: int
+
+        Returns: List[Tuple[orders, all_scores]], where
+            -> orders: a complete set of orders, e.g. ("A ROM H", "F NAP - ION", "A VEN H")
+            -> all_scores: Dict[power, supply count], e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
+        """
+        game_json = to_saved_game_format(game)
+
+        # divide up the rollouts among the processes
+        procs_per_order = max(1, self.n_rollout_procs // len(orders))
+        logging.info(f"num_orders={len(orders)} , procs_per_order={procs_per_order}")
+        batch_sizes = [
+            len(x) for x in torch.arange(rollouts_per_order).chunk(procs_per_order) if len(x) > 0
+        ]
+        logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
+        results = self.proc_pool.map(
+            call,
+            [
+                partial(
+                    self.do_rollout,
+                    game_json=game_json,
+                    set_orders_dict={power: orders},
+                    hostport=self.hostports[i % self.n_server_procs],
+                    max_rollout_length=self.max_rollout_length,
+                    batch_size=batch_size,
+                )
+                for orders in orders
+                for i, batch_size in enumerate(batch_sizes)
+            ],
+        )
+        return [
+            (order_dict[power], scores) for result in results for (order_dict, scores) in result
+        ]
 
     @classmethod
     def do_rollout(

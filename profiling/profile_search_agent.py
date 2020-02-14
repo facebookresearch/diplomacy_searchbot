@@ -9,10 +9,9 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
     logging.info("PID: {}".format(os.getpid()))
 
-    MODEL_PTH = "/checkpoint/jsgray/dipnet.pth"
     game = diplomacy.Game()
 
-    agent = SimpleSearchDipnetAgent(MODEL_PTH)
+    agent = SimpleSearchDipnetAgent()
     logging.info("Constructed agent")
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
 
