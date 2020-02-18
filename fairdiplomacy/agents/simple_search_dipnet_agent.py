@@ -1,6 +1,6 @@
 import logging
 from collections import Counter
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 
@@ -53,27 +53,30 @@ class SimpleSearchDipnetAgent(BaseSearchAgent):
             return list(plausible_orders.pop())
 
         results = self.distribute_rollouts(
-            game, power, plausible_orders, self.rollouts_per_plausible_order
+            game,
+            [{power: orders} for orders in plausible_orders],
+            self.rollouts_per_plausible_order,
         )
         return self.best_order_from_results(results, power)
 
     @classmethod
-    def best_order_from_results(cls, results: List[Tuple], power) -> List[str]:
+    def best_order_from_results(cls, results: List[Tuple[Dict, Dict]], power) -> List[str]:
         """Given a set of rollout results, choose the move to play
 
         Arguments:
-        - results: List[Tuple[orders, all_scores]], where
-            -> orders: a complete set of orders, e.g. ("A ROM H", "F NAP - ION", "A VEN H")
+        - results: List[Tuple[set_orders_dict, all_scores]], where
+            -> set_orders_dict: Dict[power, orders] on first turn
             -> all_scores: Dict[power, supply count], e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         - power: the power making the orders, e.g. "ITALY"
 
         Returns:
-        - the "orders" with the highest average score
+        - the orders with the highest average score for power
         """
         order_scores = Counter()
         order_counts = Counter()
 
-        for orders, all_scores in results:
+        for set_orders_dict, all_scores in results:
+            orders = set_orders_dict[power]
             order_scores[orders] += all_scores[power]
             order_counts[orders] += 1
 

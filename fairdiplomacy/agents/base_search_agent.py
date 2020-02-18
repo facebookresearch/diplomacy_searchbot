@@ -119,45 +119,51 @@ class BaseSearchAgent(BaseAgent):
         )
         return set([orders for orders, _ in unique_orders.most_common(max_return_size)])
 
-    def distribute_rollouts(self, game, power, orders, rollouts_per_order) -> List[Tuple]:
-        """Run rollouts of each order in `orders` in the proc pool
+    def distribute_rollouts(
+        self, game, set_orders_dicts: List[Dict], N
+    ) -> List[Tuple[Dict, Dict]]:
+        """Run N x len(set_orders_dicts) rollouts
 
         Arguments:
         - game: diplomacy.Game
-        - power: str
-        - orders: list of order tuples
-        - rollouts_per_order: int
+        - set_orders_dicts: List[Dict[power, orders]], each dict representing
+          the orders to set for the first turn
+        - N: int
 
-        Returns: List[Tuple[orders, all_scores]], where
-            -> orders: a complete set of orders, e.g. ("A ROM H", "F NAP - ION", "A VEN H")
-            -> all_scores: Dict[power, supply count], e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
+        Returns: List[Tuple[order_dict, final_scores]], where
+            -> order_dict: Dict[power, orders],
+               e.g. {"ITALY": ("A ROM H", "F NAP - ION", "A VEN H"), ...}
+            -> final_scores: Dict[power, supply count],
+               e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
+        logging.warning(f"distributing {N} rollouts each of {set_orders_dicts}")
+
         game_json = to_saved_game_format(game)
 
         # divide up the rollouts among the processes
-        procs_per_order = max(1, self.n_rollout_procs // len(orders))
-        logging.info(f"num_orders={len(orders)} , procs_per_order={procs_per_order}")
-        batch_sizes = [
-            len(x) for x in torch.arange(rollouts_per_order).chunk(procs_per_order) if len(x) > 0
-        ]
+        procs_per_order = max(1, self.n_rollout_procs // len(set_orders_dicts))
+        logging.info(f"num_orders={len(set_orders_dicts)} , procs_per_order={procs_per_order}")
+        batch_sizes = [len(x) for x in torch.arange(N).chunk(procs_per_order) if len(x) > 0]
         logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
-        results = self.proc_pool.map(
+        all_results = self.proc_pool.map(
             call,
             [
                 partial(
                     self.do_rollout,
                     game_json=game_json,
-                    set_orders_dict={power: orders},
+                    set_orders_dict=d,
                     hostport=self.hostports[i % self.n_server_procs],
                     max_rollout_length=self.max_rollout_length,
                     batch_size=batch_size,
                 )
-                for orders in orders
+                for d in set_orders_dicts
                 for i, batch_size in enumerate(batch_sizes)
             ],
         )
         return [
-            (order_dict[power], scores) for result in results for (order_dict, scores) in result
+            (order_dict, scores)
+            for order_dict, list_of_scores_dicts in all_results
+            for scores in list_of_scores_dicts
         ]
 
     @classmethod
@@ -169,7 +175,7 @@ class BaseSearchAgent(BaseAgent):
         temperature=0.05,
         max_rollout_length=40,
         batch_size=1,
-    ) -> Dict[str, float]:
+    ) -> Tuple[Dict, List[Dict]]:
         """Complete game, optionally setting orders for the current turn
 
         This method can safely be called in a subprocess
@@ -180,9 +186,11 @@ class BaseSearchAgent(BaseAgent):
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
         - max_rollout_length: return SC count after at most # steps
-        - batch_size: rollout # of games in parallel, return avg results
+        - batch_size: rollout # of games in parallel
 
-        Returns a Dict[power, average final supply count]
+        Returns a 2-tuple:
+        - set_orders_dict: Dict[power, orders]
+        - list of Dict[power, final_score]
         """
         assert batch_size <= 8
         timings = TimingCtx()
@@ -256,11 +264,10 @@ class BaseSearchAgent(BaseAgent):
             turn_idx += 1
             other_powers = POWERS  # no set orders on subsequent turns
 
-        # return avg supply counts for each power
-        result = [
-            (set_orders_dict, {k: len(v) for k, v in game.get_state()["centers"].items()})
-            for game in games
-        ]
+        result = (
+            set_orders_dict,
+            [{k: len(v) for k, v in game.get_state()["centers"].items()} for game in games],
+        )
         logging.debug(
             f"end do_rollout pid {os.getpid()} for {batch_size} games in {turn_idx} turns. timings: "
             f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }."
