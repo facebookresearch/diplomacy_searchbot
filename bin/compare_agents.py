@@ -9,10 +9,12 @@ from tabulate import tabulate
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.agents.base_agent import BaseAgent
-from fairdiplomacy.agents.dipnet_agent import DipnetAgent
-from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
-from fairdiplomacy.agents.simple_search_dipnet_agent import SimpleSearchDipnetAgent
+from fairdiplomacy.agents import (
+    DipnetAgent,
+    MilaSLAgent,
+    SimpleSearchDipnetAgent,
+    CFR1PAgent,
+)
 
 
 def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None):
@@ -58,6 +60,7 @@ def parse_agent_class(s):
         "mila": MilaSLAgent,
         "search": SimpleSearchDipnetAgent,
         "diptorch": DipnetAgent,
+        "cfr1p": CFR1PAgent,
         None: None,
     }[s]
 

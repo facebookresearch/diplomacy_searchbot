@@ -136,8 +136,6 @@ class BaseSearchAgent(BaseAgent):
             -> final_scores: Dict[power, supply count],
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
-        logging.warning(f"distributing {N} rollouts each of {set_orders_dicts}")
-
         game_json = to_saved_game_format(game)
 
         # divide up the rollouts among the processes
