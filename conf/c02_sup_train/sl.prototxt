@@ -1,0 +1,24 @@
+train {
+    data_dir: "/checkpoint/jsgray/diplomacy/mila_dataset/data";
+    data_cache: "/checkpoint/jsgray/diplomacy/data_cache.pth";
+    num_dataloader_workers: 20;
+    batch_size: 1000;
+    lr: 0.001;
+    lr_decay: 0.93;
+    clip_grad_norm: 5.0;
+    checkpoint: "./checkpoint.pth";
+    val_set_pct: 0.01;
+    teacher_force: 1.0;
+    lstm_dropout: 0.1;
+    encoder_dropout: 0.2;
+    num_encoder_blocks: 16;
+    num_epochs: 100;
+    debug_only_opening_phase: false;
+    debug_no_mp: false;
+    skip_validation: false;
+    learnable_A: false;
+    fill_missing_orders: false;
+    learnable_alignments: false;
+    avg_embedding: false;
+    write_jsonl: true;
+}

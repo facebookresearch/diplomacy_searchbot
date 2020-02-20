@@ -23,6 +23,8 @@ def _post_install():
     subprocess.check_output(["rm", "-f", link])
     print("Running", " ".join(["ln", "-s", target, link]))
     subprocess.check_output(["ln", "-s", target, link])
+    # Compiling the schema
+    subprocess.check_output(["protoc", "conf/conf.proto", "--python_out", "."])
 
 
 class PostInstallBoilerplate(install):
@@ -40,6 +42,7 @@ setup(
         "diplomacy==1.1.1",
         "ipdb",
         "joblib",
+        "pandas",
         "torch",
         "tqdm",
         "tabulate",

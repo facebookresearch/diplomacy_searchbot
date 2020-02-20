@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import json
 import atexit
 import glob
 import logging
@@ -154,11 +155,41 @@ def validate(net, val_set, loss_fn, batch_size):
     return val_loss, val_accuracy, split_pcts
 
 
+def maybe_build_jsonl_logger(fpath, do_log):
+    """Returns a function that either dumps scalar values to a file or noop.
+
+    Returned function has signature:
+
+        def log(**kwargs):
+            ....
+
+    If do_log is False, then the function is doing nothing. Otherwise, the
+    function expectes to get a dict of json-serializable values and will
+    append them to fpath as a jsonl.
+    """
+    stream = open(fpath, "a") if do_log else None
+
+    def sanitize(value):
+        if hasattr(value, "item"):
+            return value.item()
+        return value
+
+    def log(**kwargs):
+        if stream is not None:
+            record = {k: sanitize(v) for k, v in kwargs.items()}
+            print(json.dumps(record), file=stream, flush=True)
+
+    return log
+
+
 def main_subproc(rank, world_size, args, train_set, val_set):
     # distributed training setup
     mp_setup(rank, world_size)
     atexit.register(mp_cleanup)
     torch.cuda.set_device(rank)
+
+    write_jsonl = rank == 0 and getattr(args, "write_jsonl", False)
+    log_scalars = maybe_build_jsonl_logger("metrics.jsonl", write_jsonl)
 
     # load checkpoint if specified
     if args.checkpoint and os.path.isfile(args.checkpoint):
@@ -227,11 +258,13 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                         loss,
                     )
                 )
+                log_scalars(epoch=epoch, batch=batch_i, loss=loss)
 
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
             val_loss, val_accuracy, split_pcts = validate(net, val_set, loss_fn, args.batch_size)
+            log_scalars(epoch=epoch, val_loss=val_loss, val_accuracy=val_accuracy)
             logger.info(
                 f"Validation epoch= {epoch} batch= {batch_i} loss= {val_loss} acc= {val_accuracy}"
             )
@@ -268,9 +301,58 @@ def mp_cleanup():
     torch.distributed.destroy_process_group()
 
 
-if __name__ == "__main__":
+def run_with_cfg(args):
     random.seed(0)
 
+    logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
+
+    n_gpus = torch.cuda.device_count()
+    logger.info("Using {} GPUs".format(n_gpus))
+
+    # search for data and create train/val splits
+    if args.data_cache and os.path.exists(args.data_cache):
+        logger.info(f"Found dataset cache at {args.data_cache}")
+        train_dataset, val_dataset = torch.load(args.data_cache)
+    else:
+        assert args.data_dir is not None
+        game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
+        assert len(game_jsons) > 0
+        logger.info(f"Found dataset of {len(game_jsons)} games...")
+        val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
+        train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
+
+        train_dataset = Dataset(
+            train_game_jsons,
+            fill_missing_orders=args.fill_missing_orders,
+            n_jobs=args.num_dataloader_workers,
+        )
+        val_dataset = Dataset(
+            val_game_jsons,
+            fill_missing_orders=args.fill_missing_orders,
+            n_jobs=args.num_dataloader_workers,
+        )
+        if args.data_cache:
+            logger.info(f"Saving datasets to {args.data_cache}")
+            torch.save((train_dataset, val_dataset), args.data_cache)
+
+    logger.info(f"Train dataset: {train_dataset.stats_str()}")
+    logger.info(f"Val dataset: {val_dataset.stats_str()}")
+
+    # required when using multithreaded DataLoader
+    try:
+        torch.multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        pass
+
+    if args.debug_no_mp:
+        main_subproc(0, 1, args, train_dataset, val_dataset)
+    else:
+        torch.multiprocessing.spawn(
+            main_subproc, nprocs=n_gpus, args=(n_gpus, args, train_dataset, val_dataset)
+        )
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data-dir",
@@ -323,49 +405,4 @@ if __name__ == "__main__":
     parser.add_argument("--num-encoder-blocks", type=int, default=16)
     parser.add_argument("--num-epochs", type=int, default=100)
     args = parser.parse_args()
-    logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
-
-    n_gpus = torch.cuda.device_count()
-    logger.info("Using {} GPUs".format(n_gpus))
-
-    # search for data and create train/val splits
-    if args.data_cache and os.path.exists(args.data_cache):
-        logger.info(f"Found dataset cache at {args.data_cache}")
-        train_dataset, val_dataset = torch.load(args.data_cache)
-    else:
-        assert args.data_dir is not None
-        game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
-        assert len(game_jsons) > 0
-        logger.info(f"Found dataset of {len(game_jsons)} games...")
-        val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
-        train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
-
-        train_dataset = Dataset(
-            train_game_jsons,
-            fill_missing_orders=args.fill_missing_orders,
-            n_jobs=args.num_dataloader_workers,
-        )
-        val_dataset = Dataset(
-            val_game_jsons,
-            fill_missing_orders=args.fill_missing_orders,
-            n_jobs=args.num_dataloader_workers,
-        )
-        if args.data_cache:
-            logger.info(f"Saving datasets to {args.data_cache}")
-            torch.save((train_dataset, val_dataset), args.data_cache)
-
-    logger.info(f"Train dataset: {train_dataset.stats_str()}")
-    logger.info(f"Val dataset: {val_dataset.stats_str()}")
-
-    # required when using multithreaded DataLoader
-    try:
-        torch.multiprocessing.set_start_method("spawn")
-    except RuntimeError:
-        pass
-
-    if args.debug_no_mp:
-        main_subproc(0, 1, args, train_dataset, val_dataset)
-    else:
-        torch.multiprocessing.spawn(
-            main_subproc, nprocs=n_gpus, args=(n_gpus, args, train_dataset, val_dataset)
-        )
+    run_with_cfg(args)

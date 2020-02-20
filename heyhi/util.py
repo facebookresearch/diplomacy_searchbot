@@ -1,5 +1,5 @@
+from os.path import exists
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
-import copy
 import datetime
 import enum
 import hashlib
@@ -11,14 +11,17 @@ import shutil
 import subprocess
 import time
 
-import hydra
 import submitit
 import torch
+
+from . import conf
 
 
 ModeType = str
 
 MAX_EXP_LEN = 150
+MAX_OVERRIDE_LEN = 100
+EXP_ID_PATTERN = "%(prefix)s/%(cfg_folder)s/%(cfg)s/%(redefines)s_%(redefines_hash)s"
 
 
 MODES: Tuple[ModeType, ...] = (
@@ -78,7 +81,7 @@ def log_git_status():
     try:
         diff = subprocess.check_output("git diff HEAD".split(), cwd=git_repo)
     except subprocess.CalledProcessError as e:
-        logging.error("Attempt to call 'git diff HEAD", e)
+        logging.error("Failed to call 'git diff HEAD': %s", e)
     else:
         if diff:
             diff_path = pathlib.Path("workdir.diff").resolve()
@@ -137,8 +140,9 @@ class ExperimentDir:
     Given that, the class allows to get the status of the job and the results.
     ."""
 
-    def __init__(self, exp_path: pathlib.Path):
+    def __init__(self, exp_path: pathlib.Path, exp_id=""):
         self.exp_path = exp_path
+        self.exp_id = exp_id
 
     @property
     def job_id_path(self) -> pathlib.Path:
@@ -220,49 +224,72 @@ def save_result_in_cwd(f):
     return wrapped
 
 
-def _sort_overrides(overrides: Sequence[str]) -> List[str]:
+def _get_config_folder_tag(path: pathlib.Path) -> str:
+    assert path.exists(), path
+    config_path = str(path.parent.absolute())
+    if config_path.startswith(str(conf.CONF_ROOT)):
+        components = config_path[len(str(conf.CONF_ROOT)):].strip("/").split("/")
+        if components:
+            folder = "_".join(components)
+        else:
+            folder = "root"
+    else:
+        # Config outside default location. Take a hash of the path.
+        folder = hashlib.md5(config_path.encode("utf8")).hexdigest()[:8]
+    return folder
+
+
+def _get_overrides_tags(overrides: Sequence[str]) -> Tuple[str, str]:
     def sort_key(override):
         name = override.split("=")[0]
         depth = len(name.split("."))
         return (depth, name, override)
 
-    return sorted(overrides, key=sort_key)
-
-
-def _parse_overrides_quick(overrides: Sequence[str]) -> Dict[str, str]:
-    d = {}
+    overrides = sorted(overrides, key=sort_key)
+    hashtag = hashlib.md5(repr(overrides).encode("utf8")).hexdigest()[:8]
+    parsed_overrides = []
     for override in overrides:
-        try:
-            name, value = override.split("=", 1)
-        except ValueError:
-            raise ValueError(f"Bad override: {override}")
-        d[name] = value
-    return d
+        key, value = override.split("=", 1)
+        if len(key) > 5:
+            # Compress key.
+            key = ".".join(x[:3] for x in key.split("."))
+        parsed_overrides.append(f"{key}{DELIMETER}{value}")
+    override_tag = DELIMETER.join(parsed_overrides)[:MAX_OVERRIDE_LEN]
+    if not override_tag:
+        override_tag = "default"
+    return override_tag, hashtag
 
 
-def handle_dst(
-    root_exp_dir: pathlib.Path,
-    mode: ModeType,
+def get_exp_id(
     config_path: pathlib.Path,
     overrides: Sequence[str],
     adhoc: bool,
-    force_override_exp_id: Optional[str] = None,
-    force_override_tag: Optional[str] = None,
-) -> Tuple[ExperimentDir, bool]:
-    """Creates/recreates a ExperimentDir and checks whether an action is needed.
+    exp_id_pattern: Optional[str] = None,
+) -> str:
+    if exp_id_pattern is None:
+        exp_id_pattern = EXP_ID_PATTERN
+    folder_tag = _get_config_folder_tag(config_path)
+    cfg_tag = config_path.name.rsplit(".", 1)[0]
+    date_tag = datetime.datetime.now().isoformat().replace(":", "")
+    if adhoc:
+        prefix_tag = "adhoc/" + date_tag
+    else:
+        prefix_tag = "p"
 
-    The logic of the function is the following:
-        1. Create base exp_id from config_path and overrides.
-        1a. If force_override_tag is set, it will be used instead of
-            automatically generated overrides string.
-        1b. If force_override_exp_id is given, it will be used instead of the
-            config path part.
-        2. If running in adhoc mode prepend 'adhoc/<date>' to the exp_id go
-            get unique exp_id. Otherwise, prepend 'p/' (permanent).
-        3. Get status of the job in the folder: NOT_STARTED, RUNNING, DONE,
-            DEAD.
-        4. Depending on the mode maybe wipe folder and kill the job and maybe
-            set need_run flag.
+    redefines_tag, redefines_hash_tag = _get_overrides_tags(overrides)
+    tags = dict(
+        cfg=cfg_tag,
+        cfg_folder=folder_tag,
+        date=date_tag,
+        prefix=prefix_tag,
+        redefines=redefines_tag,
+        redefines_hash=redefines_hash_tag,
+    )
+    return exp_id_pattern % tags
+
+
+def handle_dst( exp_handle, mode: ModeType) -> bool:
+    """Creates/recreates a ExperimentDir and checks whether an action is needed.
 
     If mode is:
         - gentle_start, set need_run iff the job is NOT_STARTED.
@@ -275,42 +302,11 @@ def handle_dst(
 
     Returns a pair (ExperimentDir, need_run).
     """
-    assert config_path.exists(), config_path
-    *_, folder_name, config_name = str(config_path.absolute()).split("/")
-    config_name = config_name.rsplit(".", 1)[0]
-    assert DELIMETER not in folder_name, folder_name
-    assert DELIMETER not in config_name, config_name
-    base_exp_id = f"{folder_name}/{config_name}"
-    if force_override_exp_id is not None:
-        logging.warning("Exp id override: %s -> %s", base_exp_id, force_override_exp_id)
-        base_exp_id = force_override_exp_id
-    if force_override_tag is not None:
-        exp_id = DELIMETER.join([base_exp_id, force_override_tag])
-    elif overrides:
-        exp_id = DELIMETER.join([base_exp_id] + _sort_overrides(overrides))
-        exp_id = exp_id.replace("=", DELIMETER).replace(" ", "_")
-    else:
-        exp_id = base_exp_id
-
-    if len(exp_id) > MAX_EXP_LEN:
-        logging.warning("Name of experiment is too long: %s", exp_id)
-        exp_id = "%s_%s" % (exp_id[:50], hashlib.md5(exp_id.encode("utf8")).hexdigest()[:16])
-        logging.warning("Shortened name: %s", exp_id)
-
-    if adhoc:
-        date = datetime.datetime.now().isoformat()
-        exp_id = "adhoc/%s/%s" % (date, exp_id)
-    else:
-        # Permanent.
-        exp_id = "p/%s" % exp_id
-
     need_run = True
-    exp_handle = ExperimentDir(root_exp_dir / exp_id)
     if mode == "gentle_start":
         if exp_handle.is_started():
             logging.info("Alredy started. Status: %s", exp_handle.get_status())
             need_run = False
-
     elif mode == "start_restart":
         if exp_handle.is_running() or exp_handle.is_done():
             logging.info("Running or done. Status: %s", exp_handle.get_status())
@@ -328,8 +324,7 @@ def handle_dst(
         need_run = False
     else:
         raise ValueError(f"Unknown mode: {mode}")
-
-    return exp_handle, need_run
+    return need_run
 
 
 def _build_slurm_executor(exp_handle, cfg):
@@ -351,7 +346,7 @@ def _build_slurm_executor(exp_handle, cfg):
         ntasks_per_node = gpus
 
     slurm_params = dict(
-        job_name="heyhi",
+        job_name=exp_handle.exp_id[:80] or "heyhi",
         partition=cfg.partition,
         time=int(cfg.hours * 60),
         nodes=nodes,
@@ -385,41 +380,32 @@ def run_with_config(
     overrides: Sequence[str],
 ) -> None:
     setup_logging()
-    hydra_args = list(overrides) + [
-        f"hydra.run.dir={exp_handle.exp_path}",
-        # Remove hydra defautl stuff.
-        "hydra.hydra_logging=null",
-        "hydra.job_logging=null",
-        "hydra.sweep=null",
-        "hydra.sweeper=null",
-    ]
-    logging.info("Passing the following args to hydra: %s", hydra_args)
-    calling_file = "train.py"
-    abs_base_dir = os.path.realpath(os.path.dirname(calling_file))
-    hydra_config_path = str(config_path.resolve())
-    assert hydra_config_path.startswith(abs_base_dir + "/"), (hydra_config_path, abs_base_dir)
-    hydra_config_path = hydra_config_path[len(abs_base_dir) + 1 :]
-    hydra_obj = hydra.Hydra(
-        calling_file="run.py",
-        calling_module=None,
-        config_path=hydra_config_path,
-        task_function=task_function,
-        verbose="",
-        strict=False,
-    )
-    cfg = hydra_obj._load_config(copy.deepcopy(hydra_args))
-    use_slurm = False
-    if cfg.launcher is not None:
-        assert cfg.launcher.driver in ("slurm", "local"), cfg.launcher
-        use_slurm = cfg.launcher.driver == "slurm"
-    if use_slurm and not is_on_slurm():
-        logging.info("Config:\n%s", cfg.pretty())
-        executor = _build_slurm_executor(exp_handle, cfg.launcher)
-        job = executor.submit(hydra_obj.run, overrides=hydra_args)
+    task, meta_cfg = conf.load_cfg(config_path, overrides)
+    cfg = getattr(meta_cfg, task)
+
+    # Managed to read config. Cd into exp dir.
+    exp_handle.exp_path.mkdir(exist_ok=True, parents=True)
+    old_cwd = os.getcwd()
+    os.chdir(exp_handle.exp_path)
+
+    if not cfg.launcher.WhichOneof("launcher"):
+        cfg.launcher.local.use_local = True
+    conf.save_config(meta_cfg, pathlib.Path("config_meta.prototxt"))
+    conf.save_config(cfg, pathlib.Path("config.prototxt"))
+
+    callable = functools.partial(task_function, cfg=cfg, task=task)
+    launcher_type = cfg.launcher.WhichOneof("launcher")
+    launcher_cfg = getattr(cfg.launcher, launcher_type)
+    assert launcher_type in ("local", "slurm"), launcher_type
+    if launcher_type == "slurm" and not is_on_slurm():
+        logging.info("Config:\n%s", meta_cfg)
+        executor = _build_slurm_executor(exp_handle, launcher_cfg)
+        job = executor.submit(callable)
         exp_handle.save_job_id(job.job_id)
         logging.info("Submitted job %s", job.job_id)
         logging.info("stdout:\n\ttail -F %s/%s_0_log.out", exp_handle.slurm_path, job.job_id)
         logging.info("stderr:\n\ttail -F %s/%s_0_log.err", exp_handle.slurm_path, job.job_id)
     else:
         exp_handle.save_job_id(LOCAL_JOB_ID)
-        hydra_obj.run(overrides=copy.deepcopy(hydra_args))
+        callable()
+    os.chdir(old_cwd)

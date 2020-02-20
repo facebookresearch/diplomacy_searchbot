@@ -1,6 +1,7 @@
 from .gsheets import save_pandas_table
 from .run import parse_args_and_maybe_launch, maybe_launch
 from .util import (
+    MODES,
     is_master,
     is_on_slurm,
     is_aws,

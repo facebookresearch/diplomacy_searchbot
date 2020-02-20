@@ -117,18 +117,15 @@ Things in the experiment folder:
   * Experiment folder will contain slurm logs in `slurm/` folder.
   * If there was a diff on experiment launch, then `workdir.diff` is stored.
   * Current git revision is printed in the log. (see *err in slurm/)
-  
 
 TODO(yolo): explain non-adhoc runs and --mode.
 TODO(yolo): explain sweeps/group runs.
 TODO(yolo): explain export to google-sheet.
 """
-from typing import Callable, Dict, Optional, Sequence
+from typing import Callable, Sequence
 import argparse
-import functools
 import logging
 import os
-import resource
 import pathlib
 import pprint
 
@@ -141,13 +138,13 @@ from . import util
 # runs use `parse_args_and_maybe_launch` in user's run.py. And it's trickier to
 # extract project name from the userland then from here.
 # This constant is only used to define where to store logs.
-PROJECT_NAME = "diplomacy"
+PROJECT_NAME = "fairdiplomacy"
 
 
 def get_exp_dir(project_name) -> pathlib.Path:
     return pathlib.Path(
         os.environ.get(
-            "HH_EXP_DIR", f"/checkpoint/{os.environ['USER']}/shared/{project_name}/outputs"
+            "HH_EXP_DIR", f"/checkpoint/{os.environ['USER']}/{project_name}/heyhi"
         )
     )
 
@@ -167,7 +164,7 @@ def parse_args_and_maybe_launch(main: Callable) -> None:
         task: dictionary of callables one of which will be called based on
             cfg.task.
     """
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-c", "--cfg", required=True, type=pathlib.Path)
     parser.add_argument("--adhoc", action="store_true")
     parser.add_argument(
@@ -176,11 +173,16 @@ def parse_args_and_maybe_launch(main: Callable) -> None:
         default="gentle_start",
         help="See heyhi/util.py for mode definitions.",
     )
+    parser.add_argument(
+        "--exp_id_pattern_override",
+        default=util.EXP_ID_PATTERN,
+        help="A pattern to construct exp_id. Job's data is stored in <exp_root>/<exp_id>",
+    )
     args, overrides = parser.parse_known_args()
 
-    return maybe_launch(
-        main, exp_root=get_exp_dir(PROJECT_NAME), overrides=overrides, **vars(args)
-    )
+    overrides = [x.lstrip("-") for x in overrides]
+
+    maybe_launch(main, exp_root=get_exp_dir(PROJECT_NAME), overrides=overrides, **vars(args))
 
 
 def maybe_launch(
@@ -190,8 +192,7 @@ def maybe_launch(
     cfg: pathlib.Path,
     mode: util.ModeType,
     adhoc: bool = False,
-    force_override_exp_id: Optional[str] = None,
-    force_override_tag: Optional[str] = None,
+    exp_id_pattern_override=None,
 ) -> util.ExperimentDir:
     """Computes the task locally or remotely if neeeded in the mode.
 
@@ -212,15 +213,9 @@ def maybe_launch(
     logging.info("Config: %s", cfg)
     logging.info("Overrides: %s", overrides)
 
-    exp_handle, need_run = util.handle_dst(
-        exp_root,
-        mode,
-        cfg,
-        overrides,
-        adhoc,
-        force_override_exp_id=force_override_exp_id,
-        force_override_tag=force_override_tag,
-    )
+    exp_id = util.get_exp_id(cfg, overrides, adhoc, exp_id_pattern=exp_id_pattern_override)
+    exp_handle = util.ExperimentDir(exp_root / exp_id, exp_id=exp_id)
+    need_run = util.handle_dst(exp_handle, mode,)
     logging.info("Exp dir: %s", exp_handle.exp_path)
     logging.info("Job status [before run]: %s", exp_handle.get_status())
     if need_run:

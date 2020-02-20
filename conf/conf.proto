@@ -1,0 +1,162 @@
+// Format this file with clang after editing:
+//   clang-format-8 conf/conf.proto -i
+syntax = "proto2";
+package fairdiplomacy;
+
+message MilaSlAgent {}
+
+message Agent {
+  oneof agent { MilaSlAgent mila_agent = 1; }
+}
+
+// Launcher message defines how to launch the job. Two options are avilable -
+// locally or on slurm. Launcher information is expected to be a part of the
+// main config.
+message Launcher {
+
+  message Local { optional bool use_local = 1; }
+
+  message Slurm {
+    optional int32 num_gpus = 1 [ default = 0 ];
+    // By default starting one task per GPU. But if this flag is set, then
+    // will use one task per machine.
+    optional bool single_task_per_node = 2 [ default = false ];
+
+    optional string partition = 3 [ default = "learnfair" ];
+
+    optional int32 hours = 4;
+    // Memory per GPU in GB.
+    optional int32 mem_per_gpu = 5 [ default = 62 ];
+    optional string comment = 6;
+
+    // Number of CPUs per GPU. You probably want 40 on Pascals and 10 otherwise.
+    optional int32 cpus_per_gpu = 7 [ default = 10 ];
+
+    // If set, will schedule job only on volta GPUs with 32GB of mem.
+    optional bool volta32 = 8;
+    // If set, will schedule the job only on Pascal GPUs.
+    optional bool pascal = 9;
+    // If set, will schedule job only on volta GPUs.
+    optional bool volta = 10;
+  }
+
+  oneof launcher {
+    Local local = 1;
+    Slurm slurm = 2;
+  }
+}
+
+// Root config to compare agents.
+message CompareAgentsTask {
+  enum Power {
+    AUSTRIA = 0;
+    ITALY = 1;
+    GERMANY = 2;
+    RUSSIA = 3;
+    TURKEY = 4;
+    FRANCE = 5;
+    ENGLAND = 6;
+  }
+
+  optional Agent agent_one = 2;
+  optional Agent agent_six = 3;
+  optional Agent cf_agent = 4;
+
+  optional Power power_one = 5;
+
+  optional string out = 6;
+  optional int32 seed = 7 [ default = 0 ];
+
+  optional Launcher launcher = 100;
+}
+
+message TrainTask {
+  // Path to dir containing game.json files.
+  optional string data_dir = 1;
+  // Path to dir containing dataset cache.
+  optional string data_cache = 2;
+  // Dataloader procs (1 means load in the main process).
+  optional int32 num_dataloader_workers = 3;
+  // Batch size per GPU.
+  optional int32 batch_size = 4;
+  // Learning rate.
+  optional float lr = 5;
+  // Learning rate decay per epoch.
+  optional float lr_decay = 6;
+  // Max gradient norm.
+  optional float clip_grad_norm = 7;
+  // Path to load/save the model.
+  optional string checkpoint = 8;
+  // Lercentage of games to use as val set.
+  optional float val_set_pct = 9;
+  // Prob[teacher forcing] during training.
+  optional float teacher_force = 10;
+  // LSTM dropout pct.
+  optional float lstm_dropout = 11;
+  // Encoder dropout pct.
+  optional float encoder_dropout = 12;
+  // If set, restrict data to S1901M.
+  optional bool debug_only_opening_phase = 13;
+  // If set, use a single process.
+  optional bool debug_no_mp = 14;
+  // Skip validation / save.
+  optional bool skip_validation = 15;
+  // Learn adjacency matrix.
+  optional bool learnable_A = 16;
+  // If dataset orders are missing for an orderable loc, fill in H or D.
+  optional bool fill_missing_orders = 17;
+  // Learn attention alignment matrix.
+  optional bool learnable_alignments = 18;
+  // Average across location embedding instead of using attention.
+  optional bool avg_embedding = 19;
+  optional int32 num_encoder_blocks = 20;
+  optional int32 num_epochs = 21;
+
+  // If set, will write a jsonl file with metrics in the current folder.
+  optional bool write_jsonl = 22;
+
+  optional Launcher launcher = 1000;
+}
+
+// A dummy task to use in tests.
+message TestTask {
+  message SubMessage { optional int32 subscalar = 1 [ default = -1 ]; }
+
+  enum SomeEnum {
+    ZERO = 0;
+    ONE = 1;
+  };
+
+  optional float scalar = 1 [ default = -1 ];
+  optional SubMessage sub = 2;
+  optional SubMessage sub2 = 3;
+
+  optional SomeEnum enum_value = 4 [ default = ZERO ];
+}
+
+// Every config is parsed as Cfg that is thin wrapper over actual config for the
+// task. Config inlude. Handled by HH.
+message Include {
+  // It's expected that <conf_dir>/<path>.prototxt exists. HeyHi will try a
+  // series of different conf_dir's. It's easier to give an example. Let
+  // assume that path to meta config is conf/c01/conf.prototxt and the include
+  // is {path:slurm, mount:launcher}. Then HeyHi will try the following paths:
+  // {conf/c01,conf/common,conf/c01/launcher,conf/common/launcher}/slurm.prototxt.
+  // Obviously, if mount is root, then the latter 2 paths are omitted.
+  optional string path = 1;
+  // Dot-separated path to where to include the include within the main config.
+  optional string mount = 2;
+}
+
+// The root config. Every top-level prototxt must be a message of this type.
+// User's code will recieve a specific task config after all includes and
+// redefines are resolved.
+message MetaCfg {
+  repeated Include includes = 1;
+  oneof task {
+    CompareAgentsTask compare_agents = 101;
+    TrainTask train = 102;
+    // Dummy task to test heyhi.
+    TestTask test = 999;
+  }
+}
