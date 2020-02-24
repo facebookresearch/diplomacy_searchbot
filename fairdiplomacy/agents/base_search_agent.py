@@ -244,7 +244,6 @@ class BaseSearchAgent(BaseAgent):
                         cls.do_model_request(client, batch_inputs, temperature), seq_lens
                     )
             else:
-                logging.info("Skipping model with no orders for other_powers this turn")
                 batch_orders = []
 
             with timings("env"):
