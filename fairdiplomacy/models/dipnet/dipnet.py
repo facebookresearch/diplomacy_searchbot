@@ -93,7 +93,9 @@ class DipNet(nn.Module):
                     device=valid_order_idxs.device,
                 ),
                 torch.zeros(
-                    *valid_order_idxs.shape, self.orders_vocab_size, device=valid_order_idxs.device
+                    *(valid_order_idxs.shape[:2]),
+                    self.orders_vocab_size,
+                    device=valid_order_idxs.device,
                 ),
             )
 
