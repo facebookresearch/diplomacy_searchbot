@@ -31,21 +31,25 @@ ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
 
 
-def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
+def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_teacher_force=0.0):
     """Calculate a forward pass on a batch
 
     Returns:
-    - loss: the output of loss_fn(logits, targets)
+    - policy_losses: [?] FloatTensor, unknown size due to unknown # of non-zero actions
+    - value_losses: [B] FloatTensor
     - order_scores: FIXME FIXME FIXME
     - order_idxs: [B, S] LongTensor of sampled order idxs
+    - final_scores: [B, 7] estimated final SC counts per power
     """
-    x_state, x_orders, x_power, x_season, x_in_adj_phase, x_possible_actions, x_loc_idxs, y_actions = (
+    device = next(net.parameters()).device
+
+    x_state, x_orders, x_power, x_season, x_in_adj_phase, y_final_scores, x_possible_actions, x_loc_idxs, y_actions = (
         batch
     )
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
-    order_idxs, order_scores = net(
+    order_idxs, order_scores, final_scores = net(
         x_state,
         x_orders,
         x_power,
@@ -58,7 +62,7 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
     )
 
     # reshape and mask out <EOS> tokens from sequences
-    y_actions = y_actions.to(next(net.parameters()).device)
+    y_actions = y_actions.to(device)
     y_actions = y_actions[:, : order_scores.shape[1]].reshape(-1)  # [B * S]
     try:
         order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
@@ -79,7 +83,10 @@ def process_batch(net, batch, loss_fn, temperature=1.0, p_teacher_force=0.0):
         )
 
     # calculate loss
-    return loss_fn(order_scores, y_actions), order_scores, order_idxs
+    policy_loss = policy_loss_fn(order_scores, y_actions)
+    value_loss = value_loss_fn(final_scores, y_final_scores.squeeze(1).to(device).float())
+
+    return policy_loss, value_loss, order_scores, order_idxs, final_scores
 
 
 def calculate_accuracy(order_idxs, y_truth):
@@ -114,7 +121,7 @@ def calculate_split_accuracy_counts(order_idxs, y_truth):
     return counts
 
 
-def validate(net, val_set, loss_fn, batch_size):
+def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float):
     with torch.no_grad():
         net.eval()
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
@@ -127,18 +134,22 @@ def validate(net, val_set, loss_fn, batch_size):
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
                 )
                 continue
-            losses, order_scores, order_idxs = process_batch(
-                net, batch, loss_fn, temperature=0.001, p_teacher_force=1.0
+            policy_losses, value_losses, order_scores, order_idxs, _ = process_batch(
+                net, batch, policy_loss_fn, value_loss_fn, temperature=0.001, p_teacher_force=1.0
             )
-            batch_losses.append(losses)
+            batch_losses.append((policy_losses, value_losses))
             batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
             batch_acc_split_counts.append(calculate_split_accuracy_counts(order_idxs, y_actions))
         net.train()
 
-    # combine batch losses, accuracies
-    val_losses = torch.cat(batch_losses)
-    val_loss = torch.mean(val_losses)
-    weights = [len(l) / len(val_losses) for l in batch_losses]
+    # validation loss
+    p_losses, v_losses = [torch.cat(x) for x in zip(*batch_losses)]
+    p_loss = torch.mean(p_losses)
+    v_loss = torch.mean(v_losses)
+    val_loss = (1 - value_loss_weight) * p_loss + value_loss_weight * v_loss
+
+    # validation accuracy
+    weights = [len(pl) / len(p_losses) for pl, _ in batch_losses]
     val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
 
     # combine accuracy splits
@@ -214,7 +225,8 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         net.load_state_dict(checkpoint["model"], strict=True)
 
     # create optimizer, from checkpoint if specified
-    loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
+    policy_loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
+    value_loss_fn = torch.nn.MSELoss(reduction="none")
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=1, gamma=args.lr_decay)
     if checkpoint:
@@ -238,32 +250,44 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             # learn
             logger.debug("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
-            losses, order_scores, order_idxs = process_batch(
-                net, batch, loss_fn, p_teacher_force=args.teacher_force
+            policy_losses, value_losses, order_scores, order_idxs, _ = process_batch(
+                net, batch, policy_loss_fn, value_loss_fn, p_teacher_force=args.teacher_force
             )
 
-            loss = torch.mean(losses)
+            p_loss = torch.mean(policy_losses)
+            v_loss = torch.mean(value_losses)
+            loss = (1 - args.value_loss_weight) * p_loss + args.value_loss_weight * v_loss
             loss.backward()
             logger.debug(f"Running step {batch_i} ...")
             grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip_grad_norm)
             optim.step()
             if rank == 0:
-                logger.info(
-                    "epoch {} batch {} / {} lr= {} grad_norm= {} loss= {}".format(
-                        epoch,
-                        batch_i,
-                        len(batches),
-                        optim.state_dict()["param_groups"][0]["lr"],
-                        grad_norm,
-                        loss,
-                    )
+                scalars = dict(
+                    epoch=epoch,
+                    batch=batch_i,
+                    loss=loss,
+                    lr=optim.state_dict()["param_groups"][0]["lr"],
+                    grad_norm=grad_norm,
+                    p_loss=p_loss,
+                    v_loss=v_loss,
                 )
-                log_scalars(epoch=epoch, batch=batch_i, loss=loss)
+                log_scalars(**scalars)
+                logger.info(
+                    "epoch {} batch {} / {}, ".format(epoch, batch_i, len(batches))
+                    + " ".join(f"{k}= {v}" for k, v in scalars.items())
+                )
 
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            val_loss, val_accuracy, split_pcts = validate(net, val_set, loss_fn, args.batch_size)
+            val_loss, val_accuracy, split_pcts = validate(
+                net,
+                val_set,
+                policy_loss_fn,
+                value_loss_fn,
+                args.batch_size,
+                value_loss_weight=args.value_loss_weight,
+            )
             log_scalars(epoch=epoch, val_loss=val_loss, val_accuracy=val_accuracy)
             logger.info(
                 f"Validation epoch= {epoch} batch= {batch_i} loss= {val_loss} acc= {val_accuracy}"

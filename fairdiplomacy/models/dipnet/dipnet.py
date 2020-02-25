@@ -7,6 +7,7 @@ from torch import nn
 from torch.distributions.categorical import Categorical
 
 from fairdiplomacy.models.dipnet.order_vocabulary import get_incompatible_build_idxs_map
+from fairdiplomacy.models.consts import POWERS, N_SCS
 
 
 class DipNet(nn.Module):
@@ -44,7 +45,7 @@ class DipNet(nn.Module):
             learnable_A=learnable_A,
         )
 
-        self.decoder = LSTMDipNetDecoder(
+        self.policy_decoder = LSTMDipNetDecoder(
             inter_emb_size=inter_emb_size,
             orders_vocab_size=orders_vocab_size,
             lstm_size=lstm_size,
@@ -54,6 +55,8 @@ class DipNet(nn.Module):
             learnable_alignments=learnable_alignments,
             avg_embedding=avg_embedding,
         )
+
+        self.value_decoder = ValueDecoder(inter_emb_size)
 
     def forward(
         self,
@@ -83,6 +86,7 @@ class DipNet(nn.Module):
         Returns:
         - order_idxs [B, S]: idx of sampled orders
         - order_scores [B, S, 13k]: masked pre-softmax logits of each order
+        - final_scores [B, 7]: estimated final SC counts per power
         """
         if (valid_order_idxs == 0).all():
             logging.warning("foward called with all valid_order_idxs == 0")
@@ -100,7 +104,8 @@ class DipNet(nn.Module):
             )
 
         enc = self.encoder(x_bo, x_po, x_power_1h, x_season_1h)  # [B, 81, 240]
-        res = self.decoder(
+
+        order_idxs, order_scores = self.policy_decoder(
             enc,
             in_adj_phase,
             loc_idxs,
@@ -108,7 +113,10 @@ class DipNet(nn.Module):
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
         )
-        return res
+
+        final_scores = self.value_decoder(enc)
+
+        return order_idxs, order_scores, final_scores
 
     def valid_order_idxs_to_mask(self, valid_order_idxs):
         """
@@ -445,3 +453,15 @@ class FiLM(nn.Module):
         gamma = self.W_gamma(mod_emb).unsqueeze(1)
         beta = self.W_beta(mod_emb).unsqueeze(1)
         return gamma * x + beta
+
+
+class ValueDecoder(nn.Module):
+    def __init__(self, inter_emb_size):
+        super().__init__()
+        self.lin = nn.Linear(81 * inter_emb_size * 2, len(POWERS))
+
+    def forward(self, enc):
+        """Returns [B, 7] FloatTensor summing to 34 across dim=1"""
+        y = self.lin(enc.view(enc.shape[0], -1))  # [B, 7]
+        return y / torch.sum(y, dim=1, keepdim=True) * N_SCS
+

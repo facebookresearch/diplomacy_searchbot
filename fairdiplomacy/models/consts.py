@@ -14,6 +14,7 @@ LOC_TYPES = {k.upper(): v for (k, v) in MAP.loc_type.items()}
 POWERS = sorted(MAP.powers)
 SEASONS = ["SPRING", "FALL", "WINTER"]
 MAX_SEQ_LEN = 17  # can't have 18 orders in one phase or you've already won
+N_SCS = 34  # number of supply centers
 ADJACENCY_MATRIX = preprocess_adjacency(get_adjacency_matrix())
 MASTER_ALIGNMENTS = np.stack(get_board_alignments(LOCS, False, 1, 81))
 COASTAL_HOME_SCS = [

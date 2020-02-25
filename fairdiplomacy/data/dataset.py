@@ -82,29 +82,29 @@ class Dataset(torch.utils.data.Dataset):
 
         x_idx = self.x_idxs[idx]
         power_idx = self.power_idxs[idx]
-        # game_idx = self.game_idxs[idx]
-        # phase_idx = self.phase_idxs[idx]
 
         fields = [x[x_idx] for x in self.encoded_games[:-1]]
 
-        # unpack the possible_actions, insert it into fields[5]
+        # unpack the possible_actions, insert it into fields[6]
         possible_actions_idx = ((x_idx * len(POWERS) + power_idx) * MAX_SEQ_LEN).unsqueeze(
             1
         ) + torch.arange(MAX_SEQ_LEN).unsqueeze(0)
-        x_possible_actions = self.encoded_games[5][possible_actions_idx.view(-1)]
+        x_possible_actions = self.encoded_games[6][possible_actions_idx.view(-1)]
         x_possible_actions_padded = x_possible_actions.to_padded(total_length=MAX_VALID_LEN)
-        fields[5] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
+        fields[6] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
 
-        assert len(fields) == 8
+        assert (
+            len(fields) == 9
+        ), "If you've changed the fields, make sure to fix all the changed indices"
 
         # for these fields we need to select out the correct power
-        for f in [2, 6, 7]:
+        for f in [2, 7, 8]:
             fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
 
         # cast fields
-        for i in range(len(fields) - 3):
+        for i in range(len(fields) - 4):
             fields[i] = fields[i].to(torch.float32)
-        for i in [5, 7]:
+        for i in [6, 8]:
             fields[i] = fields[i].to(torch.long)
 
         return fields
@@ -127,17 +127,18 @@ def encode_game(
       explicitly set as H or D (depending on the phase). If False, powers with
       missing orders will be marked invalid.
 
-    Return: tuple of nine tensors
+    Return: tuple of tensors
     L is game length, P is # of powers above min_final_score
-    - board_state: shape=(L, 81, 35)
-    - prev_orders: shape=(L, 81, 40)
-    - power: shape=(L, 7, 7)
-    - season: shape=(L, 3)
-    - in_adj_phase: shape=(L, 1)
-    - possible_actions: TensorList shape=(L x 7, 17 x 469)
-    - loc_idxs: shape=(L, 7, 81), int8
-    - actions: shape=(L, 7, 17) int order idxs
-    - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
+    [0] board_state: shape=(L, 81, 35)
+    [1] prev_orders: shape=(L, 81, 40)
+    [2] power: shape=(L, 7, 7)
+    [3] season: shape=(L, 3)
+    [4] in_adj_phase: shape=(L, 1)
+    [5] final_scores: shape=(L, 7)
+    [6] possible_actions: TensorList shape=(L x 7, 17 x 469)
+    [7] loc_idxs: shape=(L, 7, 81), int8
+    [8] actions: shape=(L, 7, 17) int order idxs
+    [9] valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
     """
 
     if isinstance(game, str):
@@ -169,12 +170,13 @@ def encode_phase(
       explicitly set as H or D (depending on the phase). If False, powers with
       missing orders will be marked invalid.
 
-    Return: tuple of nine tensors
+    Return: tuple of tensors
     - board_state: shape=(81, 35)
     - prev_orders: shape=(81, 40)
     - power: shape=(7, 7)
     - season: shape=(3,)
     - in_adj_phase: shape=(1,)
+    - final_scores: shape=(7,) int8
     - possible_actions: Tensorlist shape=(7 x 17, 469)
     - loc_idxs: shape=(7, 81), int8
     - actions: shape=(7, 17) int order idxs
@@ -210,6 +212,12 @@ def encode_phase(
 
     # encode adjustment phase
     x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(phase_name[-1] == "A")
+
+    # encode final scores
+    y_final_scores = torch.zeros(1, 7, dtype=torch.int8)
+    final_centers = game.get_state()["centers"]
+    for power_i, power in enumerate(POWERS):
+        y_final_scores[:, power_i] = len(final_centers.get(power, []))
 
     # encode possible actions
     tmp_game = diplomacy.Game(map_name=game.map_name)
@@ -314,6 +322,7 @@ def encode_phase(
         x_power,
         x_season,
         x_in_adj_phase,
+        y_final_scores,
         x_possible_actions,
         x_loc_idxs,
         y_actions,

@@ -1,3 +1,4 @@
+from .base_agent import BaseAgent
 from .dipnet_agent import DipnetAgent
 from .mila_sl_agent import MilaSLAgent
 from .simple_search_dipnet_agent import SimpleSearchDipnetAgent

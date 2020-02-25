@@ -85,47 +85,72 @@ message CompareAgentsTask {
 message TrainTask {
   // Path to dir containing game.json files.
   optional string data_dir = 1;
+
   // Path to dir containing dataset cache.
   optional string data_cache = 2;
+
   // Dataloader procs (1 means load in the main process).
   optional int32 num_dataloader_workers = 3;
+
   // Batch size per GPU.
   optional int32 batch_size = 4;
+
   // Learning rate.
   optional float lr = 5;
+
   // Learning rate decay per epoch.
   optional float lr_decay = 6;
+
   // Max gradient norm.
   optional float clip_grad_norm = 7;
+
   // Path to load/save the model.
   optional string checkpoint = 8;
+
   // Lercentage of games to use as val set.
   optional float val_set_pct = 9;
+  
   // Prob[teacher forcing] during training.
   optional float teacher_force = 10;
+  
   // LSTM dropout pct.
   optional float lstm_dropout = 11;
+  
   // Encoder dropout pct.
   optional float encoder_dropout = 12;
+  
   // If set, restrict data to S1901M.
   optional bool debug_only_opening_phase = 13;
+  
   // If set, use a single process.
   optional bool debug_no_mp = 14;
+  
   // Skip validation / save.
   optional bool skip_validation = 15;
+  
   // Learn adjacency matrix.
   optional bool learnable_A = 16;
+  
   // If dataset orders are missing for an orderable loc, fill in H or D.
   optional bool fill_missing_orders = 17;
+  
   // Learn attention alignment matrix.
   optional bool learnable_alignments = 18;
+
   // Average across location embedding instead of using attention.
   optional bool avg_embedding = 19;
+
+  // Number of GCN layers in the encoder
   optional int32 num_encoder_blocks = 20;
+
+  // Max number of epochs to train
   optional int32 num_epochs = 21;
 
   // If set, will write a jsonl file with metrics in the current folder.
   optional bool write_jsonl = 22;
+
+  // Weight of value loss relative to policy loss, between 0 and 1
+  optional float value_loss_weight = 23;
 
   optional Launcher launcher = 1000;
 }
