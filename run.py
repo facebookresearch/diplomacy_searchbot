@@ -15,19 +15,11 @@ def _register(f):
     return f
 
 
-def _build_agent(agent_stanza: conf.conf_pb2.Agent) -> bin.compare_agents.BaseAgent:
-    agent_name = agent_stanza.WhichOneof("agent")
-    if agent_name == "mila_agent":
-        return bin.compare_agents.MilaSLAgent()
-    else:
-        raise RuntimeError(f"Unknown agent: {agent_name}")
-
-
 @_register
 def compare_agents(cfg):
-    agent_one = _build_agent(cfg.agent_one)
-    agent_six = _build_agent(cfg.agent_six)
-    cf_agent = _build_agent(cfg.cf_agent)
+    agent_one = bin.compare_agents.build_agent_from_cfg(cfg.agent_one)
+    agent_six = bin.compare_agents.build_agent_from_cfg(cfg.agent_six)
+    cf_agent = bin.compare_agents.build_agent_from_cfg(cfg.cf_agent)
 
     def _power_to_string(power_id):
         power_enum = conf.conf_pb2.CompareAgentsTask.Power

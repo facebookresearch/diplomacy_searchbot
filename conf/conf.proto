@@ -5,8 +5,19 @@ package fairdiplomacy;
 
 message MilaSlAgent {}
 
+message RandomAgent {}
+
+message DipnetAgent {
+  // Required. Path to DipNet checkpoint.
+  optional string model_path = 1;
+}
+
 message Agent {
-  oneof agent { MilaSlAgent mila_agent = 1; }
+  oneof agent {
+    MilaSlAgent mila = 1;
+    RandomAgent random = 2;
+    DipnetAgent dipnet = 3;
+  }
 }
 
 // Launcher message defines how to launch the job. Two options are avilable -

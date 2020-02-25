@@ -34,25 +34,110 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
 # Training a Model
 
 The model code is in [fairdiplomacy/models/dipnet/](fairdiplomacy/models/dipnet/). The model architecture is defined in [dipnet.py](fairdiplomacy/models/dipnet/dipnet.py)
+We use config instead of argparse to run training and evaluation jobs. A config is a text proto message of type `MetaCfg` as defined in [conf/conf.proto](conf/conf.proto).
+Specific configs are stored in [conf/](conf/) folder with [conf/common](conf/common) containing config chunks that could be included into other configs.
 
-The script to train a model is in [fairdiplomacy/bin/train_sl.py](fairdiplomacy/bin/train_sl.py)
+To run a config simply run:
+```
+python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt
+```
 
+This will start training of a supervised agent locally using config from [conf/c02_sup_train/sl.prototxt](conf/c02_sup_train/sl.prototxt).
+To redefine any parameters in the config simply pass them via command line arguments using the following syntax: `<key>=<value>`. Example:
+```
+python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt batch_size=10
+```
+
+To run on cluster one has to set job params in `launcher.slurm`. The simplest way to do this is to use a predefined message. run.py allows to include any partial config into the main config using the following syntax: `I=<config_path>` or `I.<mount_point>=<config_path>`. In the latter case, the subconfig will be merged into the specified place of the root config. For instace, the following will include a launcher to run on cluster on a single node with 8 gpus (as defined in [conf/common/launcher/slurm_8gpus.prototxt](conf/common/launcher/slurm_8gpus.prototxt)):
+
+```
+python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus
+```
+
+One can combine includes and scalar redefines, e.g., to run the job on 2 machines:
+```
+python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus launcher.slurm.num_gpus=16
+```
+
+(Outdated. Re-write this script to use HeyHi?)
 To train a model on the cluster, see the scripts in [slurm/](slurm/), specifically [example_train_sl.sh](slurm/example_train_sl.sh).
 
 
 # Comparing Agents
 
-See [fairdiplomacy/bin/compare_agents.py](fairdiplomacy/bin/compare_agents.py)
+Comparing agents is also executed via config. See [conf/c01_ag_cmp/cmp.prototxt](conf/c01_ag_cmp/cmp.prototxt) for an example config. The following will play Dipnet model vs 6 Mila bots:
 
-e.g. to compare a trained dipnet model to the mila bot, run:
 ```
-python fairdiplomacy/bin/compare_agents.py /path/to/dipnet.pth mila ITALY --seed 0 -o output.json
+python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt
 ```
 
-This plays a game with one dipnet bot (playing Italy) vs. 6 mila bots, and writes the output to `output.json`
+Some pre-defines agents are located in [conf/common/agents](conf/common/agents). You can plug them in into main config like this:
+```
+python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt \
+  I.agent_one=agents/random I.agent_six=agents/dipnet_01 \
+  power_one=ITALY
+```
 
-To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slurm/compare_agents.sh)
+This will play random agent (playing Italy) against 6 dipnet agents, and writes the output to `output.json`
 
+(Outdated) To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slurm/compare_agents.sh)
+
+# Config FAQ
+(for argparse users)
+
+## Nothing works
+If you get error about failed import `conf.conf_pb2` or about missing fields in the config, run:
+```
+protoc conf/conf.proto --python_out ./
+```
+
+## How do I do `--help`
+Go to `conf/conf.proto` and you'll see all flags with docs.
+
+## Adding new flags
+Just add them into the proto. The field id (number after "=") doesn't matter as we don't use binary format. Just increment the last one. Don't forget to run `protoc` after this.
+
+## Running group runs
+
+
+Sometimes you wants to do several runs, e.g., several training runs with different hyper parameters. One way to do this, is to run a bash script that will call `run.py` several time:
+```(bash)
+for lr in 0.1 0.001; do
+  python run.py --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus \
+    lr=$lr
+done
+```
+
+Note, there is no `--adhoc` flag. This means that the output folder will be a function of the config name and redefines. As a result, if such experiment is already running, run.py will not start a new one. So it's safe to run the script several times. Or add new values for `lr` in the script.
+
+
+If you want to control the output path manully, you can do so:
+```(bash)
+for lr in 0.1 0.001; do
+  python run.py --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus \
+    lr=$lr \
+    --exp_id_pattern_override /checkpoint/$USER/custom_path/lr_${lr}
+done
+```
+
+Alternative to bash is python, i.e. to make a call to run.py from `heyhi` module. The benefits of this approach is that one may check the status of the running (or died) jobs or get a mapping from experiment path to hyper parameter dict without having to reverse engineer the output folder.
+Example of such approach could be found in [conf/c02_sup_train/rs_yolo_01_example.py](conf/c02_sup_train/rs_yolo_01_example.py). The script does launching and results aggregation with optional export to google-sheets.
+
+Code walk through:
+
+  * `yield_sweep` function yields pairs `(cfg_path, dict_with_redefines)` that has to be evaluated.
+  * `get_logs_data` takes an experiment handle (a thing such that `handle.exp_path` is where outputs are) and returns dictionary of key metrics
+  * `main`: launches runs from `yield_sweep` if there are not running already, goes through handles to collect slurm statuses (DEAD/RUNNING/DONE) of the jobs and current metrics (whatever `get_logs_data` extracts), prints the resulting DataFrame or import it google sheet.
+
+To have google sheet support one has to install `pygsheets`. On the first run, the package will ask to open a link to authentify the heyhi app. Otherwise, you can dump the DataFrame on disk to explore it in a notebook or something else.
+
+Scripts like this are expected to be treated as bash scripts, i.e., in read only mode (do not modify scripts after the experiment is done) and without too much includes. The scripts are expected to be submitted for documentation purposes.
+
+Caveat: the scripts are expected to be run as modules in order for imports to work, e.g., `python -m conf.c02_sup_train.rs_yolo_01_example`.
+If you have google-sheet export installed, you can add watch to export data there every 10m:
+```
+watch -n 600 "python -m conf.c02_sup_train.rs_yolo_01_example  2>&1 | tail -n3;   "
+```
 
 # Visualizing a Saved Game
 

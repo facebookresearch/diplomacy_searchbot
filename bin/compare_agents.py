@@ -10,6 +10,7 @@ from tabulate import tabulate
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.agents import (
+    RandomAgent,
     DipnetAgent,
     MilaSLAgent,
     SimpleSearchDipnetAgent,
@@ -55,6 +56,20 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
     return "one" if winning_power == agent_one_power else "six"
 
 
+def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.agents.BaseAgent":
+    agent_name = agent_stanza.WhichOneof("agent")
+    assert agent_name, f"Config must define an agent type: {agent_stanza}"
+    agent_cfg = getattr(agent_stanza, agent_name)
+    if agent_name == "mila":
+        return MilaSLAgent()
+    elif agent_name == "random":
+        return RandomAgent()
+    elif agent_name == "dipnet":
+        return DipnetAgent(model_pth=agent_cfg.model_path)
+    else:
+        raise RuntimeError(f"Unknown agent: {agent_name}")
+
+
 def parse_agent_class(s):
     return {
         "mila": MilaSLAgent,
@@ -67,37 +82,3 @@ def parse_agent_class(s):
 
 def parse_kwargs(args):
     return {k: literal_eval(v) for k, v in (a.split("=", 1) for a in args)}
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("agent_one", help="Either 'mila', 'search', or a path to a .pth file")
-    parser.add_argument("agent_six", help="Either 'mila', 'search', or a path to a .pth file")
-    parser.add_argument(
-        "power_one",
-        choices=["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"],
-    )
-    parser.add_argument("--out", "-o", help="Path to write game.json file")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed")
-    parser.add_argument("--cf_agent", help="Either 'mila', 'search', or a path to a .pth file")
-    parser.add_argument("--kwargs-one", nargs="+", default=[], help="kwargs to pass to agent one")
-    parser.add_argument("--kwargs-six", nargs="+", default=[], help="kwargs to pass to agent six")
-    args = parser.parse_args()
-
-    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
-    logging.info(f"Args: {args}")
-
-    agent_one = parse_agent_class(args.agent_one)(**parse_kwargs(args.kwargs_one))
-    agent_six = parse_agent_class(args.agent_six)(**parse_kwargs(args.kwargs_six))
-    cf_agent_cls = parse_agent_class(args.cf_agent)
-    cf_agent = cf_agent_cls() if cf_agent_cls else None
-
-    result = run_1v6_trial(
-        agent_one,
-        agent_six,
-        args.power_one,
-        save_path=args.out if args.out else None,
-        seed=args.seed,
-        cf_agent=cf_agent,
-    )
-    logging.warning("Result: {}".format(result))
