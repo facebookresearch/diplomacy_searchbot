@@ -25,6 +25,7 @@ class CFR1PAgent(BaseSearchAgent):
         n_rollouts=100,
         max_rollout_length=3,
         use_predicted_final_scores=True,
+        n_plausible_orders=8,
     ):
         super().__init__(
             model_path=model_path,
@@ -45,7 +46,10 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
-        power_plausible_orders = {p: sorted(self.get_plausible_orders(game, p)) for p in POWERS}
+        power_plausible_orders = {
+            p: sorted(self.get_plausible_orders(game, p, limit=self.n_plausible_orders))
+            for p in POWERS
+        }
         logging.info(f"power_plausible_orders: {power_plausible_orders}")
 
         if len(power_plausible_orders[power]) == 1:

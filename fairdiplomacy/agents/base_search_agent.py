@@ -116,7 +116,7 @@ class BaseSearchAgent(BaseAgent):
         )
 
     def get_plausible_orders(
-        self, game, power, n=1000, temperature=0.5, max_return_size=8, batch_size=100
+        self, game, power, n=1000, temperature=0.5, limit=8, batch_size=100
     ) -> Set[Tuple[str]]:
         generated_orders = []
         x = [encode_inputs(game, power)] * n
@@ -129,10 +129,10 @@ class BaseSearchAgent(BaseAgent):
 
         logging.debug(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
-                n, temperature, len(unique_orders), max_return_size
+                n, temperature, len(unique_orders), limit
             )
         )
-        return set([orders for orders, _ in unique_orders.most_common(max_return_size)])
+        return set([orders for orders, _ in unique_orders.most_common(limit)])
 
     def distribute_rollouts(
         self, game, set_orders_dicts: List[Dict], N
