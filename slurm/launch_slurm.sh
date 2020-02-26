@@ -51,6 +51,11 @@ git diff $ROOT > $CHECKPOINT_DIR/gitdiff.inp
 
 cd $CHECKPOINT_DIR
 
+if [ ! -f "conf" ]; then
+  # HeyHi expects to see conf/ in the root folder.
+  ln -s code/conf
+fi
+
 PYTHONPATH=$CODE_CHECKPOINT srun $SRUN_DEFAULTS $SRUN_ARGS -- python $CODE_CHECKPOINT/$SCRIPT $@ &
 
 echo "Launched $NAME"

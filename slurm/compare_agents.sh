@@ -4,6 +4,7 @@
 # NUM_TRIALS=2 slurm/compare_agents.sh mila mila compare_test1
 
 set -e
+set -u
 
 if [ "$#" -lt 3 ]; then
   echo "Usage: $0 agent_one agent_six name [script_args]"
@@ -14,7 +15,7 @@ LAUNCH="$(dirname $0)/launch_slurm.sh"
 
 # it's more efficient to do this once in advance
 export CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
-export SCRIPT="bin/compare_agents.py"
+export SCRIPT="run.py"
 
 export GPU=${GPU:-1}
 export CPU=${CPU:-10}
@@ -31,7 +32,15 @@ mkdir -p $CHECKPOINT_BASE
 
 for POWER in AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY; do
     for SEED in $(seq $NUM_TRIALS); do
-		POWERSEED="$(echo $POWER | head -c3).${SEED}"
-        NAME="${NAME}_${POWERSEED}" $LAUNCH $AGENT_ONE $AGENT_SIX $POWER --seed $SEED --out ${CHECKPOINT_BASE}/game_${POWERSEED}.json $@
+        POWERSEED="$(echo $POWER | head -c3).${SEED}"
+        FULL_NAME="${NAME}_${POWERSEED}"
+        NAME="${FULL_NAME}" $LAUNCH \
+          --cfg=conf/c01_ag_cmp/cmp.prototxt \
+          --exp_id_pattern_override="$CHECKPOINT_BASE/${FULL_NAME}" \
+          I.agent_one=agents/$AGENT_ONE \
+          I.agent_six=agents/$AGENT_SIX \
+          power_one=$POWER \
+          seed=$SEED \
+          out=${CHECKPOINT_BASE}/game_${POWERSEED}.json $@
     done
 done

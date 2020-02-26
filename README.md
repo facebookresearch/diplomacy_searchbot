@@ -80,7 +80,7 @@ python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt \
 
 This will play random agent (playing Italy) against 6 dipnet agents, and writes the output to `output.json`
 
-(Outdated) To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slurm/compare_agents.sh)
+To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slurm/compare_agents.sh)
 
 # Config FAQ
 (for argparse users)
