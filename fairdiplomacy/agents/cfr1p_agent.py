@@ -22,8 +22,9 @@ class CFR1PAgent(BaseSearchAgent):
         n_server_procs=1,
         n_gpu=1,
         max_batch_size=1000,
-        n_rollouts=50,
-        max_rollout_length=20,
+        n_rollouts=100,
+        max_rollout_length=3,
+        use_predicted_final_scores=True,
     ):
         super().__init__(
             model_path=model_path,
@@ -31,6 +32,7 @@ class CFR1PAgent(BaseSearchAgent):
             n_server_procs=n_server_procs,
             n_gpu=n_gpu,
             max_batch_size=max_batch_size,
+            use_predicted_final_scores=use_predicted_final_scores,
         )
 
         self.n_rollouts = n_rollouts
