@@ -143,10 +143,12 @@ PROJECT_NAME = "fairdiplomacy"
 
 def get_exp_dir(project_name) -> pathlib.Path:
     return pathlib.Path(
-        os.environ.get(
-            "HH_EXP_DIR", f"/checkpoint/{os.environ['USER']}/{project_name}/heyhi"
-        )
+        os.environ.get("HH_EXP_DIR", f"/checkpoint/{os.environ['USER']}/{project_name}/heyhi")
     )
+
+
+def get_default_exp_dir():
+    return get_exp_dir(PROJECT_NAME)
 
 
 def parse_args_and_maybe_launch(main: Callable) -> None:

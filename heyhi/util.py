@@ -38,6 +38,11 @@ LOCAL_JOB_ID = "local"
 _SLURM_CACHE = {}
 
 
+def reset_slurm_cache():
+    global _SLURM_CACHE
+    _SLURM_CACHE.clear()
+
+
 def is_aws():
     return "S3_SHARED" in os.environ
 
@@ -388,15 +393,20 @@ def run_with_config(
     old_cwd = os.getcwd()
     os.chdir(exp_handle.exp_path)
 
-    if not cfg.launcher.WhichOneof("launcher"):
-        cfg.launcher.local.use_local = True
+    if hasattr(cfg, "launcher"):
+        if not cfg.launcher.WhichOneof("launcher"):
+            cfg.launcher.local.use_local = True
+        launcher_type = cfg.launcher.WhichOneof("launcher")
+        launcher_cfg = getattr(cfg.launcher, launcher_type)
+    else:
+        launcher_type = "local"
+        launcher_cfg = None
+    assert launcher_type in ("local", "slurm"), launcher_type
+
     conf.save_config(meta_cfg, pathlib.Path("config_meta.prototxt"))
     conf.save_config(cfg, pathlib.Path("config.prototxt"))
 
     callable = functools.partial(task_function, cfg=cfg, task=task)
-    launcher_type = cfg.launcher.WhichOneof("launcher")
-    launcher_cfg = getattr(cfg.launcher, launcher_type)
-    assert launcher_type in ("local", "slurm"), launcher_type
     if launcher_type == "slurm" and not is_on_slurm():
         logging.info("Config:\n%s", meta_cfg)
         executor = _build_slurm_executor(exp_handle, launcher_cfg)
