@@ -59,14 +59,15 @@ message Launcher {
 
 // Root config to compare agents.
 message CompareAgentsTask {
+  // The order here is expected to match fairdiplomacy.models.consts.POWERS
   enum Power {
     AUSTRIA = 0;
-    ITALY = 1;
-    GERMANY = 2;
-    RUSSIA = 3;
-    TURKEY = 4;
-    FRANCE = 5;
-    ENGLAND = 6;
+    ENGLAND = 1;
+    FRANCE = 2;
+    GERMANY = 3;
+    ITALY = 4;
+    RUSSIA = 5;
+    TURKEY = 6;
   }
 
   optional Agent agent_one = 2;
