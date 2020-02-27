@@ -4,6 +4,9 @@ import json
 import re
 import glob
 import os
+from collections import Counter
+
+import tabulate
 
 from fairdiplomacy.models.consts import POWERS
 
@@ -26,6 +29,7 @@ def get_result(game_json_path):
     Returns:
     - winner: 'one' or 'six' or 'draw'
     - power_one: 'AUSTRIA' or 'FRANCE' or ...
+    - power_won: 'AUSTRIA' or 'FRANCE' or ...
     """
     power_one = get_power_one(game_json_path)
 
@@ -33,18 +37,20 @@ def get_result(game_json_path):
         j = json.load(f)
 
     counts = {k: len(v) for k, v in j["phases"][-1]["state"]["centers"].items()}
+    powers_won = {p for p, v in counts.items() if v == max(counts.values())}
+    power_won = power_one if power_one in powers_won else powers_won.pop()
 
     if counts[power_one] == 0:
-        return "six", power_one
+        return "six", power_one, power_won
 
     winner_count, winner = max([(c, p) for p, c in counts.items()])
     if winner_count < 18:
-        return "draw", power_one
+        return "draw", power_one, power_won
 
     if winner == power_one:
-        return "one", power_one
+        return "one", power_one, power_won
     else:
-        return "six", power_one
+        return "six", power_one, power_won
 
 
 if __name__ == "__main__":
@@ -61,24 +67,27 @@ if __name__ == "__main__":
 
     results = [get_result(path) for path in paths]
 
-    # print each result
-    from pprint import pprint
-
-    pprint(results)
+    table = (
+        [["player_one"] + [p[:3] for p in POWERS] + ["games_played"]]
+        + [
+            [p[:3]]
+            + [sum(1 for _, p_, w_ in results if p_ == p and w_ == w) for w in POWERS]
+            + [sum(1 for _, p_, _ in results if p_ == p)]
+            for p in POWERS
+        ]
+        + [""]
+        + [
+            ["total won"]
+            + [sum(1 for _, _, w_ in results if w_ == w) for w in POWERS]
+            + [len(results)]
+        ]
+    )
+    print("====  POWER H2H  ====")
+    print(tabulate.tabulate(table, headers="firstrow"))
     print()
 
-    # print args
-    try:
-        for x in ["A", "B"]:
-            with open(os.path.join(results_dir, f"AGENT_{x}.arg")) as f:
-                print("ARG", x, f.read().strip())
-        print()
-    except FileNotFoundError:
-        pass
-
-    # print win percentages
-    from collections import Counter
-
-    counts = Counter([w for w, _ in results])
+    # print win rates
+    print("\n====  WIN RATES  ====")
+    counts = Counter([w for w, _, _ in results])
     for k, v in sorted(counts.items()):
         print(f"{k}: {v}, {v/len(results)}")
