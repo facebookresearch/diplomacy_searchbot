@@ -122,31 +122,31 @@ message TrainTask {
 
   // Lercentage of games to use as val set.
   optional float val_set_pct = 9;
-  
+
   // Prob[teacher forcing] during training.
   optional float teacher_force = 10;
-  
+
   // LSTM dropout pct.
   optional float lstm_dropout = 11;
-  
+
   // Encoder dropout pct.
   optional float encoder_dropout = 12;
-  
+
   // If set, restrict data to S1901M.
   optional bool debug_only_opening_phase = 13;
-  
+
   // If set, use a single process.
   optional bool debug_no_mp = 14;
-  
+
   // Skip validation / save.
   optional bool skip_validation = 15;
-  
+
   // Learn adjacency matrix.
   optional bool learnable_A = 16;
-  
+
   // If dataset orders are missing for an orderable loc, fill in H or D.
   optional bool fill_missing_orders = 17;
-  
+
   // Learn attention alignment matrix.
   optional bool learnable_alignments = 18;
 
