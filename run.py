@@ -1,8 +1,16 @@
 import logging
 import os
+import subprocess
 
 import bin.compare_agents
 import bin.train_sl
+
+if "SLURM_PROCID" not in os.environ:
+    subprocess.check_call(
+        "protoc conf/conf.proto --python_out ./".split(),
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+    )
+
 import heyhi
 import conf.conf_pb2
 
