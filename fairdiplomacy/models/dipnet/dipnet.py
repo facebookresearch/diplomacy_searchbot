@@ -101,6 +101,9 @@ class DipNet(nn.Module):
                     self.orders_vocab_size,
                     device=valid_order_idxs.device,
                 ),
+                torch.zeros(
+                    valid_order_idxs.shape[0], len(POWERS), device=valid_order_idxs.device
+                ),
             )
 
         enc = self.encoder(x_bo, x_po, x_power_1h, x_season_1h)  # [B, 81, 240]
@@ -464,4 +467,3 @@ class ValueDecoder(nn.Module):
         """Returns [B, 7] FloatTensor summing to 34 across dim=1"""
         y = self.lin(enc.view(enc.shape[0], -1))  # [B, 7]
         return y / torch.sum(y, dim=1, keepdim=True) * N_SCS
-
