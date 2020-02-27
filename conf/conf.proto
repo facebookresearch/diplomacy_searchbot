@@ -12,11 +12,24 @@ message DipnetAgent {
   optional string model_path = 1;
 }
 
+message CFR1PAgent {
+  optional string model_path = 1;
+  optional uint32 n_rollout_procs = 2;
+  optional uint32 n_server_procs = 3;
+  optional uint32 n_gpu = 4;
+  optional uint32 max_batch_size = 5;
+  optional uint32 n_rollouts = 6;
+  optional uint32 max_rollout_length = 7;
+  optional bool use_predicted_final_scores = 8;
+  optional uint32 n_plausible_orders = 9;
+}
+
 message Agent {
   oneof agent {
     MilaSlAgent mila = 1;
     RandomAgent random = 2;
     DipnetAgent dipnet = 3;
+    CFR1PAgent cfr1p = 4;
   }
 }
 

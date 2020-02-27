@@ -56,20 +56,6 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
     return "one" if winning_power == agent_one_power else "six"
 
 
-def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.agents.BaseAgent":
-    agent_name = agent_stanza.WhichOneof("agent")
-    assert agent_name, f"Config must define an agent type: {agent_stanza}"
-    agent_cfg = getattr(agent_stanza, agent_name)
-    if agent_name == "mila":
-        return MilaSLAgent()
-    elif agent_name == "random":
-        return RandomAgent()
-    elif agent_name == "dipnet":
-        return DipnetAgent(model_pth=agent_cfg.model_path)
-    else:
-        raise RuntimeError(f"Unknown agent: {agent_name}")
-
-
 def parse_agent_class(s):
     return {
         "mila": MilaSLAgent,
@@ -80,5 +66,8 @@ def parse_agent_class(s):
     }[s]
 
 
-def parse_kwargs(args):
-    return {k: literal_eval(v) for k, v in (a.split("=", 1) for a in args)}
+def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.agents.BaseAgent":
+    agent_name = agent_stanza.WhichOneof("agent")
+    assert agent_name, f"Config must define an agent type: {agent_stanza}"
+    agent_cfg = getattr(agent_stanza, agent_name)
+    return parse_agent_class(agent_name)(**{k.name: v for k, v in agent_cfg.ListFields()})
