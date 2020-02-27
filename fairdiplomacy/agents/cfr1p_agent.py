@@ -38,6 +38,7 @@ class CFR1PAgent(BaseSearchAgent):
 
         self.n_rollouts = n_rollouts
         self.max_rollout_length = max_rollout_length
+        self.n_plausible_orders=n_plausible_orders
 
     def get_orders(self, game, power) -> List[str]:
 
