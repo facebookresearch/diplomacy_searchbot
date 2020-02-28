@@ -1,8 +1,9 @@
 import logging
-import random
-from concurrent.futures import ThreadPoolExecutor
 import numpy as np
+import random
+import time
 import torch
+from concurrent.futures import ThreadPoolExecutor
 
 import diplomacy
 
@@ -45,6 +46,7 @@ class Env:
             self.agents = dict(zip(self.game.powers.keys(), agents))
 
         self.cf_agent = cf_agent
+
     def process_turn(self, timeout=10):
         logging.info("process_turn {}".format(self.game.phase))
 
@@ -52,8 +54,9 @@ class Env:
             if not self.game.get_orderable_locations(power):
                 logging.info(f"Skipping orders for {power}")
                 continue
+            t = time.time()
             orders = agent.get_orders(self.game, power)
-            logging.info("Set orders {} {}".format(power, orders))
+            logging.info(f"Set orders {power} {orders} in {time.time() - t}s")
             if self.cf_agent:
                 cf_orders = self.cf_agent.get_orders(self.game, power)
                 logging.info("CF  orders {} {}".format(power, cf_orders))
