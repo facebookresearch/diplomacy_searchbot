@@ -118,6 +118,16 @@ class BaseSearchAgent(BaseAgent):
     def get_plausible_orders(
         self, game, power, n=1000, temperature=0.5, limit=8, batch_size=100
     ) -> Set[Tuple[str]]:
+        # check for trivial return case
+        orderable_locs = game.get_orderable_locations(power)
+        if len(orderable_locs) == 0:
+            return set()
+        elif len(orderable_locs) == 1:
+            possible_orders = game.get_all_possible_orders()[orderable_locs[0]]
+            if len(possible_orders) <= limit:
+                return set((x,) for x in possible_orders)
+
+        # non-trivial return: query model
         generated_orders = []
         x = [encode_inputs(game, power)] * n
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
