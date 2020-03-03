@@ -53,20 +53,7 @@ def get_result(game_json_path):
         return "six", power_one, power_won
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("results_dir", help="Directory containing game.json files")
-    args = parser.parse_args()
-
-    results_dir = ""
-    for d in [args.results_dir, "/fairdiplomacy", "/compare_agents"]:
-        results_dir += d
-        paths = glob.glob(os.path.join(results_dir, "game*.json"))
-        if len(paths) > 0:
-            break
-
-    results = [get_result(path) for path in paths]
-
+def print_power_h2h(results, args):
     table = (
         [["player_one"] + [p[:3] for p in POWERS] + ["games_played"]]
         + [
@@ -82,12 +69,49 @@ if __name__ == "__main__":
             + [len(results)]
         ]
     )
-    print("====  POWER H2H  ====")
-    print(tabulate.tabulate(table, headers="firstrow"))
-    print()
+    if args.csv:
+        print("POWER H2H")
+        print("\n".join([",".join(map(str, cols)) for cols in table]))
+    else:
+        print("====  POWER H2H  ====")
+        print(tabulate.tabulate(table, headers="firstrow"))
 
-    # print win rates
-    print("\n====  WIN RATES  ====")
+
+def print_win_rates(results, args):
+    if args.csv:
+        print("WIN RATES")
+    else:
+        print("====  WIN RATES  ====")
+
     counts = Counter([w for w, _, _ in results])
     for k, v in sorted(counts.items()):
-        print(f"{k}: {v}, {v/len(results)}")
+        if args.csv:
+            print(k, v, v / len(results), sep=",")
+        else:
+            print(f"{k}: {v}, {v/len(results)}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("results_dir", help="Directory containing game.json files")
+    parser.add_argument("--csv", action="store_true")
+    args = parser.parse_args()
+
+    results_dir = ""
+    for d in [args.results_dir, "/fairdiplomacy", "/compare_agents"]:
+        results_dir += d
+        paths = glob.glob(os.path.join(results_dir, "game*.json"))
+        if len(paths) > 0:
+            break
+
+    results = [get_result(path) for path in paths]
+
+    print_power_h2h(results, args)
+    print('\n\n')
+    print_win_rates(results, args)
+    print('\n\n')
+
+    if args.csv:
+        with open(glob.glob(f"{results_dir}/*/config.prototxt")[0]) as f:
+            print("CONFIG")
+            print(f.read())
