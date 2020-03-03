@@ -5,7 +5,9 @@ import os
 from ast import literal_eval
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
+
 from tabulate import tabulate
+from google.protobuf.json_format import MessageToDict
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
@@ -70,4 +72,6 @@ def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.
     agent_name = agent_stanza.WhichOneof("agent")
     assert agent_name, f"Config must define an agent type: {agent_stanza}"
     agent_cfg = getattr(agent_stanza, agent_name)
-    return parse_agent_class(agent_name)(**{k.name: v for k, v in agent_cfg.ListFields()})
+    return parse_agent_class(agent_name)(
+        **MessageToDict(agent_cfg, preserving_proto_field_name=True)
+    )
