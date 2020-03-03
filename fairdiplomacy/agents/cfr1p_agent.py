@@ -47,6 +47,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
+        # TODO: parallelize these calls
         power_plausible_orders = {
             p: sorted(self.get_plausible_orders(game, p, limit=self.n_plausible_orders))
             for p in POWERS
@@ -73,7 +74,7 @@ class CFR1PAgent(BaseSearchAgent):
                 pwr: (
                     (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
                     if pwr in idxs
-                    else tuple()
+                    else ((), 1.0)
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
@@ -88,6 +89,9 @@ class CFR1PAgent(BaseSearchAgent):
             all_rollout_results = self.distribute_rollouts(game, set_orders_dicts, N=1)
 
             for pwr, actions in power_plausible_orders.items():
+                if len(actions) == 0:
+                    continue
+
                 # pop this power's results
                 results, all_rollout_results = (
                     all_rollout_results[: len(actions)],
