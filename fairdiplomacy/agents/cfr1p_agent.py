@@ -38,7 +38,7 @@ class CFR1PAgent(BaseSearchAgent):
 
         self.n_rollouts = n_rollouts
         self.max_rollout_length = max_rollout_length
-        self.n_plausible_orders=n_plausible_orders
+        self.n_plausible_orders = n_plausible_orders
 
     def get_orders(self, game, power) -> List[str]:
 
@@ -67,9 +67,14 @@ class CFR1PAgent(BaseSearchAgent):
             idxs = {
                 pwr: np.random.choice(range(len(action_ps)), p=action_ps)
                 for pwr, action_ps in power_action_ps.items()
+                if len(action_ps) > 0
             }
             power_sampled_orders: Dict[Power, Tuple[Action, float]] = {
-                pwr: (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
+                pwr: (
+                    (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
+                    if pwr in idxs
+                    else tuple()
+                )
                 for pwr, action_ps in power_action_ps.items()
             }
             logging.info(f"power_sampled_orders: {power_sampled_orders}")
