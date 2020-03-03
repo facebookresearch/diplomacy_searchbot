@@ -3,7 +3,10 @@
 syntax = "proto2";
 package fairdiplomacy;
 
-message MilaSlAgent {}
+message MilaSlAgent {
+  // Optional. Softmax temperature
+  optional float temperature = 1;
+}
 
 message RandomAgent {}
 
