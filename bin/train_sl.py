@@ -226,7 +226,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
 
     # create optimizer, from checkpoint if specified
     policy_loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
-    value_loss_fn = torch.nn.MSELoss(reduction="none")
+    value_loss_fn = torch.nn.SmoothL1Loss(reduction="none")
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=1, gamma=args.lr_decay)
     if checkpoint:
