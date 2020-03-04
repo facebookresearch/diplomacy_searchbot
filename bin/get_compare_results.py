@@ -84,7 +84,8 @@ def print_win_rates(results, args):
         print("====  WIN RATES  ====")
 
     counts = Counter([w for w, _, _ in results])
-    for k, v in sorted(counts.items()):
+    for k in ["draw", "one", "six"]:
+        v = counts[k]
         if args.csv:
             print(k, v, v / len(results), sep=",")
         else:
@@ -107,9 +108,9 @@ if __name__ == "__main__":
     results = [get_result(path) for path in paths]
 
     print_power_h2h(results, args)
-    print('\n\n')
+    print("\n\n")
     print_win_rates(results, args)
-    print('\n\n')
+    print("\n\n")
 
     if args.csv:
         with open(glob.glob(f"{results_dir}/*/config.prototxt")[0]) as f:
