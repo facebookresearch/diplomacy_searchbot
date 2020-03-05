@@ -73,7 +73,7 @@ class BaseSearchAgent(BaseAgent):
 
         logging.info("Waiting for servers")
         ports = [q.get() for _, q in self.servers]
-        self.hostports = [f"localhost:{p}" for p in ports]
+        self.hostports = [f"127.0.0.1:{p}" for p in ports]
         logging.info(f"Servers started on ports {ports}")
 
         self.client = postman.Client(self.hostports[0])
@@ -103,8 +103,9 @@ class BaseSearchAgent(BaseAgent):
         try:
             order_idxs, final_scores = client.evaluate(req)
         except Exception:
-            logging.error("EXCEPTION {}".format(sys.exc_info()[0]))
-            logging.error([(x.shape, x.dtype) for x in req])
+            logging.error(
+                "Caught server error with inputs {}".format([(x.shape, x.dtype) for x in req])
+            )
             raise
 
         return (
@@ -317,7 +318,7 @@ def run_server(port, batch_size, port_q=None, **kwargs):
         logging.info(f"Starting server port={port} batch={batch_size}")
         eval_queue = postman.ComputationQueue(batch_size)
         for p in range(port, max_port):
-            server = postman.Server(f"localhost:{p}")
+            server = postman.Server(f"127.0.0.1:{p}")
             server.bind_queue_batched("evaluate", eval_queue)
             try:
                 server.run()
