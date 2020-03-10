@@ -108,6 +108,9 @@ class BaseSearchAgent(BaseAgent):
             )
             raise
 
+        if hasattr(final_scores, "numpy"):
+            final_scores = final_scores.numpy()
+
         return (
             [
                 tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :])
