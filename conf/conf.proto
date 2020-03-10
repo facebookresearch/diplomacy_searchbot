@@ -13,6 +13,9 @@ message RandomAgent {}
 message DipnetAgent {
   // Required. Path to DipNet checkpoint.
   optional string model_path = 1;
+
+  // Optional. Softmax temperature
+  optional float temperature = 2;
 }
 
 message CFR1PAgent {

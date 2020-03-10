@@ -1,4 +1,4 @@
-# model trained from c02_sup_train/sp.prototxt on Feb 25.
 dipnet {
-    model_path: "/checkpoint/yolo/fairdiplomacy/heyhi/p/c02_sup_train_rs_yolo_01_example/sweep_num@150@I.lau@slurm_8gpus_aa4a3c00/checkpoint.pth"
+    model_path: "/checkpoint/jsgray/diplomacy/dipnet.pth"
+    temperature: 0.1
 }
