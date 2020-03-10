@@ -14,19 +14,21 @@ ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class DipnetAgent(BaseAgent):
-    def __init__(self, model_path="/checkpoint/jsgray/diplomacy/dipnet.pth"):
+    def __init__(self, model_path="/checkpoint/jsgray/diplomacy/dipnet.pth", temperature=0.1):
         self.model = load_dipnet_model(model_path, map_location="cuda", eval=True)
+        self.temperature = temperature
 
-    def get_orders(self, game, power, temperature=0.1, debug_probs=False, batch_size=1):
+    def get_orders(self, game, power, *, temperature=None, debug_probs=False, batch_size=1):
         if len(game.get_orderable_locations(power)) == 0:
             return []
+        temperature = temperature if temperature is not None else self.temperature
         inputs = encode_inputs(game, power)
         inputs = [x.to("cuda") for x in inputs]
         if batch_size > 1:
             # fake a big batch
             inputs = [x.expand(batch_size, *x.shape[1:]).contiguous() for x in inputs]
         with torch.no_grad():
-            order_idxs, order_scores = self.model(*inputs, temperature=temperature)
+            order_idxs, order_scores, final_scores = self.model(*inputs, temperature=temperature)
         if debug_probs:
             self.debug_probs(
                 order_idxs,
@@ -117,3 +119,7 @@ def get_valid_orders(game, power, all_possible_orders=None):
     return get_valid_orders_impl(
         power, all_possible_orders, game.get_orderable_locations(), game.get_state()
     )
+
+
+if __name__ == "__main__":
+    print(DipnetAgent().get_orders(diplomacy.Game(), "ITALY"))
