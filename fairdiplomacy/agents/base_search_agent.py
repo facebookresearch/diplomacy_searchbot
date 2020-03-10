@@ -56,7 +56,7 @@ class BaseSearchAgent(BaseAgent):
             server = ExceptionHandlingProcess(
                 target=run_server,
                 kwargs=dict(
-                    port=12345 + 10 * i,
+                    port=0,
                     batch_size=max_batch_size,
                     load_model_fn=partial(
                         load_dipnet_model, model_path, map_location="cuda", eval=True
@@ -328,9 +328,12 @@ def run_server(port, batch_size, port_q=None, **kwargs):
         else:
             raise RuntimeError(f"Couldn't start server on ports {port}:{max_port}")
 
-        logging.info(f"Started server on port={p} pid={os.getpid()}")
+        bound_port = server.port()
+        assert bound_port != 0
+
+        logging.info(f"Started server on port={bound_port} pid={os.getpid()}")
         if port_q is not None:
-            port_q.put(p)  # send port to parent proc
+            port_q.put(bound_port)  # send port to parent proc
 
         server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
     finally:
