@@ -42,5 +42,8 @@ for POWER in AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY; do
           power_one=$POWER \
           seed=$SEED \
           out=${CHECKPOINT_BASE}/game_${POWERSEED}.json $@
+       
+       #TODO: use job arrays
+       sleep 0.25
     done
 done
