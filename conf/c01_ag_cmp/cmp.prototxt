@@ -1,4 +1,4 @@
-includes {path: "agents/dipnet_01"; mount: "agent_one";}
+includes {path: "agents/dipnet"; mount: "agent_one";}
 includes {path: "agents/mila"; mount: "agent_six";}
 includes {path: "agents/mila"; mount: "cf_agent";}
 compare_agents {

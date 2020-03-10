@@ -62,7 +62,7 @@ def parse_agent_class(s):
     return {
         "mila": MilaSLAgent,
         "search": SimpleSearchDipnetAgent,
-        "diptorch": DipnetAgent,
+        "dipnet": DipnetAgent,
         "cfr1p": CFR1PAgent,
         None: None,
     }[s]

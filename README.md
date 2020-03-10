@@ -74,7 +74,7 @@ python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt
 Some pre-defines agents are located in [conf/common/agents](conf/common/agents). You can plug them in into main config like this:
 ```
 python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt \
-  I.agent_one=agents/random I.agent_six=agents/dipnet_01 \
+  I.agent_one=agents/random I.agent_six=agents/dipnet \
   power_one=ITALY
 ```
 
