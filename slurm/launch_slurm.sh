@@ -10,7 +10,7 @@ set -e
 
 ROOT="$(dirname $0)/.."
 
-SCRIPT=${SCRIPT:-bin/train_sl.py}
+SCRIPT=${SCRIPT:-bin/compare_agents.py}
 PARTITION=${PARTITION:-learnfair}
 CHECKPOINT_BASE=${CHECKPOINT_BASE:-/checkpoint/$USER/fairdiplomacy}
 

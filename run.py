@@ -3,7 +3,7 @@ import os
 import subprocess
 
 import bin.compare_agents
-import bin.train_sl
+from fairdiplomacy.models.dipnet import train_sl
 
 if "SLURM_PROCID" not in os.environ:
     subprocess.check_call(
@@ -48,7 +48,7 @@ def compare_agents(cfg):
 
 @_register
 def train(cfg):
-    bin.train_sl.run_with_cfg(cfg)
+    train_sl.run_with_cfg(cfg)
 
 
 @heyhi.save_result_in_cwd
