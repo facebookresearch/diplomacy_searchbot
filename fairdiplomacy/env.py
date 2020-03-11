@@ -56,10 +56,16 @@ class Env:
                 continue
             t = time.time()
             orders = agent.get_orders(self.game, power)
-            logging.info(f"Set orders {self.game.phase} {power} {orders} in {time.time() - t}s")
+            logging.info(
+                "Set orders {} {} {} in {}s".format(
+                    self.game._phase_abbr(), power, orders, time.time() - t
+                )
+            )
             if self.cf_agent:
                 cf_orders = self.cf_agent.get_orders(self.game, power)
-                logging.info("CF  orders {} {} {}".format(self.game.phase, power, cf_orders))
+                logging.info(
+                    "CF  orders {} {} {}".format(self.game._phase_abbr(), power, cf_orders)
+                )
             self.game.set_orders(power, orders)
 
         self.game.process()
