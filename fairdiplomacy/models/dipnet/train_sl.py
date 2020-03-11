@@ -282,11 +282,6 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            logger.info(
-                "HI MOM net.device={} val_set.device={}".format(
-                    next(net.parameters()).device, val_set[0][0].device
-                )
-            )
             val_loss, val_accuracy, split_pcts = validate(
                 net,
                 val_set,
