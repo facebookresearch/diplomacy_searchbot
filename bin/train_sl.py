@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import argparse
 import json
 import atexit
 import glob
@@ -374,59 +373,3 @@ def run_with_cfg(args):
         torch.multiprocessing.spawn(
             main_subproc, nprocs=n_gpus, args=(n_gpus, args, train_dataset, val_dataset)
         )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data-dir",
-        default="/checkpoint/jsgray/diplomacy/mila_dataset/data",
-        help="Path to dir containing game.json files",
-    )
-    parser.add_argument("--data-cache", help="Path to dir containing dataset cache")
-    parser.add_argument(
-        "--num-dataloader-workers",
-        type=int,
-        default=20,
-        help="Dataloader procs (1 means load in the main process)",
-    )
-    parser.add_argument("--batch-size", type=int, default=1000, help="Batch size per GPU")
-    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument(
-        "--lr-decay", type=float, default=0.93, help="Learning rate decay per epoch"
-    )
-    parser.add_argument("--clip-grad-norm", type=float, default=5.0, help="Max gradient norm")
-    parser.add_argument(
-        "--checkpoint", default="./checkpoint.pth", help="Path to load/save the model"
-    )
-    parser.add_argument(
-        "--val-set-pct", type=float, default=0.01, help="Percentage of games to use as val set"
-    )
-    parser.add_argument(
-        "--teacher-force", type=float, default=1.0, help="Prob[teacher forcing] during training"
-    )
-    parser.add_argument("--lstm-dropout", type=float, default=0.1, help="LSTM dropout pct")
-    parser.add_argument("--encoder-dropout", type=float, default=0.2, help="Encoder dropout pct")
-    parser.add_argument(
-        "--debug-only-opening-phase", action="store_true", help="If set, restrict data to S1901M"
-    )
-    parser.add_argument("--debug-no-mp", action="store_true", help="If set, use a single process")
-    parser.add_argument("--skip-validation", action="store_true", help="Skip validation / save")
-    parser.add_argument("--learnable-A", action="store_true", help="Learn adjacency matrix")
-    parser.add_argument(
-        "--fill-missing-orders",
-        action="store_true",
-        help="If dataset orders are missing for an orderable loc, fill in H or D",
-    )
-    parser.add_argument(
-        "--learnable-alignments", action="store_true", help="Learn attention alignment matrix"
-    )
-    parser.add_argument(
-        "--avg-embedding",
-        action="store_true",
-        help="Average across location embedding instead of using attention",
-    )
-    parser.add_argument("--num-encoder-blocks", type=int, default=16)
-    parser.add_argument("--num-epochs", type=int, default=100)
-    args = parser.parse_args()
-    run_with_cfg(args)
