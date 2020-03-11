@@ -27,6 +27,8 @@ class BRSearchAgent(BaseSearchAgent):
         max_batch_size=1000,
         rollouts_per_plausible_order=10,
         max_rollout_length=20,
+        use_predicted_final_scores=True,
+        n_plausible_orders=8,
     ):
         super().__init__(
             model_path=model_path,
@@ -34,13 +36,15 @@ class BRSearchAgent(BaseSearchAgent):
             n_server_procs=n_server_procs,
             n_gpu=n_gpu,
             max_batch_size=max_batch_size,
+            use_predicted_final_scores=use_predicted_final_scores,
         )
 
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.max_rollout_length = max_rollout_length
+        self.n_plausible_orders = n_plausible_orders
 
     def get_orders(self, game, power) -> List[str]:
-        plausible_orders = self.get_plausible_orders(game, power)
+        plausible_orders = self.get_plausible_orders(game, power, limit=self.n_plausible_orders)
         logging.info("Plausible orders: {}".format(plausible_orders))
 
         if len(plausible_orders) == 1:

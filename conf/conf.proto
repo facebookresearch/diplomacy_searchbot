@@ -48,12 +48,43 @@ message CFR1PAgent {
   optional uint32 n_plausible_orders = 9;
 }
 
+message BRSearchAgent {
+  // Path to DipNet checkpoint.
+  optional string model_path = 1;
+
+  // Size of rollout process pool
+  optional uint32 n_rollout_procs = 2;
+
+  // Number of postman server processes to launch
+  optional uint32 n_server_procs = 3;
+
+  // Distribute server processes over multiple GPUs
+  optional uint32 n_gpu = 4;
+
+  // Model server maximum batch size
+  optional uint32 max_batch_size = 5;
+  
+  // Number of rollouts per plausible order
+  optional uint32 rollouts_per_plausible_order = 6;
+
+  // Maximum rollout length heuristically evaluating the game
+  optional uint32 max_rollout_length = 7;
+
+  // If true, use model predicted final scores in heuristic evalauation
+  // If false, use current SC counts after max_rollout_length steps
+  optional bool use_predicted_final_scores = 8;
+
+  // Number of order-sets (actions) to consider at each step in search code
+  optional uint32 n_plausible_orders = 9;
+}
+
 message Agent {
   oneof agent {
     MilaSlAgent mila = 1;
     RandomAgent random = 2;
     DipnetAgent dipnet = 3;
     CFR1PAgent cfr1p = 4;
+    BRSearchAgent br_search = 5;
   }
 }
 
