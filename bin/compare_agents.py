@@ -11,13 +11,7 @@ from google.protobuf.json_format import MessageToDict
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.agents import (
-    RandomAgent,
-    DipnetAgent,
-    MilaSLAgent,
-    SimpleSearchDipnetAgent,
-    CFR1PAgent,
-)
+from fairdiplomacy.agents import RandomAgent, DipnetAgent, MilaSLAgent, BRSearchAgent, CFR1PAgent
 
 
 def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None):
@@ -61,7 +55,7 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
 def parse_agent_class(s):
     return {
         "mila": MilaSLAgent,
-        "search": SimpleSearchDipnetAgent,
+        "br_search": BRSearchAgent,
         "dipnet": DipnetAgent,
         "cfr1p": CFR1PAgent,
         None: None,

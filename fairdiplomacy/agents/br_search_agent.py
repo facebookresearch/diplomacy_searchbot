@@ -5,7 +5,7 @@ from typing import List, Tuple, Dict
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 
 
-class SimpleSearchDipnetAgent(BaseSearchAgent):
+class BRSearchAgent(BaseSearchAgent):
     """One-ply search with dipnet-policy rollouts
 
     ## Policy
@@ -15,12 +15,6 @@ class SimpleSearchDipnetAgent(BaseSearchAgent):
     3. Score each order set by the average supply center count at the end
     of the rollout.
     4. Choose the order set with the highest score.
-
-    ## Implementation Details
-    - __init__ forks some number of server processes running a ModelServer instance
-      listening on different ports, and a ProcesssPoolExecutor for rollouts
-    - get_orders first gets plausible orders to search through, then launches
-      rollouts for each plausible order via the proc pool
     """
 
     def __init__(

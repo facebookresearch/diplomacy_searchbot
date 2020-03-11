@@ -3,7 +3,7 @@ import logging
 import os
 import time
 
-from fairdiplomacy.agents.simple_search_dipnet_agent import SimpleSearchDipnetAgent
+from fairdiplomacy.agents import BRSearchAgent
 
 if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     game = diplomacy.Game()
 
-    agent = SimpleSearchDipnetAgent()
+    agent = BRSearchAgent()
     logging.info("Constructed agent")
     logging.info("Warmup: {}".format(agent.get_orders(game, "ITALY")))
 
