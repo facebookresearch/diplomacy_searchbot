@@ -37,7 +37,6 @@ class DipNet(nn.Module):
             board_state_size=board_state_size,
             prev_orders_size=prev_orders_size,
             inter_emb_size=inter_emb_size,
-            power_emb_size=power_emb_size,
             season_emb_size=season_emb_size,
             num_blocks=num_blocks,
             A=A,
@@ -54,6 +53,7 @@ class DipNet(nn.Module):
             master_alignments=master_alignments,
             learnable_alignments=learnable_alignments,
             avg_embedding=avg_embedding,
+            power_emb_size=power_emb_size,
         )
 
         self.value_decoder = ValueDecoder(inter_emb_size)
@@ -106,7 +106,7 @@ class DipNet(nn.Module):
                 ),
             )
 
-        enc = self.encoder(x_bo, x_po, x_power_1h, x_season_1h)  # [B, 81, 240]
+        enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
 
         order_idxs, order_scores = self.policy_decoder(
             enc,
@@ -115,6 +115,7 @@ class DipNet(nn.Module):
             self.valid_order_idxs_to_mask(valid_order_idxs),
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
+            power_1h=x_power_1h,
         )
 
         final_scores = self.value_decoder(enc)
@@ -150,15 +151,20 @@ class LSTMDipNetDecoder(nn.Module):
         master_alignments,
         learnable_alignments=False,
         avg_embedding=False,
+        power_emb_size,
     ):
         super().__init__()
         self.lstm_size = lstm_size
         self.order_emb_size = order_emb_size
         self.lstm_dropout = lstm_dropout
         self.avg_embedding = avg_embedding
+        self.power_emb_size = power_emb_size
 
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
-        self.lstm = nn.LSTM(2 * inter_emb_size + order_emb_size, lstm_size, batch_first=True)
+        self.power_lin = nn.Linear(len(POWERS), power_emb_size)
+        self.lstm = nn.LSTM(
+            2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True
+        )
         self.lstm_out_linear = nn.Linear(lstm_size, orders_vocab_size)
 
         # if avg_embedding is True, alignments are not used, and pytorch
@@ -178,7 +184,14 @@ class LSTMDipNetDecoder(nn.Module):
                 self.compatible_orders_table[order, incomp_order] = 0
 
     def forward(
-        self, enc, in_adj_phase, loc_idxs, order_masks, temperature=1.0, teacher_force_orders=None
+        self,
+        enc,
+        in_adj_phase,
+        loc_idxs,
+        order_masks,
+        power_1h,
+        temperature=1.0,
+        teacher_force_orders=None,
     ):
         totaltic = time.time()
         device = next(self.parameters()).device
@@ -192,13 +205,21 @@ class LSTMDipNetDecoder(nn.Module):
         # embedding for the last decoded order
         order_emb = torch.zeros(enc.shape[0], self.order_emb_size).to(device)
 
+        # power embedding, constant for each lstm step
+        power_emb = self.power_lin(power_1h)
+
         # return values: chosen order idxs, and scores (logits)
         all_order_idxs = []
         all_order_scores = []
 
         # reuse same dropout weights for all steps
         dropout_in = (
-            torch.zeros(enc.shape[0], 1, enc.shape[2] + self.order_emb_size, device=enc.device)
+            torch.zeros(
+                enc.shape[0],
+                1,
+                enc.shape[2] + self.order_emb_size + self.power_emb_size,
+                device=enc.device,
+            )
             .bernoulli_(1 - self.lstm_dropout)
             .div_(1 - self.lstm_dropout)
             .requires_grad_(False)
@@ -227,7 +248,7 @@ class LSTMDipNetDecoder(nn.Module):
                 alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
-            lstm_input = torch.cat((loc_enc, order_emb), dim=1).unsqueeze(1)  # [B, 1, 320]
+            lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
             if self.training and self.lstm_dropout < 1.0:
                 lstm_input = lstm_input * dropout_in
 
@@ -290,7 +311,6 @@ class DipNetEncoder(nn.Module):
         board_state_size,  # 35
         prev_orders_size,  # 40
         inter_emb_size,  # 120
-        power_emb_size,  # 60
         season_emb_size,  # 20
         num_blocks,  # 16
         A,  # 81x81
@@ -300,7 +320,6 @@ class DipNetEncoder(nn.Module):
         super().__init__()
 
         # power/season embeddings
-        self.power_lin = nn.Linear(7, power_emb_size)
         self.season_lin = nn.Linear(3, season_emb_size)
 
         # board state blocks
@@ -309,7 +328,6 @@ class DipNetEncoder(nn.Module):
             DipNetBlock(
                 in_size=board_state_size,
                 out_size=inter_emb_size,
-                power_emb_size=power_emb_size,
                 season_emb_size=season_emb_size,
                 A=A,
                 residual=False,
@@ -322,7 +340,6 @@ class DipNetEncoder(nn.Module):
                 DipNetBlock(
                     in_size=inter_emb_size,
                     out_size=inter_emb_size,
-                    power_emb_size=power_emb_size,
                     season_emb_size=season_emb_size,
                     A=A,
                     residual=True,
@@ -337,7 +354,6 @@ class DipNetEncoder(nn.Module):
             DipNetBlock(
                 in_size=prev_orders_size,
                 out_size=inter_emb_size,
-                power_emb_size=power_emb_size,
                 season_emb_size=season_emb_size,
                 A=A,
                 residual=False,
@@ -350,7 +366,6 @@ class DipNetEncoder(nn.Module):
                 DipNetBlock(
                     in_size=inter_emb_size,
                     out_size=inter_emb_size,
-                    power_emb_size=power_emb_size,
                     season_emb_size=season_emb_size,
                     A=A,
                     residual=True,
@@ -359,17 +374,16 @@ class DipNetEncoder(nn.Module):
                 )
             )
 
-    def forward(self, x_bo, x_po, x_power_1h, x_season_1h):
-        power_emb = self.power_lin(x_power_1h)
+    def forward(self, x_bo, x_po, x_season_1h):
         season_emb = self.season_lin(x_season_1h)
 
         y_bo = x_bo
         for block in self.board_blocks:
-            y_bo = block(y_bo, power_emb, season_emb)
+            y_bo = block(y_bo, season_emb)
 
         y_po = x_po
         for block in self.prev_orders_blocks:
-            y_po = block(y_po, power_emb, season_emb)
+            y_po = block(y_po, season_emb)
 
         state_emb = torch.cat([y_bo, y_po], -1)
         return state_emb
@@ -377,28 +391,19 @@ class DipNetEncoder(nn.Module):
 
 class DipNetBlock(nn.Module):
     def __init__(
-        self,
-        *,
-        in_size,
-        out_size,
-        power_emb_size,
-        season_emb_size,
-        A,
-        dropout,
-        residual=True,
-        learnable_A=False,
+        self, *, in_size, out_size, season_emb_size, A, dropout, residual=True, learnable_A=False
     ):
         super().__init__()
         self.graph_conv = GraphConv(in_size, out_size, A, learnable_A=learnable_A)
         self.batch_norm = nn.BatchNorm1d(A.shape[0])
-        self.film = FiLM(power_emb_size, season_emb_size, out_size)
+        self.film = FiLM(season_emb_size, out_size)
         self.dropout = nn.Dropout(dropout)
         self.residual = residual
 
-    def forward(self, x, power_emb, season_emb):
+    def forward(self, x, season_emb):
         y = self.graph_conv(x)
         y = self.batch_norm(y)
-        y = self.film(y, power_emb, season_emb)
+        y = self.film(y, season_emb)
         y = F.relu(y)
         y = self.dropout(y)
         if self.residual:
@@ -407,7 +412,6 @@ class DipNetBlock(nn.Module):
 
 
 def he_init(shape):
-
     fan_in = shape[-2] if len(shape) >= 2 else shape[-1]
     init_range = math.sqrt(2.0 / fan_in)
     return torch.randn(shape) * init_range
@@ -440,21 +444,19 @@ class GraphConv(nn.Module):
 
 
 class FiLM(nn.Module):
-    def __init__(self, power_emb_size, season_emb_size, out_size):
+    def __init__(self, season_emb_size, out_size):
         super().__init__()
-        self.W_gamma = nn.Linear(power_emb_size + season_emb_size, out_size)
-        self.W_beta = nn.Linear(power_emb_size + season_emb_size, out_size)
+        self.W_gamma = nn.Linear(season_emb_size, out_size)
+        self.W_beta = nn.Linear(season_emb_size, out_size)
 
-    def forward(self, x, power_emb, season_emb):
+    def forward(self, x, season_emb):
         """Modulate x by gamma/beta calculated from power/season embeddings
 
         x -> (B, out_size)
-        power_emb -> (B, power_emb_size)
         season_emb -> (B, season_emb_size)
         """
-        mod_emb = torch.cat([power_emb, season_emb], -1)
-        gamma = self.W_gamma(mod_emb).unsqueeze(1)
-        beta = self.W_beta(mod_emb).unsqueeze(1)
+        gamma = self.W_gamma(season_emb).unsqueeze(1)
+        beta = self.W_beta(season_emb).unsqueeze(1)
         return gamma * x + beta
 
 
