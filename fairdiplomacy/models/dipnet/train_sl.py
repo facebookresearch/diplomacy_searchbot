@@ -121,12 +121,15 @@ def calculate_split_accuracy_counts(order_idxs, y_truth):
 
 
 def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float):
+    net_device = next(net.parameters()).device
+
     with torch.no_grad():
         net.eval()
         batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
 
         for batch_idxs in torch.arange(len(val_set)).split(batch_size):
             batch = val_set[batch_idxs]
+            batch = [x.to(net_device) for x in batch]
             y_actions = batch[-1]
             if y_actions.shape[0] == 0:
                 logger.warning(
@@ -279,6 +282,11 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
+            logger.info(
+                "HI MOM net.device={} val_set.device={}".format(
+                    next(net.parameters()).device, val_set[0][0].device
+                )
+            )
             val_loss, val_accuracy, split_pcts = validate(
                 net,
                 val_set,
@@ -341,7 +349,7 @@ def run_with_cfg(args):
         game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
         assert len(game_jsons) > 0
         logger.info(f"Found dataset of {len(game_jsons)} games...")
-        val_game_jsons = random.sample(game_jsons, int(len(game_jsons) * args.val_set_pct))
+        val_game_jsons = random.sample(game_jsons, max(1, int(len(game_jsons) * args.val_set_pct)))
         train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
 
         train_dataset = Dataset(
