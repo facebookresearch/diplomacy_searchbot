@@ -4,15 +4,15 @@ train {
     num_dataloader_workers: 20;
     batch_size: 1000;
     lr: 0.001;
-    lr_decay: 0.93;
+    lr_decay: 0.99;
     clip_grad_norm: 5.0;
     checkpoint: "./checkpoint.pth";
     val_set_pct: 0.01;
     teacher_force: 1.0;
     lstm_dropout: 0.1;
     encoder_dropout: 0.2;
-    num_encoder_blocks: 16;
-    num_epochs: 100;
+    num_encoder_blocks: 8;
+    num_epochs: 200;
     debug_only_opening_phase: false;
     debug_no_mp: false;
     skip_validation: false;
@@ -21,5 +21,5 @@ train {
     learnable_alignments: false;
     avg_embedding: false;
     write_jsonl: true;
-    value_loss_weight: 0.1;
+    value_loss_weight: 0.3;
 }
