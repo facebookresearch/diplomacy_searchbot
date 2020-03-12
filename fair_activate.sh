@@ -28,6 +28,7 @@ if ! conda env list --json | jq ".envs | .[]" | grep -qE "/${xxx_env_name}\""; t
     pip install -e ./thirdparty/github/fairinternal/postman/nest/
     pip install -e ./thirdparty/github/fairinternal/postman/src/postman/
     pip install -e "git+ssh://git@github.com/fairinternal/submitit@master#egg=submitit"
+    pip install -e ./thirdparty/github/diplomacy/diplomacy
 fi
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
 export OMP_NUM_THREADS=1

@@ -7,11 +7,11 @@ from setuptools.command.install import install
 
 def _post_install():
     # install diplomacy/web npm dependencies
-    # FIXME: ideally not require conda, specify python version?
-    SITE_PACKAGES = os.path.join(os.environ["CONDA_PREFIX"], "lib/python3.7/site-packages")
-
     subprocess.check_output(
-        ["npm", "install", "."], cwd=os.path.join(SITE_PACKAGES, "diplomacy/web")
+        ["npm", "install", "."],
+        cwd=os.path.join(
+            os.path.dirname(__file__), "thirdparty/github/diplomacy/diplomacy/diplomacy/web"
+        ),
     )
 
     # add thirdparty diplomacy_research to PYTHONPATH
@@ -39,7 +39,6 @@ setup(
     packages=find_packages(),
     install_requires=[
         "black",
-        "diplomacy==1.1.1",
         "ipdb",
         "joblib",
         "pandas",
