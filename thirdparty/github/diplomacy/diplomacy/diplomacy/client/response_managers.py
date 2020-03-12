@@ -178,7 +178,8 @@ def on_get_phase_history(context, response):
     """
     phase_history = response.data
     for game_phase in phase_history:  # type: diplomacy.utils.game_phase_data.GamePhaseData
-        Game.extend_phase_history(context.game, game_phase)
+        if game_phase.name not in context.game.order_history:
+            Game.extend_phase_history(context.game, game_phase)
     return phase_history
 
 def on_join_game(context, response):
