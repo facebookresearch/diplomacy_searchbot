@@ -24,10 +24,13 @@
     By default, connect to server localhost:8432 (host:port) and run every 10 seconds (period).
 """
 import argparse
+import diplomacy
 import logging
 from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
 from tornado import gen, ioloop
+
+from fairdiplomacy.agents import DipnetAgent
 
 LOGGER = logging.getLogger("diplomacy_research.scripts.launch_bot")
 PERIOD_SECONDS = 2
@@ -47,26 +50,17 @@ class Bot:
         - buffer_size: number of powers this bot will ask to manage to server.
     """
 
-    __slots__ = [
-        "host",
-        "port",
-        "username",
-        "password",
-        "period_seconds",
-        "player",
-        "game_to_phase",
-        "buffer_size",
-    ]
-
-    def __init__(self, host, port, *, period_seconds=PERIOD_SECONDS, buffer_size=128):
+    def __init__(self, host, port, agent, *, period_seconds=PERIOD_SECONDS, buffer_size=128):
         """ Initialize the bot.
             :param host: (required) name of host to connect
             :param port: (required) port to connect
+            :param port: (required) Agent object with get_orders function
             :param period_seconds: time in second between two consecutive bot queries on server. Default 10 seconds.
             :param buffer_size: number of powers to ask to server.
         """
         self.host = host
         self.port = port
+        self.agent = agent
         self.username = constants.PRIVATE_BOT_USERNAME
         self.password = constants.PRIVATE_BOT_PASSWORD
         self.period_seconds = period_seconds
@@ -77,9 +71,6 @@ class Bot:
     @gen.coroutine
     def run(self):
         """ Main bot code. """
-
-        # Creating player
-        self.player = DipNetSLPlayer()
 
         # Connecting to server
         connection = yield connect(self.host, self.port)
@@ -144,7 +135,12 @@ class Bot:
             :type game: diplomacy.client.network_game.NetworkGame
         """
         with game.current_state():
-            orders, should_draw = yield self.player.get_orders(game, power_name, with_draw=True)
+            game_copy = diplomacy.Game()
+            phase_history = yield game.get_phase_history()
+            game_copy.set_phase_data(phase_history + [game.get_phase_data()])
+
+            orders = self.agent.get_orders(game_copy, power_name)
+            should_draw = False
 
             # Setting vote
             vote = strings.YES if should_draw else strings.NO
@@ -194,7 +190,10 @@ def main():
         help="let bot ask for this number of powers to manage on server (default: 128 powers)",
     )
     args = parser.parse_args()
-    bot = Bot(args.host, args.port, period_seconds=args.period, buffer_size=args.buffer_size)
+    agent = DipnetAgent()
+    bot = Bot(
+        args.host, args.port, agent, period_seconds=args.period, buffer_size=args.buffer_size
+    )
     io_loop = ioloop.IOLoop.instance()
     while True:
         try:
