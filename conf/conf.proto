@@ -223,6 +223,26 @@ message TrainTask {
   optional Launcher launcher = 1000;
 }
 
+message LaunchBotTask {
+  // Agent cfg to play against
+  optional Agent agent = 1;
+
+  // Diplomacy server host
+  optional string host = 2;
+
+  // Diplomacy server port
+  optional int32 port = 3;
+
+  // Run every period (in seconds)
+  optional uint32 period = 4;
+
+  // Number of powers to manage on server
+  optional uint32 buffer_size = 5;
+
+
+  optional Launcher launcher = 1000;
+}
+
 // A dummy task to use in tests.
 message TestTask {
   message SubMessage { optional int32 subscalar = 1 [ default = -1 ]; }
@@ -261,6 +281,7 @@ message MetaCfg {
   oneof task {
     CompareAgentsTask compare_agents = 101;
     TrainTask train = 102;
+    LaunchBotTask launch_bot = 103;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

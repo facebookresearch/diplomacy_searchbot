@@ -155,11 +155,11 @@ Log in as admin/password, and use "Load a game from disk" in the top-right to vi
 ![Instructions for visualizing a game](https://github.com/diplomacy/diplomacy/blob/master/docs/images/visualize_game.png)
 
 
-# Playing Against the MILA Bot
+# Playing Against a Bot
 
 After [opening the visualizer](#visualizing-a-saved-game), create a new standard game with 1 human user. Then run
 ```
-python thirdparty/github/diplomacy/research/diplomacy_research/scripts/launch_bot.py
+python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt I.agent=agents/dipnet
 ```
 
 # A Primer on the diplomacy.Game object

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ==============================================================================
 # Copyright 2019 - Philip Paquette
 #
@@ -13,16 +12,9 @@
 #   copies or substantial portions of the Software.
 # ==============================================================================
 #
-# edited by jsgray to accomodate for different bots
+# edited by jsgray to accomodate for different bots, work with heyhi cfg
 #
 # ==============================================================================
-""" Small script that periodically runs the diplomacy private bot to
-    generate orders for active games currently loaded on a server.
-    You can stop the bot with keyboard interruption (Ctrl+C).
-    Usage:
-        python -m diplomacy_research.scripts.bot [--host=localhost] [--port=8432] [--period=10]
-    By default, connect to server localhost:8432 (host:port) and run every 10 seconds (period).
-"""
 import argparse
 import diplomacy
 import logging
@@ -30,7 +22,7 @@ from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
 from tornado import gen, ioloop
 
-from fairdiplomacy.agents import DipnetAgent
+from fairdiplomacy.agents import build_agent_from_cfg
 
 LOGGER = logging.getLogger("diplomacy_research.scripts.launch_bot")
 PERIOD_SECONDS = 2
@@ -160,40 +152,9 @@ class Bot:
             )
 
 
-def main():
-    """ Main script function. """
-    parser = argparse.ArgumentParser(
-        description="Run a bot to manage unordered dummy powers on a server."
-    )
-    parser.add_argument(
-        "--host",
-        type=str,
-        default=constants.DEFAULT_HOST,
-        help="run on the given host (default: %s)" % constants.DEFAULT_HOST,
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=constants.DEFAULT_PORT,
-        help="run on the given port (default: %s)" % constants.DEFAULT_PORT,
-    )
-    parser.add_argument(
-        "--period",
-        type=int,
-        default=PERIOD_SECONDS,
-        help="run every period (in seconds) (default: %d seconds)" % PERIOD_SECONDS,
-    )
-    parser.add_argument(
-        "--buffer-size",
-        type=int,
-        default=128,
-        help="let bot ask for this number of powers to manage on server (default: 128 powers)",
-    )
-    args = parser.parse_args()
-    agent = DipnetAgent()
-    bot = Bot(
-        args.host, args.port, agent, period_seconds=args.period, buffer_size=args.buffer_size
-    )
+def run_with_cfg(cfg):
+    agent = build_agent_from_cfg(cfg.agent)
+    bot = Bot(cfg.host, cfg.port, agent, period_seconds=cfg.period, buffer_size=cfg.buffer_size)
     io_loop = ioloop.IOLoop.instance()
     while True:
         try:
@@ -204,7 +165,3 @@ def main():
         except Exception as exc:  # pylint: disable=broad-except
             LOGGER.error(exc)
             LOGGER.info("Restarting bot...")
-
-
-if __name__ == "__main__":
-    main()

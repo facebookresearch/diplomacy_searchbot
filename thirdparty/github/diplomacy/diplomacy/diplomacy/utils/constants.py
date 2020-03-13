@@ -29,7 +29,7 @@ DEFAULT_BACKUP_DELAY_SECONDS = 10 * 60  # 10 minutes.
 DEFAULT_PING_SECONDS = 30
 
 # Time to wait to receive a response for a request sent to server.
-REQUEST_TIMEOUT_SECONDS = 30
+REQUEST_TIMEOUT_SECONDS = 1800
 
 # Default host name for a server to connect to.
 DEFAULT_HOST = 'localhost'

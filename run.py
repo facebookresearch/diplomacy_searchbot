@@ -2,15 +2,9 @@ import logging
 import os
 import subprocess
 
-import bin.compare_agents
+from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
+from fairdiplomacy.agents import build_agent_from_cfg
 from fairdiplomacy.models.dipnet import train_sl
-
-if "SLURM_PROCID" not in os.environ:
-    subprocess.check_call(
-        "protoc conf/conf.proto --python_out ./".split(),
-        cwd=os.path.dirname(os.path.abspath(__file__)),
-    )
-
 import heyhi
 import conf.conf_pb2
 
@@ -25,9 +19,9 @@ def _register(f):
 
 @_register
 def compare_agents(cfg):
-    agent_one = bin.compare_agents.build_agent_from_cfg(cfg.agent_one)
-    agent_six = bin.compare_agents.build_agent_from_cfg(cfg.agent_six)
-    cf_agent = bin.compare_agents.build_agent_from_cfg(cfg.cf_agent)
+    agent_one = build_agent_from_cfg(cfg.agent_one)
+    agent_six = build_agent_from_cfg(cfg.agent_six)
+    cf_agent = build_agent_from_cfg(cfg.cf_agent)
 
     def _power_to_string(power_id):
         power_enum = conf.conf_pb2.CompareAgentsTask.Power
@@ -35,7 +29,7 @@ def compare_agents(cfg):
 
     power_string = _power_to_string(cfg.power_one)
 
-    result = bin.compare_agents.run_1v6_trial(
+    result = fairdiplomacy.compare_agents.run_1v6_trial(
         agent_one,
         agent_six,
         power_string,
@@ -49,6 +43,11 @@ def compare_agents(cfg):
 @_register
 def train(cfg):
     train_sl.run_with_cfg(cfg)
+
+
+@_register
+def launch_bot(cfg):
+    launch_bot_run_with_cfg(cfg)
 
 
 @heyhi.save_result_in_cwd

@@ -1,17 +1,7 @@
-#!/usr/bin/env python
-import argparse
 import logging
-import os
-from ast import literal_eval
-from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
-
-from tabulate import tabulate
-from google.protobuf.json_format import MessageToDict
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.agents import RandomAgent, DipnetAgent, MilaSLAgent, BRSearchAgent, CFR1PAgent
 
 
 def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None):
@@ -50,22 +40,3 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
         f"Scores: {scores} ; Winner: {winning_power} ; agent_one_power= {agent_one_power}"
     )
     return "one" if winning_power == agent_one_power else "six"
-
-
-def parse_agent_class(s):
-    return {
-        "mila": MilaSLAgent,
-        "br_search": BRSearchAgent,
-        "dipnet": DipnetAgent,
-        "cfr1p": CFR1PAgent,
-        None: None,
-    }[s]
-
-
-def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.agents.BaseAgent":
-    agent_name = agent_stanza.WhichOneof("agent")
-    assert agent_name, f"Config must define an agent type: {agent_stanza}"
-    agent_cfg = getattr(agent_stanza, agent_name)
-    return parse_agent_class(agent_name)(
-        **MessageToDict(agent_cfg, preserving_proto_field_name=True)
-    )

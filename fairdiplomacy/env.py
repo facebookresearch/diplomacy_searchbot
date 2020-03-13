@@ -87,7 +87,7 @@ class Env:
 
 if __name__ == "__main__":
     # mila_sl_agent = MilaSLAgent()
-    dipnet_agent = DipnetAgent("/checkpoint/jsgray/dipnet.pth")
+    dipnet_agent = DipnetAgent("/checkpoint/jsgray/diplomacy/dipnet.pth")
     env = Env(
         {
             "ITALY": dipnet_agent,
@@ -101,4 +101,4 @@ if __name__ == "__main__":
     )
     results = env.process_all_turns()
     logging.info("Game over! Results: {}".format(results))
-    env.save("game.json")
+    # env.save("game.json")
