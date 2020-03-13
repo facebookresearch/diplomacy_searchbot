@@ -62,32 +62,78 @@ class DipNet(nn.Module):
         self,
         x_bo,
         x_po,
-        x_power_1h,
         x_season_1h,
         in_adj_phase,
         loc_idxs,
         valid_order_idxs,
-        temperature=1.0,
+        temperature,
         teacher_force_orders=None,
+        x_power=None,
     ):
         """
         Arguments:
-        - x_bo: shape [B, 81, 35]
-        - x_po: shape [B, 81, 40]
-        - x_power_1h: shape [B, 7]
-        - x_season_1h: shape [B, 3]
-        - in_adj_phase: shape [B], bool
-        - loc_idxs: shape [B, 81], int8
-        - valid_order_idxs: shape [B, S, 469], long
+        - x_bo: [B, 81, 35]
+        - x_po: [B, 81, 40]
+        - x_season_1h: [B, 3]
+        - in_adj_phase: [B], bool
+        - loc_idxs: int8, [B, 81] or [B, 7, 81]
+        - valid_order_idxs: long, [B, S, 469] or [B, 7, S, 469]
         - temperature: softmax temp, lower = more deterministic; must be either
-          a float or a tensor of shape [B, 1]
-        - teacher_force_orders: shape [B, S] int or None
+          a float or a tensor of [B, 1]
+        - teacher_force_orders: [B, S] int or None
+        - x_power: [B, 7] or None
+
+        if x_power is None, the model will decode for all 7 powers.
+            - loc_idxs, valid_order_idxs, and teacher_force_orders must have an
+              extra axis at dim=1 with size 7
+            - order_idxs and order_scores will be returned with an extra axis
+              at dim=1 with size 7
+        if x_power is not None, it must be [B, 7] 1-hot, and only that power
+              will be decoded
 
         Returns:
-        - order_idxs [B, S]: idx of sampled orders
-        - order_scores [B, S, 13k]: masked pre-softmax logits of each order
-        - final_scores [B, 7]: estimated final SC counts per power
+          - order_idxs [B, S] or [B, 7, S]: idx of sampled orders for each power
+          - order_scores [B, S, 13k] or [B, 7, S, 13k]: masked pre-softmax
+            logits of each order, for each power
+          - final_scores [B, 7]: estimated final SC counts per power
         """
+        if x_power is None:
+            return self.forward_all_powers(
+                x_bo=x_bo,
+                x_po=x_po,
+                x_season_1h=x_season_1h,
+                in_adj_phase=in_adj_phase,
+                loc_idxs=loc_idxs,
+                valid_order_idxs=valid_order_idxs,
+                temperature=temperature,
+                teacher_force_orders=teacher_force_orders,
+            )
+        else:
+            return self.forward_one_power(
+                x_bo=x_bo,
+                x_po=x_po,
+                x_season_1h=x_season_1h,
+                in_adj_phase=in_adj_phase,
+                loc_idxs=loc_idxs,
+                valid_order_idxs=valid_order_idxs,
+                temperature=temperature,
+                teacher_force_orders=teacher_force_orders,
+                x_power=x_power,
+            )
+
+    def forward_one_power(
+        self,
+        *,
+        x_bo,
+        x_po,
+        x_season_1h,
+        in_adj_phase,
+        loc_idxs,
+        valid_order_idxs,
+        x_power,
+        temperature,
+        teacher_force_orders,
+    ):
         if (valid_order_idxs == 0).all():
             logging.warning("foward called with all valid_order_idxs == 0")
             return (
@@ -107,7 +153,6 @@ class DipNet(nn.Module):
             )
 
         enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
-
         order_idxs, order_scores = self.policy_decoder(
             enc,
             in_adj_phase,
@@ -115,10 +160,51 @@ class DipNet(nn.Module):
             self.valid_order_idxs_to_mask(valid_order_idxs),
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
-            power_1h=x_power_1h,
+            power_1h=x_power,
         )
+        final_scores = self.value_decoder(enc)
+
+        return order_idxs, order_scores, final_scores
+
+    def forward_all_powers(
+        self,
+        *,
+        x_bo,
+        x_po,
+        x_season_1h,
+        in_adj_phase,
+        loc_idxs,
+        valid_order_idxs,
+        temperature,
+        teacher_force_orders,
+    ):
+        enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
+
+        power_1h = torch.zeros(*(loc_idxs.shape[:2]), device=loc_idxs.device)
+        order_idxs_lst, order_scores_lst = [], []
+        for p in range(len(POWERS)):
+            power_1h.fill_(0)
+            power_1h[:, p] = 1
+
+            order_idxs, order_scores = self.policy_decoder(
+                enc,
+                in_adj_phase,
+                loc_idxs[:, p],
+                self.valid_order_idxs_to_mask(valid_order_idxs[:, p]),
+                temperature=temperature,
+                teacher_force_orders=(
+                    teacher_force_orders[:, p] if teacher_force_orders is not None else None
+                ),
+                power_1h=power_1h,
+            )
+            order_idxs_lst.append(order_idxs)
+            order_scores_lst.append(order_scores)
 
         final_scores = self.value_decoder(enc)
+
+        order_idxs = torch.stack(order_idxs_lst, dim=1)
+        order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
+        order_scores = torch.stack(order_scores_lst, dim=1)
 
         return order_idxs, order_scores, final_scores
 

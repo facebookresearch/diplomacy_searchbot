@@ -18,62 +18,58 @@ class DipnetAgent(BaseAgent):
         self.model = load_dipnet_model(model_path, map_location="cuda", eval=True)
         self.temperature = temperature
 
-    def get_orders(self, game, power, *, temperature=None, debug_probs=False, batch_size=1):
+    def get_orders(self, game, power, *, temperature=None, batch_size=1):
         if len(game.get_orderable_locations(power)) == 0:
             return []
+
         temperature = temperature if temperature is not None else self.temperature
-        inputs = encode_inputs(game, power)
+        inputs = encode_inputs(game)
         inputs = [x.to("cuda") for x in inputs]
+
         if batch_size > 1:
             # fake a big batch
             inputs = [x.expand(batch_size, *x.shape[1:]).contiguous() for x in inputs]
+
         with torch.no_grad():
             order_idxs, order_scores, final_scores = self.model(*inputs, temperature=temperature)
-        if debug_probs:
-            self.debug_probs(
-                order_idxs,
-                order_scores,
-                self.model.valid_order_idxs_to_mask(inputs[-1], inputs[-2]),
-                temperature,
-            )
-        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, :]]
 
-    def debug_probs(self, order_idxs, order_scores, mask, temperature):
-
-        order_scores[~mask] = float("-inf")
-        probs = torch.nn.functional.softmax(order_scores / temperature, dim=2)
-        for step in range(len(order_idxs[0])):
-            order_idx = order_idxs[0, step]
-            logging.debug(
-                "order {} p={}".format(ORDER_VOCABULARY[order_idx], probs[0, step, order_idx])
-            )
+        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, POWERS.index(power), :] if idx != 0]
 
 
-def encode_inputs(game, power, all_possible_orders=None, game_state=None):
+def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     """Return a 6-tuple of tensors
 
     x_board_state: shape=(1, 81, 35)
     x_prev_orders: shape=(1, 81, 40)
-    x_power: shape=(1, 7)
     x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
-    loc_idxs: shape=[1, S], dtype=long, 0 < S <= 17
-    valid_orders: shape=[1, S, 469], dtype=bool, 0 < S <= 17
+    loc_idxs: shape=[1, 7, S], dtype=long, 0 < S <= 17
+    valid_orders: shape=[1, 7, S, 469] dtype=long, 0 < S <= 17
     """
     if game_state is None:
         game_state = encode_state(game)
     x_board_state, x_prev_orders, x_season, x_in_adj_phase = game_state
-    x_power = torch.zeros(1, 7)
-    x_power[0, POWERS.index(power)] = 1
-    valid_orders, loc_idxs, seq_len = get_valid_orders(game, power, all_possible_orders)
+
+    valid_orders_lst, loc_idxs_lst = [], []
+    max_seq_len = 0
+    for power in POWERS:
+        valid_orders, loc_idxs, seq_len = get_valid_orders(
+            game,
+            power,
+            all_possible_orders=all_possible_orders,
+            all_orderable_locations=game.get_orderable_locations(),
+        )
+        valid_orders_lst.append(valid_orders)
+        loc_idxs_lst.append(loc_idxs)
+        max_seq_len = max(seq_len, max_seq_len)
+
     return (
         x_board_state,
         x_prev_orders,
-        x_power,
         x_season,
         x_in_adj_phase,
-        loc_idxs,
-        valid_orders[:, :seq_len, :],
+        torch.stack(loc_idxs_lst, dim=1),
+        torch.stack(valid_orders_lst, dim=1)[:, :, :max_seq_len],
     )
 
 
@@ -105,8 +101,8 @@ def encode_state(game):
     return x_board_state, x_prev_orders, x_season, x_in_adj_phase
 
 
-def get_valid_orders(game, power, all_possible_orders=None):
-    """Return a boolean mask of valid orders
+def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_locations=None):
+    """Return indices of valid orders
 
     Returns:
     - a [1, 17, 469] int tensor of valid move indexes (padded with -1)
@@ -115,11 +111,14 @@ def get_valid_orders(game, power, all_possible_orders=None):
     """
     if all_possible_orders is None:
         all_possible_orders = game.get_all_possible_orders()
+    if all_orderable_locations is None:
+        all_orderable_locations = game.get_orderable_locations()
 
     return get_valid_orders_impl(
-        power, all_possible_orders, game.get_orderable_locations(), game.get_state()
+        power, all_possible_orders, all_orderable_locations, game.get_state()
     )
 
 
 if __name__ == "__main__":
-    print(DipnetAgent().get_orders(diplomacy.Game(), "ITALY"))
+    model_path = "/checkpoint/jsgray/diplomacy/slurm/sl_decpow/checkpoint.pth"
+    print(DipnetAgent(model_path).get_orders(diplomacy.Game(), "ITALY"))

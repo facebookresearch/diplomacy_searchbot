@@ -30,7 +30,7 @@ ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
 
 
-def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_teacher_force=0.0):
+def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_teacher_force=1.0):
     """Calculate a forward pass on a batch
 
     Returns:
@@ -40,6 +40,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     - order_idxs: [B, S] LongTensor of sampled order idxs
     - final_scores: [B, 7] estimated final SC counts per power
     """
+    assert p_teacher_force == 1
     device = next(net.parameters()).device
 
     x_state, x_orders, x_power, x_season, x_in_adj_phase, y_final_scores, x_possible_actions, x_loc_idxs, y_actions = (
@@ -51,13 +52,13 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     order_idxs, order_scores, final_scores = net(
         x_state,
         x_orders,
-        x_power,
         x_season,
         x_in_adj_phase,
         x_loc_idxs,
         x_possible_actions,
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
+        x_power=x_power.view(-1, 7),
     )
 
     # reshape and mask out <EOS> tokens from sequences
