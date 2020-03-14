@@ -134,23 +134,8 @@ class DipNet(nn.Module):
         temperature,
         teacher_force_orders,
     ):
-        if (valid_order_idxs == 0).all():
-            logging.warning("foward called with all valid_order_idxs == 0")
-            return (
-                torch.zeros(
-                    *(valid_order_idxs.shape[:2]),
-                    dtype=valid_order_idxs.dtype,
-                    device=valid_order_idxs.device,
-                ),
-                torch.zeros(
-                    *(valid_order_idxs.shape[:2]),
-                    self.orders_vocab_size,
-                    device=valid_order_idxs.device,
-                ),
-                torch.zeros(
-                    valid_order_idxs.shape[0], len(POWERS), device=valid_order_idxs.device
-                ),
-            )
+        assert len(loc_idxs.shape) == 2
+        assert len(valid_order_idxs.shape) == 3
 
         enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
         order_idxs, order_scores = self.policy_decoder(
@@ -178,9 +163,12 @@ class DipNet(nn.Module):
         temperature,
         teacher_force_orders,
     ):
+        assert len(loc_idxs.shape) == 3
+        assert len(valid_order_idxs.shape) == 4
+
         enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
 
-        power_1h = torch.zeros(*(loc_idxs.shape[:2]), device=loc_idxs.device)
+        power_1h = torch.empty(x_bo.shape[0], len(POWERS), device=loc_idxs.device)
         order_idxs_lst, order_scores_lst = [], []
         for p in range(len(POWERS)):
             power_1h.fill_(0)
@@ -281,6 +269,13 @@ class LSTMDipNetDecoder(nn.Module):
     ):
         totaltic = time.time()
         device = next(self.parameters()).device
+
+        if (loc_idxs == -1).all():
+            return (
+                torch.zeros(*order_masks.shape[:2], dtype=torch.long, device=device),
+                torch.zeros(*order_masks.shape, device=device),
+            )
+
         self.lstm.flatten_parameters()
 
         hidden = (
@@ -292,6 +287,7 @@ class LSTMDipNetDecoder(nn.Module):
         order_emb = torch.zeros(enc.shape[0], self.order_emb_size).to(device)
 
         # power embedding, constant for each lstm step
+        assert len(power_1h.shape) == 2 and power_1h.shape[1] == 7, power_1h.shape
         power_emb = self.power_lin(power_1h)
 
         # return values: chosen order idxs, and scores (logits)
@@ -385,9 +381,7 @@ class LSTMDipNetDecoder(nn.Module):
             compatible_mask = self.compatible_orders_table[dont_repeat_orders]  # B x 13k
             order_masks[:, step:] *= compatible_mask.unsqueeze(1)
 
-        res = torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
-        # logging.debug("total: {}".format(time.time() - totaltic))
-        return res
+        return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 
 
 class DipNetEncoder(nn.Module):

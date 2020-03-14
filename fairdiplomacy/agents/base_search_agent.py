@@ -87,7 +87,9 @@ class BaseSearchAgent(BaseAgent):
         logging.info("Done warming up pool")
 
     @classmethod
-    def do_model_request(cls, client, x, temperature=1.0) -> Tuple[List[Tuple[str]], np.ndarray]:
+    def do_model_request(
+        cls, client, x, temperature=1.0
+    ) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
         """Synchronous request to model server
 
         Arguments:
@@ -95,7 +97,7 @@ class BaseSearchAgent(BaseAgent):
         - temperature: model softmax temperature
 
         Returns:
-        - a list (len = batch size) of order-sets
+        - a list (len = batch size) of lists (len=7) of order-tuples
         - [7] float32 array of estimated final scores
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
@@ -113,40 +115,47 @@ class BaseSearchAgent(BaseAgent):
 
         return (
             [
-                tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[i, :])
-                for i in range(order_idxs.shape[0])
+                [
+                    tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[b, p, :] if idx != 0)
+                    for p in range(len(POWERS))
+                ]
+                for b in range(order_idxs.shape[0])
             ],
             np.mean(final_scores, axis=0),
         )
 
     def get_plausible_orders(
-        self, game, power, n=1000, temperature=0.5, limit=8, batch_size=100
-    ) -> Set[Tuple[str]]:
-        # check for trivial return case
-        orderable_locs = game.get_orderable_locations(power)
-        if len(orderable_locs) == 0:
-            return set()
-        elif len(orderable_locs) == 1:
-            possible_orders = game.get_all_possible_orders()[orderable_locs[0]]
-            if len(possible_orders) <= limit:
-                return set((x,) for x in possible_orders)
+        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=1000
+    ) -> Dict[str, Set[Tuple[str]]]:
+        # trivial return case: all powers have at most `limit` actions
+        orderable_locs = game.get_orderable_locations()
+        if max(map(len, orderable_locs.values())) <= 1:
+            all_orders = game.get_all_possible_orders()
+            pow_orders = {
+                p: all_orders[orderable_locs[p][0]] if orderable_locs[p] else [] for p in POWERS
+            }
+            if max((map(len, pow_orders.values()))) <= limit:
+                return {p: set((x,) for x in orders) for p, orders in pow_orders.items()}
 
-        # non-trivial return: query model
-        generated_orders = []
-        x = [encode_inputs(game, power)] * n
+        # non-trivial return case: query model
+        counters = {p: Counter() for p in POWERS}
+        x = [encode_inputs(game)] * n
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
             batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
-            generated_orders += unpad_lists(
-                self.do_model_request(self.client, batch_inputs, temperature)[0], seq_lens
-            )
-        unique_orders = Counter(generated_orders)
+            batch_orders, _ = self.do_model_request(self.client, batch_inputs, temperature)
+            batch_orders = list(zip(*batch_orders))
+            for p, power in enumerate(POWERS):
+                counters[power].update(batch_orders[p])
 
         logging.debug(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
-                n, temperature, len(unique_orders), limit
+                n, temperature, list(map(len, counters)), limit
             )
         )
-        return set([orders for orders, _ in unique_orders.most_common(limit)])
+        return {
+            power: set([orders for orders, _ in counter.most_common(limit)])
+            for power, counter in counters.items()
+        }
 
     def distribute_rollouts(
         self, game, set_orders_dicts: List[Dict], N
@@ -224,7 +233,7 @@ class BaseSearchAgent(BaseAgent):
         - set_orders_dict: Dict[power, orders]
         - list of Dict[power, final_score]
         """
-        assert batch_size <= 8
+        # assert batch_size <= 8
         timings = TimingCtx()
 
         with timings("postman.client"):
@@ -252,33 +261,22 @@ class BaseSearchAgent(BaseAgent):
                 for game in games:
                     if game.is_game_done:
                         continue
-                    all_possible_orders = game.get_all_possible_orders()  # expensive
-                    game_state = encode_state(game)
-                    batch_data += [
-                        (
-                            game,
-                            p,
-                            encode_inputs(
-                                game,
-                                p,
-                                all_possible_orders=all_possible_orders,
-                                game_state=game_state,
-                            ),
-                        )
-                        for p in other_powers
-                        if game.get_orderable_locations(p)
-                    ]
+                    inputs = encode_inputs(
+                        game,
+                        all_possible_orders=game.get_all_possible_orders(),  # expensive
+                        game_state=encode_state(game),
+                    )
+                    batch_data.append((game, inputs))
 
             if len(batch_data) > 0:
                 with timings("cat_pad"):
-                    xs: List[Tuple] = [b[2] for b in batch_data]
+                    xs: List[Tuple] = [b[1] for b in batch_data]
                     batch_inputs, seq_lens = cat_pad_inputs(xs)
 
                 with timings("model"):
                     batch_orders, final_scores = cls.do_model_request(
                         client, batch_inputs, temperature
                     )
-                    batch_orders = unpad_lists(batch_orders, seq_lens)
                 with timings("final_scores"):
                     est_final_scores[game.game_id] = final_scores
             else:
@@ -290,8 +288,11 @@ class BaseSearchAgent(BaseAgent):
                 )
 
                 # set_orders and process
-                for (game, other_power, _), orders in zip(batch_data, batch_orders):
-                    game.set_orders(other_power, list(orders))
+                for (game, _), power_orders in zip(batch_data, batch_orders):
+                    power_orders = dict(zip(POWERS, power_orders))
+                    for other_power in other_powers:
+                        game.set_orders(other_power, list(power_orders[other_power]))
+
                 for game in games:
                     if not game.is_game_done:
                         game.process()
@@ -404,10 +405,10 @@ def server_handler(
     logging.info("SERVER DONE")
 
 
-def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
+def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None, seq_dim=2):
     """
     Arguments:
-    - tensors: a list of [B x S x ...] formatted tensors
+    - tensors: a list of [B x 7 x S x ...] formatted tensors
     - pad_value: the value used to fill padding
     - pad_to_len: the desired total length. If none, use the longest sequence.
 
@@ -416,20 +417,23 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None):
       padded to pad_to_len or the largest S
     - a list of S values for each tensor
     """
-    seq_lens = [t.shape[1] for t in tensors]
+    seq_lens = [t.shape[seq_dim] for t in tensors]
     max_len = max(seq_lens) if pad_to_len is None else pad_to_len
 
     padded = [
         torch.cat(
             [
                 t,
-                torch.zeros(t.shape[0], max_len - t.shape[1], *t.shape[2:], dtype=t.dtype).fill_(
-                    pad_value
-                ),
+                torch.zeros(
+                    *t.shape[:seq_dim],
+                    max_len - t.shape[seq_dim],
+                    *t.shape[seq_dim + 1 :],
+                    dtype=t.dtype,
+                ).fill_(pad_value),
             ],
-            dim=1,
+            dim=seq_dim,
         )
-        if t.shape[1] < max_len
+        if t.shape[seq_dim] < max_len
         else t
         for t in tensors
     ]

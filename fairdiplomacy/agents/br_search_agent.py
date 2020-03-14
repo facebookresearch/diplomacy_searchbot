@@ -44,9 +44,11 @@ class BRSearchAgent(BaseSearchAgent):
         self.n_plausible_orders = n_plausible_orders
 
     def get_orders(self, game, power) -> List[str]:
-        plausible_orders = self.get_plausible_orders(game, power, limit=self.n_plausible_orders)
+        plausible_orders = self.get_plausible_orders(game, limit=self.n_plausible_orders)[power]
         logging.info("Plausible orders: {}".format(plausible_orders))
 
+        if len(plausible_orders) == 0:
+            return []
         if len(plausible_orders) == 1:
             return list(plausible_orders.pop())
 

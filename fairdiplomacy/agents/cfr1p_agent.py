@@ -47,11 +47,8 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
-        # TODO: parallelize these calls
-        power_plausible_orders = {
-            p: sorted(self.get_plausible_orders(game, p, limit=self.n_plausible_orders))
-            for p in POWERS
-        }
+        power_plausible_orders = self.get_plausible_orders(game, limit=self.n_plausible_orders)
+        power_plausible_orders = {p: sorted(v) for p, v in power_plausible_orders.items()}
         logging.info(f"power_plausible_orders: {power_plausible_orders}")
 
         if len(power_plausible_orders[power]) == 1:
