@@ -2,8 +2,9 @@ import logging
 import os
 import subprocess
 
-from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.agents import build_agent_from_cfg
+from fairdiplomacy.compare_agents import run_1v6_trial
+from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.models.dipnet import train_sl
 import heyhi
 import conf.conf_pb2
@@ -29,7 +30,7 @@ def compare_agents(cfg):
 
     power_string = _power_to_string(cfg.power_one)
 
-    result = fairdiplomacy.compare_agents.run_1v6_trial(
+    result = run_1v6_trial(
         agent_one,
         agent_six,
         power_string,
