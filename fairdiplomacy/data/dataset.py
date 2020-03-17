@@ -331,7 +331,7 @@ def encode_phase(
 
 
 def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, game_state):
-    """Return a boolean mask of valid orders
+    """Return a list of valid orders
 
     Returns:
     - a [1, 17, 469] int tensor of valid move indexes (padded with 0)
@@ -375,7 +375,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         # disbands: all possible disband orders, up to the number of required disbands
         n_disbands = -n_builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        all_order_idxs[0, :n_disbands, : len(order_idxs)] = order_idxs.unsqueeze(0)
         loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_disbands
 
