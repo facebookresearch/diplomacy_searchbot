@@ -12,6 +12,7 @@ rsync -az \
     --exclude '*.db' \
     --exclude fairdiplomacy/data/out/ \
     --exclude thirdparty/github/fairinternal/postman \
+    --exclude thirdparty/github/diplomacy/diplomacy/diplomacy/web \
     $ROOT $TMPDIR
 
 echo "$TMPDIR/fairdiplomacy"
