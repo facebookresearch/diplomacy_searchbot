@@ -6,44 +6,71 @@
 set -e
 set -u
 
+ROOT="$(dirname $0)/.."
+
 if [ "$#" -lt 3 ]; then
   echo "Usage: $0 agent_one agent_six name [script_args]"
   exit 1
 fi
 
-LAUNCH="$(dirname $0)/launch_slurm.sh"
-
-# it's more efficient to do this once in advance
-export CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
-export SCRIPT="run.py"
-
-export GPU=${GPU:-1}
-export CPU=${CPU:-10}
-
-NUM_TRIALS=${NUM_TRIALS:-10}
 AGENT_ONE=$1
 AGENT_SIX=$2
 NAME=$3
-export CHECKPOINT_BASE=${CHECKPOINT_BASE:-/checkpoint/$USER/fairdiplomacy}/$NAME
+
+GPU=${GPU:-1}
+CPU=${CPU:-10}
+NUM_TRIALS=${NUM_TRIALS:-10}
+CHECKPOINT_DIR=${CHECKPOINT_DIR:-/checkpoint/$USER/fairdiplomacy}/$NAME
+PARTITION=${PARTITION:-learnfair}
+MEM=${MEM:-0}
+TIME=${TIME:-2880}
+
 # shift off the first 3 arguments; any additional args get passed to the script
 shift 3
 
-mkdir -p $CHECKPOINT_BASE
+SBATCH_ARGS="--partition=$PARTITION --cpus-per-task=$CPU \
+             --gres=gpu:$GPU --mem=$MEM --time=$TIME --open-mode=append \
+             --chdir=$CHECKPOINT_DIR \
+             --array=0-$(($NUM_TRIALS - 1))"
 
-for POWER in AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY; do
-    for SEED in $(seq $NUM_TRIALS); do
-        POWERSEED="$(echo $POWER | head -c3).${SEED}"
-        FULL_NAME="${NAME}_${POWERSEED}"
-        NAME="${FULL_NAME}" $LAUNCH \
-          --cfg=conf/c01_ag_cmp/cmp.prototxt \
-          --exp_id_pattern_override="$CHECKPOINT_BASE/${FULL_NAME}" \
-          I.agent_one=agents/$AGENT_ONE \
-          I.agent_six=agents/$AGENT_SIX \
-          power_one=$POWER \
-          seed=$SEED \
-          out=${CHECKPOINT_BASE}/game_${POWERSEED}.json $@
-       
-       #TODO: use job arrays
-       sleep 0.25
-    done
+
+# copy repo
+CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
+
+# log some stuff locally to make it easier to see what's going on
+mkdir -p $CHECKPOINT_DIR
+ln -sf $CODE_CHECKPOINT $CHECKPOINT_DIR/code
+echo $(env) > $CHECKPOINT_DIR/env.inp
+git log --graph --decorate --pretty=oneline --abbrev-commit --all > $CHECKPOINT_DIR/gitlog.inp
+git diff $ROOT > $CHECKPOINT_DIR/gitdiff.inp
+
+cd $CHECKPOINT_DIR
+
+if [ ! -f "conf" ]; then
+  # HeyHi expects to see conf/ in the root folder.
+  ln -s code/conf
+fi
+
+
+for POWER in AUSTRIA ENGLAND ; do # FRANCE GERMANY ITALY RUSSIA TURKEY; do
+    POW="$(echo $POWER | head -c3)"
+    FULL_NAME="${NAME}_${POW}"
+
+    cat <<EOF | sbatch --job-name $FULL_NAME $SBATCH_ARGS
+#!/bin/bash
+
+OUT_DIR=$CHECKPOINT_DIR/${FULL_NAME}.\$SLURM_ARRAY_TASK_ID
+mkdir -p \$OUT_DIR
+
+PYTHONPATH=$CODE_CHECKPOINT srun --output \$OUT_DIR/stdout.log --error \$OUT_DIR/stderr.log -- \
+python $CODE_CHECKPOINT/run.py \
+  --cfg=$CODE_CHECKPOINT/conf/c01_ag_cmp/cmp.prototxt \
+  --exp_id_pattern_override=\$OUT_DIR \
+  I.agent_one=agents/$AGENT_ONE \
+  I.agent_six=agents/$AGENT_SIX \
+  power_one=$POWER \
+  seed=\$SLURM_ARRAY_TASK_ID \
+  out=${CHECKPOINT_DIR}/game_${POW}.\$SLURM_ARRAY_TASK_ID.json
+
+EOF
 done
