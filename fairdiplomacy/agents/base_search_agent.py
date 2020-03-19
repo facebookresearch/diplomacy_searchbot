@@ -116,7 +116,7 @@ class BaseSearchAgent(BaseAgent):
         return (
             [
                 [
-                    tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[b, p, :] if idx != 0)
+                    tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[b, p, :] if idx != EOS_IDX)
                     for p in range(len(POWERS))
                 ]
                 for b in range(order_idxs.shape[0])
