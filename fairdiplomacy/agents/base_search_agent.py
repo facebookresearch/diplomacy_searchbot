@@ -2,7 +2,6 @@ import faulthandler
 import logging
 import os
 import signal
-import sys
 import time
 from collections import Counter
 from functools import partial
@@ -16,7 +15,12 @@ import torch.multiprocessing as mp
 from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 
 from fairdiplomacy.agents.base_agent import BaseAgent
-from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, ORDER_VOCABULARY
+from fairdiplomacy.agents.dipnet_agent import (
+    encode_inputs,
+    zero_inputs,
+    encode_state,
+    ORDER_VOCABULARY,
+)
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
@@ -42,6 +46,7 @@ class BaseSearchAgent(BaseAgent):
         max_batch_size,
         use_predicted_final_scores=True,
         rollout_temperature,
+        postman_wait_till_full=False,
     ):
         super().__init__()
 
@@ -68,6 +73,7 @@ class BaseSearchAgent(BaseAgent):
                     seed=0,
                     device=i % n_gpu,
                     port_q=q,
+                    wait_till_full=postman_wait_till_full,
                 ),
                 daemon=True,
             )
@@ -130,6 +136,8 @@ class BaseSearchAgent(BaseAgent):
     def get_plausible_orders(
         self, game, *, n=1000, temperature=0.5, limit=8, batch_size=1000
     ) -> Dict[str, Set[Tuple[str]]]:
+        assert n % batch_size == 0, f"{n}, {batch_size}"
+
         # trivial return case: all powers have at most `limit` actions
         orderable_locs = game.get_orderable_locations()
         if max(map(len, orderable_locs.values())) <= 1:
@@ -184,22 +192,29 @@ class BaseSearchAgent(BaseAgent):
         logging.info(f"num_orders={len(set_orders_dicts)} , procs_per_order={procs_per_order}")
         batch_sizes = [len(x) for x in torch.arange(N).chunk(procs_per_order) if len(x) > 0]
         logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
-        all_results = self.proc_pool.map(
-            call,
-            [
-                partial(
-                    self.do_rollout,
-                    game_json=game_json,
-                    set_orders_dict=d,
-                    hostport=self.hostports[i % self.n_server_procs],
-                    temperature=self.rollout_temperature,
-                    max_rollout_length=self.max_rollout_length,
-                    batch_size=batch_size,
-                    use_predicted_final_scores=self.use_predicted_final_scores,
-                )
-                for d in set_orders_dicts
-                for i, batch_size in enumerate(batch_sizes)
-            ],
+        all_results, all_timings = zip(
+            *self.proc_pool.map(
+                call,
+                [
+                    partial(
+                        self.do_rollout,
+                        game_json=game_json,
+                        set_orders_dict=d,
+                        hostport=self.hostports[i % self.n_server_procs],
+                        temperature=self.rollout_temperature,
+                        max_rollout_length=self.max_rollout_length,
+                        batch_size=batch_size,
+                        use_predicted_final_scores=self.use_predicted_final_scores,
+                    )
+                    for d in set_orders_dicts
+                    for i, batch_size in enumerate(batch_sizes)
+                ],
+            )
+        )
+        logging.info(
+            "Timings[distribute_rollouts, n={}] {}".format(
+                len(all_timings), sum(all_timings) / len(all_timings)
+            )
         )
         return [
             (order_dict, scores)
@@ -218,7 +233,7 @@ class BaseSearchAgent(BaseAgent):
         max_rollout_length=40,
         batch_size=1,
         use_predicted_final_scores=True,
-    ) -> Tuple[Dict, List[Dict]]:
+    ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:
         """Complete game, optionally setting orders for the current turn
 
         This method can safely be called in a subprocess
@@ -233,10 +248,11 @@ class BaseSearchAgent(BaseAgent):
         - use_predicted_final_scores: if True, use model's value head for final SC predictions
 
         Returns a 2-tuple:
-        - set_orders_dict: Dict[power, orders]
-        - list of Dict[power, final_score]
+        - results, a 2-tuple:
+          - set_orders_dict: Dict[power, orders]
+          - list of Dict[power, final_score]
+        - timings: a TimingCtx
         """
-        # assert batch_size <= 8
         timings = TimingCtx()
 
         with timings("postman.client"):
@@ -255,35 +271,34 @@ class BaseSearchAgent(BaseAgent):
                 for game in games:
                     game.set_orders(power, list(orders))
 
-            turn_idx = 0
             other_powers = [p for p in POWERS if p not in set_orders_dict]
 
-        while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
+        for turn_idx in range(max_rollout_length):
             with timings("prep"):
                 batch_data = []
                 for game in games:
                     if game.is_game_done:
-                        continue
-                    inputs = encode_inputs(
-                        game,
-                        all_possible_orders=game.get_all_possible_orders(),  # expensive
-                        game_state=encode_state(game),
-                    )
+                        inputs = zero_inputs()
+                    else:
+                        inputs = encode_inputs(
+                            game,
+                            all_possible_orders=game.get_all_possible_orders(),  # expensive
+                            game_state=encode_state(game),
+                        )
                     batch_data.append((game, inputs))
 
-            if len(batch_data) > 0:
-                with timings("cat_pad"):
-                    xs: List[Tuple] = [b[1] for b in batch_data]
-                    batch_inputs, seq_lens = cat_pad_inputs(xs)
+            with timings("cat_pad"):
+                xs: List[Tuple] = [b[1] for b in batch_data]
+                batch_inputs, seq_lens = cat_pad_inputs(xs)
 
-                with timings("model"):
-                    batch_orders, final_scores = cls.do_model_request(
-                        client, batch_inputs, temperature
-                    )
-                with timings("final_scores"):
-                    est_final_scores[game.game_id] = final_scores
-            else:
-                batch_orders = []
+            with timings("model"):
+                batch_orders, final_scores = cls.do_model_request(
+                    client, batch_inputs, temperature
+                )
+            with timings("final_scores"):
+                for game in games:
+                    if not game.is_game_done:
+                        est_final_scores[game.game_id] = final_scores
 
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
@@ -292,6 +307,8 @@ class BaseSearchAgent(BaseAgent):
 
                 # set_orders and process
                 for (game, _), power_orders in zip(batch_data, batch_orders):
+                    if game.is_game_done:
+                        continue
                     power_orders = dict(zip(POWERS, power_orders))
                     for other_power in other_powers:
                         game.set_orders(other_power, list(power_orders[other_power]))
@@ -300,7 +317,6 @@ class BaseSearchAgent(BaseAgent):
                     if not game.is_game_done:
                         game.process()
 
-            turn_idx += 1
             other_powers = POWERS  # no set orders on subsequent turns
 
         with timings("final_scores"):
@@ -311,11 +327,8 @@ class BaseSearchAgent(BaseAgent):
                 for game in games
             ]
             result = (set_orders_dict, final_scores)
-        logging.debug(
-            f"end do_rollout pid {os.getpid()} for {batch_size} games in {turn_idx} turns. timings: "
-            f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }."
-        )
-        return result
+
+        return result, timings
 
 
 def run_server(port, batch_size, port_q=None, **kwargs):
@@ -326,6 +339,9 @@ def run_server(port, batch_size, port_q=None, **kwargs):
         eval_queue = postman.ComputationQueue(batch_size)
         for p in range(port, max_port):
             server = postman.Server(f"127.0.0.1:{p}")
+            server.bind(
+                "set_batch_size", lambda x: eval_queue.set_batch_size(x.item()), batch_size=1
+            )
             server.bind_queue_batched("evaluate", eval_queue)
             try:
                 server.run()
@@ -355,6 +371,7 @@ def server_handler(
     seed=None,
     device=0,
     ckpt_sync_path=None,
+    wait_till_full=False,
 ):
 
     if device != 0:
@@ -378,7 +395,7 @@ def server_handler(
     with torch.no_grad():
         while True:
             try:
-                with q.get() as batch:
+                with q.get(wait_till_full=wait_till_full) as batch:
                     with timings("ckpt_sync"):
                         if ckpt_sync_path is not None and time.time() >= next_ckpt_sync_time:
                             last_ckpt_version = ckpt_syncer.maybe_load_state_dict(
@@ -415,7 +432,7 @@ def server_handler(
                             f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
                             f"in {delta} s, {frame_count / delta} forward/s."
                         )
-                        logging.info(str(timings))
+                        logging.info(f"Timings[server] {str(timings)}")
                         batch_count = frame_count = 0
                         timings.clear()
                         totaltic = time.time()

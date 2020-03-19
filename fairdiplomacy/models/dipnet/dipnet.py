@@ -8,6 +8,7 @@ from torch.distributions.categorical import Categorical
 
 from fairdiplomacy.models.dipnet.order_vocabulary import get_incompatible_build_idxs_map
 from fairdiplomacy.models.consts import POWERS, N_SCS
+from fairdiplomacy.utils.timing_ctx import TimingCtx
 
 
 class DipNet(nn.Module):
@@ -163,10 +164,13 @@ class DipNet(nn.Module):
         temperature,
         teacher_force_orders,
     ):
+        timings = TimingCtx()
+
         assert len(loc_idxs.shape) == 3
         assert len(valid_order_idxs.shape) == 4
 
-        enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
+        with timings("enc"):
+            enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
 
         power_1h = torch.empty(x_bo.shape[0], len(POWERS), device=loc_idxs.device)
         order_idxs_lst, order_scores_lst = [], []
@@ -174,26 +178,30 @@ class DipNet(nn.Module):
             power_1h.fill_(0)
             power_1h[:, p] = 1
 
-            order_idxs, order_scores = self.policy_decoder(
-                enc,
-                in_adj_phase,
-                loc_idxs[:, p],
-                self.valid_order_idxs_to_mask(valid_order_idxs[:, p]),
-                temperature=temperature,
-                teacher_force_orders=(
-                    teacher_force_orders[:, p] if teacher_force_orders is not None else None
-                ),
-                power_1h=power_1h,
-            )
+            with timings("policy_decoder"):
+                order_idxs, order_scores = self.policy_decoder(
+                    enc,
+                    in_adj_phase,
+                    loc_idxs[:, p],
+                    self.valid_order_idxs_to_mask(valid_order_idxs[:, p]),
+                    temperature=temperature,
+                    teacher_force_orders=(
+                        teacher_force_orders[:, p] if teacher_force_orders is not None else None
+                    ),
+                    power_1h=power_1h,
+                )
             order_idxs_lst.append(order_idxs)
             order_scores_lst.append(order_scores)
 
-        final_scores = self.value_decoder(enc)
+        with timings("value_decoder"):
+            final_scores = self.value_decoder(enc)
 
-        order_idxs = torch.stack(order_idxs_lst, dim=1)
-        order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
-        order_scores = torch.stack(order_scores_lst, dim=1)
+        with timings("finish"):
+            order_idxs = torch.stack(order_idxs_lst, dim=1)
+            order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
+            order_scores = torch.stack(order_scores_lst, dim=1)
 
+        logging.info(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
         return order_idxs, order_scores, final_scores
 
     def valid_order_idxs_to_mask(self, valid_order_idxs):

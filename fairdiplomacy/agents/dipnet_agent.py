@@ -36,6 +36,18 @@ class DipnetAgent(BaseAgent):
         return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, POWERS.index(power), :] if idx != 0]
 
 
+def zero_inputs():
+    """Return empty input encodings"""
+    return (
+        torch.zeros(1, 81, 35),
+        torch.zeros(1, 81, 40),
+        torch.zeros(1, 3),
+        torch.zeros(1, dtype=torch.bool),
+        torch.tensor(1, 7, 17, dtype=torch.long).fill_(-1),
+        torch.zeros(1, 7, 0, 469, dtype=torch.long),
+    )
+
+
 def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     """Return a 6-tuple of tensors
 

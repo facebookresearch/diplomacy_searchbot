@@ -1,10 +1,13 @@
 import logging
 import numpy as np
+import time
+import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
 
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.utils.timing_ctx import TimingCtx
 
 
 Action = Tuple[str]  # a set of orders
@@ -21,32 +24,35 @@ class CFR1PAgent(BaseSearchAgent):
         n_rollout_procs=70,
         n_server_procs=1,
         n_gpu=1,
-        max_batch_size=1000,
         n_rollouts=100,
-        max_rollout_length=3,
+        max_rollout_length=10,
         use_predicted_final_scores=True,
         n_plausible_orders=8,
         rollout_temperature=0.05,
         use_optimistic_cfr=True,
         enable_compute_nash_conv=False,
+        plausible_orders_req_size=1000,
     ):
         super().__init__(
             model_path=model_path,
             n_rollout_procs=n_rollout_procs,
             n_server_procs=n_server_procs,
             n_gpu=n_gpu,
-            max_batch_size=max_batch_size,
+            max_batch_size=n_plausible_orders * len(POWERS),
             use_predicted_final_scores=use_predicted_final_scores,
             rollout_temperature=rollout_temperature,
+            postman_wait_till_full=True,
         )
 
         self.n_rollouts = n_rollouts
         self.max_rollout_length = max_rollout_length
         self.n_plausible_orders = n_plausible_orders
+        self.plausible_orders_req_size=plausible_orders_req_size
         self.use_optimistic_cfr=use_optimistic_cfr
         self.enable_compute_nash_conv=enable_compute_nash_conv
 
     def get_orders(self, game, power) -> List[str]:
+        timings = TimingCtx()
 
         # CFR data structures
         self.sigma: Dict[Tuple[Power, Action], float] = {}
@@ -54,9 +60,17 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
-        # TODO: parallelize these calls
-        power_plausible_orders = self.get_plausible_orders(game, limit=self.n_plausible_orders)
+        self.client.set_batch_size(torch.LongTensor([self.plausible_orders_req_size]))
+        power_plausible_orders = self.get_plausible_orders(
+            game,
+            limit=self.n_plausible_orders,
+            n=self.plausible_orders_req_size,
+            batch_size=self.plausible_orders_req_size,
+        )
         power_plausible_orders = {p: sorted(v) for p, v in power_plausible_orders.items()}
+        self.client.set_batch_size(
+            torch.LongTensor([sum(map(len, power_plausible_orders.values()))])
+        )
         logging.info(f"power_plausible_orders: {power_plausible_orders}")
 
         if len(power_plausible_orders[power]) == 1:
@@ -100,7 +114,8 @@ class CFR1PAgent(BaseSearchAgent):
                 for pwr, actions in power_plausible_orders.items()
                 for action in actions
             ]
-            all_rollout_results = self.distribute_rollouts(game, set_orders_dicts, N=1)
+            with timings("distribute_rollouts"):
+                all_rollout_results = self.distribute_rollouts(game, set_orders_dicts, N=1)
 
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
@@ -142,17 +157,22 @@ class CFR1PAgent(BaseSearchAgent):
 
                 if pwr == power:
                     new_avg_strategy = self.avg_strategy(power, actions)
-                    logging.debug(
-                        "old_avg_strat= {} new_avg_strat= {} mse= {}".format(
-                            old_avg_strategy,
-                            new_avg_strategy,
-                            sum((a - b) ** 2 for a, b in zip(old_avg_strategy, new_avg_strategy)),
-                        )
-                    )
+                    # logging.debug(
+                    #     "old_avg_strat= {} new_avg_strat= {} mse= {}".format(
+                    #         old_avg_strategy,
+                    #         new_avg_strategy,
+                    #         sum((a - b) ** 2 for a, b in zip(old_avg_strategy, new_avg_strategy)),
+                    #     )
+                    # )
 
             if self.enable_compute_nash_conv and cfr_iter in [25, 50, 100, 200, 400]:
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
+
+            logging.info(
+                f"Timing[cfr_iter]: {str(timings)}, total={time.time() - tic}, len(set_orders_dicts)={len(set_orders_dicts)}"
+            )
+            timings.clear()
 
         # return best order: sample from average policy
         ps = self.avg_strategy(power, power_plausible_orders[power])
@@ -283,6 +303,6 @@ class CFR1PAgent(BaseSearchAgent):
 if __name__ == "__main__":
     import diplomacy
 
-    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
-    print(CFR1PAgent().get_orders(diplomacy.Game(), "ITALY"))
+    print(CFR1PAgent(n_rollouts=5).get_orders(diplomacy.Game(), "ITALY"))
