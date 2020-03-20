@@ -172,34 +172,41 @@ class DipNet(nn.Module):
         with timings("enc"):
             enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
 
-        power_1h = torch.empty(x_bo.shape[0], len(POWERS), device=loc_idxs.device)
-        order_idxs_lst, order_scores_lst = [], []
-        for p in range(len(POWERS)):
-            power_1h.fill_(0)
-            power_1h[:, p] = 1
+        with timings("policy_decoder_prep"):
+            enc = enc.repeat((7, 1, 1))
+            in_adj_phase = in_adj_phase.repeat(7)
+            loc_idxs = loc_idxs.view(-1, loc_idxs.shape[2])
+            valid_order_masks = self.valid_order_idxs_to_mask(
+                valid_order_idxs.view(-1, *valid_order_idxs.shape[2:])
+            )
+            temperature = (
+                temperature.repeat(7, 1) if hasattr(temperature, "repeat") else temperature
+            )
+            teacher_force_orders = (
+                teacher_force_orders.view(-1, *teacher_force_orders.shape[2:])
+                if teacher_force_orders is not None
+                else None
+            )
+            power_1h = torch.eye(7, device=enc.device).repeat((enc.shape[0] // 7, 1))
 
-            with timings("policy_decoder"):
-                order_idxs, order_scores = self.policy_decoder(
-                    enc,
-                    in_adj_phase,
-                    loc_idxs[:, p],
-                    self.valid_order_idxs_to_mask(valid_order_idxs[:, p]),
-                    temperature=temperature,
-                    teacher_force_orders=(
-                        teacher_force_orders[:, p] if teacher_force_orders is not None else None
-                    ),
-                    power_1h=power_1h,
-                )
-            order_idxs_lst.append(order_idxs)
-            order_scores_lst.append(order_scores)
+        with timings("policy_decoder"):
+            order_idxs, order_scores = self.policy_decoder(
+                enc,
+                in_adj_phase,
+                loc_idxs,
+                valid_order_masks,
+                temperature=temperature,
+                teacher_force_orders=teacher_force_orders,
+                power_1h=power_1h,
+            )
 
         with timings("value_decoder"):
             final_scores = self.value_decoder(enc)
 
         with timings("finish"):
-            order_idxs = torch.stack(order_idxs_lst, dim=1)
+            order_idxs = order_idxs.view(-1, 7, *order_idxs.shape[1:])
             order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
-            order_scores = torch.stack(order_scores_lst, dim=1)
+            order_scores = order_scores.view(-1, 7, *order_scores.shape[1:])
 
         logging.info(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
         return order_idxs, order_scores, final_scores
