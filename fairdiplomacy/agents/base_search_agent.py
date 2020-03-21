@@ -20,6 +20,7 @@ from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, ORDER
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
+from fairdiplomacy.selfplay.ckpt_syncer import CkptSyncer
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 
@@ -346,7 +347,12 @@ def run_server(port, batch_size, port_q=None, **kwargs):
 
 
 def server_handler(
-    q: postman.ComputationQueue, load_model_fn, output_transform=None, seed=None, device=0
+    q: postman.ComputationQueue,
+    load_model_fn,
+    output_transform=None,
+    seed=None,
+    device=0,
+    ckpt_sync_path=None,
 ):
 
     if device != 0:
@@ -360,10 +366,23 @@ def server_handler(
     frame_count, batch_count, total_batches = 0, 0, 0
     timings = TimingCtx()
     totaltic = time.time()
+
+    ckpt_sync_every = 30  # Setting timeout in order not to handle with FS too often.
+    if ckpt_sync_path is not None:
+        ckpt_syncer = CkptSyncer(ckpt_sync_path)
+        last_ckpt_version = ckpt_syncer.maybe_load_state_dict(model, last_version=None)
+        next_ckpt_sync_time = time.time() + ckpt_sync_every
+
     with torch.no_grad():
         while True:
             try:
                 with q.get() as batch:
+                    with timings("ckpt_sync"):
+                        if ckpt_sync_path is not None and time.time() >= next_ckpt_sync_time:
+                            last_ckpt_version = ckpt_syncer.maybe_load_state_dict(
+                                model, last_ckpt_version
+                            )
+                            next_ckpt_sync_time = time.time() + ckpt_sync_every
 
                     with timings("next_batch"):
                         inputs = batch.get_inputs()[0]
