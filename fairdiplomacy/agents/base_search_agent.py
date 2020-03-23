@@ -332,7 +332,7 @@ class BaseSearchAgent(BaseAgent):
 
 
 def run_server(port, batch_size, port_q=None, **kwargs):
-    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
     max_port = port + 10
     try:
         logging.info(f"Starting server port={port} batch={batch_size}")

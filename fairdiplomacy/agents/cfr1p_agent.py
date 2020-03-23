@@ -32,16 +32,20 @@ class CFR1PAgent(BaseSearchAgent):
         use_optimistic_cfr=True,
         enable_compute_nash_conv=False,
         plausible_orders_req_size=1000,
+        postman_sync_batches=False,
+        max_batch_size=700,
     ):
         super().__init__(
             model_path=model_path,
             n_rollout_procs=n_rollout_procs,
             n_server_procs=n_server_procs,
             n_gpu=n_gpu,
-            max_batch_size=n_plausible_orders * len(POWERS),
+            max_batch_size=(
+                n_plausible_orders * len(POWERS) if postman_sync_batches else max_batch_size
+            ),
             use_predicted_final_scores=use_predicted_final_scores,
             rollout_temperature=rollout_temperature,
-            postman_wait_till_full=True,
+            postman_wait_till_full=postman_sync_batches,
         )
 
         self.n_rollouts = n_rollouts
@@ -50,6 +54,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.use_optimistic_cfr=use_optimistic_cfr
         self.enable_compute_nash_conv=enable_compute_nash_conv
         self.plausible_orders_req_size = plausible_orders_req_size
+        self.postman_sync_batches = postman_sync_batches
 
     def get_orders(self, game, power) -> List[str]:
         timings = TimingCtx()
@@ -60,7 +65,9 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
-        self.client.set_batch_size(torch.LongTensor([self.plausible_orders_req_size]))
+        if self.postman_sync_batches:
+            self.client.set_batch_size(torch.LongTensor([self.plausible_orders_req_size]))
+
         power_plausible_orders = self.get_plausible_orders(
             game,
             limit=self.n_plausible_orders,
@@ -68,10 +75,12 @@ class CFR1PAgent(BaseSearchAgent):
             batch_size=self.plausible_orders_req_size,
         )
         power_plausible_orders = {p: sorted(v) for p, v in power_plausible_orders.items()}
-        self.client.set_batch_size(
-            torch.LongTensor([sum(map(len, power_plausible_orders.values()))])
-        )
         logging.info(f"power_plausible_orders: {power_plausible_orders}")
+
+        if self.postman_sync_batches:
+            self.client.set_batch_size(
+                torch.LongTensor([sum(map(len, power_plausible_orders.values()))])
+            )
 
         if len(power_plausible_orders[power]) == 1:
             return list(list(power_plausible_orders[power]).pop())
@@ -174,7 +183,7 @@ class CFR1PAgent(BaseSearchAgent):
 >>>>>>> finishing touches on cfr speedup
 
             logging.info(
-                f"Timing[cfr_iter]: {str(timings)}, total={time.time() - tic}, len(set_orders_dicts)={len(set_orders_dicts)}"
+                f"Timing[cfr_iter]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
             )
             timings.clear()
 
@@ -309,6 +318,6 @@ if __name__ == "__main__":
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
-    agent = CFR1PAgent(n_rollouts=100)
+    agent = CFR1PAgent(n_rollouts=10, postman_sync_batches=True)
     print(agent.get_orders(diplomacy.Game(), "ITALY"))
-    print(agent.get_orders(diplomacy.Game(), "RUSSIA"))
+    # print(agent.get_orders(diplomacy.Game(), "RUSSIA"))
