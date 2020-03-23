@@ -342,7 +342,9 @@ class LSTMDipNetDecoder(nn.Module):
                     ((loc_idxs == step) | (loc_idxs == -2)).float(), self.master_alignments
                 )
                 alignments /= torch.sum(alignments, dim=1, keepdim=True)
-                alignments[alignments != alignments] = 0  # remove nans, caused by loc_idxs == -1
+                alignments = torch.where(
+                    torch.isnan(alignments), torch.zeros_like(alignments), alignments
+                )
                 loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
