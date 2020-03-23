@@ -23,7 +23,10 @@ class TimingCtx:
         self.timings[self.arg] += time.time() - self.tic
 
     def __repr__(self):
-        return dict(**self.timings, total=time.time() - self.last_clear).__repr__()
+        return dict(
+            sorted(self.timings.items(), key=lambda kv: kv[1], reverse=True),
+            total=time.time() - self.last_clear,
+        ).__repr__()
 
     def __add__(self, other):
         if isinstance(other, TimingCtx):
