@@ -52,7 +52,7 @@ if [ ! -f "conf" ]; then
 fi
 
 
-for POWER in AUSTRIA ENGLAND ; do # FRANCE GERMANY ITALY RUSSIA TURKEY; do
+for POWER in AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY; do
     POW="$(echo $POWER | head -c3)"
     FULL_NAME="${NAME}_${POW}"
 
