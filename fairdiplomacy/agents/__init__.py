@@ -3,6 +3,7 @@ from .dipnet_agent import DipnetAgent
 from .mila_sl_agent import MilaSLAgent
 from .br_search_agent import BRSearchAgent
 from .cfr1p_agent import CFR1PAgent
+from .ce1p_agent import CE1PAgent
 from .random_agent import RandomAgent
 
 
@@ -17,8 +18,9 @@ def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.
         "br_search": BRSearchAgent,
         "dipnet": DipnetAgent,
         "cfr1p": CFR1PAgent,
+        "ce1p": CE1PAgent,
         None: None,
     }[agent_name](**MessageToDict(agent_cfg, preserving_proto_field_name=True))
 
 
-__all__ = [build_agent_from_cfg, DipnetAgent, MilaSLAgent, BRSearchAgent, CFR1PAgent, RandomAgent]
+__all__ = [build_agent_from_cfg, DipnetAgent, MilaSLAgent, BRSearchAgent, CFR1PAgent, CE1PAgent, RandomAgent]

@@ -41,12 +41,14 @@ class BaseSearchAgent(BaseAgent):
         n_gpu,
         max_batch_size,
         use_predicted_final_scores=True,
+        rollout_temperature,
     ):
         super().__init__()
 
         self.n_rollout_procs = n_rollout_procs
         self.n_server_procs = n_server_procs
         self.use_predicted_final_scores = use_predicted_final_scores
+        self.rollout_temperature = rollout_temperature
 
         logging.info("Launching servers")
         self.servers = []
@@ -190,7 +192,7 @@ class BaseSearchAgent(BaseAgent):
                     game_json=game_json,
                     set_orders_dict=d,
                     hostport=self.hostports[i % self.n_server_procs],
-                    temperature=0.05,
+                    temperature=self.rollout_temperature,
                     max_rollout_length=self.max_rollout_length,
                     batch_size=batch_size,
                     use_predicted_final_scores=self.use_predicted_final_scores,

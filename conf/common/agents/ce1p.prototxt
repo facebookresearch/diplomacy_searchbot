@@ -1,4 +1,4 @@
-cfr1p {
+ce1p {
   max_batch_size: 1000
   max_rollout_length: 3
   model_path: "/checkpoint/jsgray/diplomacy/dipnet.pth"

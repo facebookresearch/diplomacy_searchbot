@@ -11,8 +11,8 @@ Action = Tuple[str]  # a set of orders
 Power = str
 
 
-class CFR1PAgent(BaseSearchAgent):
-    """One-ply cfr with dipnet-policy rollouts"""
+class CE1PAgent(BaseSearchAgent):
+    """One-ply correlated equilibrium cfr with dipnet-policy rollouts"""
 
     def __init__(
         self,
@@ -47,8 +47,11 @@ class CFR1PAgent(BaseSearchAgent):
         # CFR data structures
         self.sigma: Dict[Tuple[Power, Action], float] = {}
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
-        self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
-        self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        #self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        #self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        self.cum_swap_regrets: Dict[Tuple[Power, Action, Action], float] = defaultdict(float) # for swap regret minimization
+        self.last_swap_regrets: Dict[Tuple[Power, Action, Action], float] = defaultdict(float)
+        self.swap_sigma: Dict[Tuple[Power, Action, Action], float] = {} # for swap regret minimization
 
         # TODO: parallelize these calls
         power_plausible_orders = self.get_plausible_orders(game, limit=self.n_plausible_orders)
@@ -67,8 +70,10 @@ class CFR1PAgent(BaseSearchAgent):
                 if len(actions) == 0:
                     continue
                 for action in actions:
-                    self.cum_regrets[(pwr, action)] *= discount_factor
+                    #self.cum_regrets[(pwr, action)] *= discount_factor
                     self.cum_sigma[(pwr, action)] *= discount_factor
+                    for swap_action in actions:
+                        self.cum_swap_regrets[(pwr, swap_action, action)] *= discount_factor
 
             # get policy probs for all powers
             power_action_ps: Dict[Power, List[float]] = {
@@ -119,19 +124,149 @@ class CFR1PAgent(BaseSearchAgent):
 
                 # update cfr data structures
 
+                # for action, regret, s in zip(actions, action_regrets, power_action_ps[pwr]):
+                #     self.cum_regrets[(pwr, action)] += regret
+                #     self.last_regrets[(pwr, action)] = regret
+                #     self.cum_sigma[(pwr, action)] += s
+
+                # pos_regrets = [max(0, self.cum_regrets[(pwr, a)]) for a in actions] # Normal Linear CFR
+                # # pos_regrets = [max(0, self.cum_regrets[(pwr, a)] + self.last_regrets[(pwr, a)]) for a in actions] # Optimistic Linear CFR
+                # sum_pos_regrets = sum(pos_regrets)
+                # for action, pos_regret in zip(actions, pos_regrets):
+                #     if sum_pos_regrets == 0:
+                #         self.sigma[(pwr, action)] = 1.0 / len(actions)
+                #     else:
+                #         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
+
+                #USE BELOW FOR SWAP REGRET MINIMIZATION
                 for action, regret, s in zip(actions, action_regrets, power_action_ps[pwr]):
-                    self.cum_regrets[(pwr, action)] += regret
-                    self.last_regrets[(pwr, action)] = regret
+                    #self.cum_regrets[(pwr, action)] += regret
+                    #self.last_regrets[(pwr, action)] = regret
                     self.cum_sigma[(pwr, action)] += s
 
-                # pos_regrets = [max(0, self.cum_regrets[(pwr, a)]) for a in actions] # Normal CFR
-                pos_regrets = [max(0, self.cum_regrets[(pwr, a)] + self.last_regrets[(pwr, a)]) for a in actions] # Optimistic CFR
-                sum_pos_regrets = sum(pos_regrets)
-                for action, pos_regret in zip(actions, pos_regrets):
-                    if sum_pos_regrets == 0:
-                        self.sigma[(pwr, action)] = 1.0 / len(actions)
-                    else:
-                        self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
+                for swap_action in actions:
+                    # pos_regrets = [max(0, self.cum_swap_regrets[(pwr, swap_action, a)]) for a in actions] # Normal Linear CFR
+                    pos_regrets = [max(0, self.cum_swap_regrets[(pwr, swap_action, a)] + self.last_swap_regrets[(pwr, swap_action, a)]) for a in actions] # Optimistic Linear CFR
+                    sum_pos_regrets = sum(pos_regrets)
+                    for action, pos_regret in zip(actions, pos_regrets):
+                        if sum_pos_regrets == 0:
+                            self.swap_sigma[(pwr, swap_action, action)] = 1.0 / len(actions)
+                        else:
+                            self.swap_sigma[(pwr, swap_action, action)] = pos_regret / sum_pos_regrets
+                temp_sigma = [(1.0 / len(actions)) for action in actions]
+                new_temp_sigma = [(1.0 / len(actions)) for action in actions]
+                for x in range(10):
+                    # Compute transition
+                    for i in range(len(actions)):
+                        action = actions[i]
+                        new_temp_sigma[i] = 0
+                        for swap_i in range(len(actions)):
+                            swap_action = actions[swap_i]
+                            new_temp_sigma[i] += temp_sigma[swap_i] * self.swap_sigma[(pwr, swap_action, action)]
+                    # Normalize
+                    sigma_sum = sum(new_temp_sigma)
+                    assert(sigma_sum > 0)
+                    for i in range(len(actions)):
+                        temp_sigma[i] = new_temp_sigma[i] / sigma_sum
+                for i in range(len(actions)):
+                    action = actions[i]
+                    self.sigma[(pwr,action)] = temp_sigma[i]
+                    # logging.info(
+                    #     "RECOMPUTED TRUE sigma for action {} = {}".format(
+                    #         action,
+                    #         self.sigma[(pwr, action)]
+                    #     )
+                    # )
+
+                for swap_i in range(len(actions)):
+                    swap_action = actions[swap_i]
+                    swap_state_utility = 0
+                    # logging.info("swap action={}".format(swap_action))
+                    for i in range(len(actions)):
+                        action = actions[i]
+                        # logging.info("action={}".format(action))
+                        # logging.info("action utility={}".format(action_utilities[i]))
+                        # logging.info(f"swap sigma={self.swap_sigma[(pwr,swap_action,action)]}")
+                        swap_state_utility += self.swap_sigma[(pwr,swap_action,action)] * action_utilities[i]
+                    # logging.info(f"swap state utility={swap_state_utility}")
+                    for i in range(len(actions)):
+                        action = actions[i]
+                        self.cum_swap_regrets[(pwr, swap_action, action)] += self.sigma[(pwr,swap_action)] * (action_utilities[i] - swap_state_utility)
+                        self.last_swap_regrets[(pwr, swap_action, action)] = self.sigma[(pwr,swap_action)] * (action_utilities[i] - swap_state_utility)
+                        # logging.info(
+                        #     "new swap regret for swap_action {} and action {} = {}".format(
+                        #         swap_action,
+                        #         action,
+                        #         self.cum_swap_regrets[(pwr, swap_action, action)]
+                        #     )
+                        # )
+                    
+                for swap_action in actions:
+                    # pos_regrets = [max(0, self.cum_swap_regrets[(pwr, swap_action, a)]) for a in actions] # Normal Linear CFR
+                    pos_regrets = [max(0, self.cum_swap_regrets[(pwr, swap_action, a)] + self.last_swap_regrets[(pwr, swap_action, a)]) for a in actions] # Optimistic Linear CFR
+                    sum_pos_regrets = sum(pos_regrets)
+                    for action, pos_regret in zip(actions, pos_regrets):
+                        if sum_pos_regrets == 0:
+                            self.swap_sigma[(pwr, swap_action, action)] = 1.0 / len(actions)
+                        else:
+                            self.swap_sigma[(pwr, swap_action, action)] = pos_regret / sum_pos_regrets
+                        # logging.info(
+                        #     "new swap sigma for swap_action {} and action {} = {}".format(
+                        #         swap_action,
+                        #         action,
+                        #         self.swap_sigma[(pwr, swap_action, action)]
+                        #     )
+                        # )
+                # true policy is p s.t. p = pQ, where Q is the swap policy matrix
+                # for action in actions:
+                #     self.sigma[(pwr, action)] = 1.0 / len(actions)
+                temp_sigma = [(1.0 / len(actions)) for action in actions]
+                new_temp_sigma = [(1.0 / len(actions)) for action in actions]
+                for x in range(10):
+                    # Compute transition
+                    for i in range(len(actions)):
+                        action = actions[i]
+                        new_temp_sigma[i] = 0
+                        # logging.info(
+                        #     "initial new_temp_sigma on step {} for action {} = {}".format(
+                        #         x,
+                        #         action,
+                        #         new_temp_sigma[i],
+                        #     )
+                        # )
+                        for swap_i in range(len(actions)):
+                            swap_action = actions[swap_i]
+                            new_temp_sigma[i] += temp_sigma[swap_i] * self.swap_sigma[(pwr, swap_action, action)]
+                            # logging.info(
+                            #     "adding to new_temp_sigma for action {} and swap_action {} temp_sigma {} and swap_sigma {} = {}".format(
+                            #         action,
+                            #         swap_action,
+                            #         temp_sigma[swap_i],
+                            #         self.swap_sigma[(pwr, swap_action, action)],
+                            #         new_temp_sigma[i],
+                            #     )
+                            # )
+                        # logging.info(
+                        #     "new_temp_sigma on step {} for action {} = {}".format(
+                        #         x,
+                        #         action,
+                        #         new_temp_sigma[i],
+                        #     )
+                        # )
+                    # Normalize
+                    sigma_sum = sum(new_temp_sigma)
+                    assert(sigma_sum > 0)
+                    for i in range(len(actions)):
+                        temp_sigma[i] = new_temp_sigma[i] / sigma_sum
+                for i in range(len(actions)):
+                    action = actions[i]
+                    self.sigma[(pwr,action)] = temp_sigma[i]
+                    # logging.info(
+                    #     "new TRUE sigma for action {} = {}".format(
+                    #         action,
+                    #         self.sigma[(pwr, action)]
+                    #     )
+                    # )
 
                 if pwr == power:
                     new_avg_strategy = self.avg_strategy(power, actions)
@@ -296,4 +431,4 @@ if __name__ == "__main__":
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
-    print(CFR1PAgent().get_orders(diplomacy.Game(), "ITALY"))
+    print(CE1PAgent().get_orders(diplomacy.Game(), "ITALY"))
