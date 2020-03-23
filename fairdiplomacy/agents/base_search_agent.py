@@ -394,6 +394,7 @@ def server_handler(
 
     with torch.no_grad():
         while True:
+            torch.cuda.empty_cache()
             try:
                 with q.get(wait_till_full=wait_till_full) as batch:
                     with timings("ckpt_sync"):

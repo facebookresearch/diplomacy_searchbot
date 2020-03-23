@@ -208,7 +208,7 @@ class DipNet(nn.Module):
             order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
             order_scores = order_scores.view(-1, 7, *order_scores.shape[1:])
 
-        logging.info(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
+        logging.debug(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
         return order_idxs, order_scores, final_scores
 
     def valid_order_idxs_to_mask(self, valid_order_idxs):
