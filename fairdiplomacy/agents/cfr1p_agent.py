@@ -1,6 +1,5 @@
 import logging
 import numpy as np
-import time
 import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
@@ -34,6 +33,7 @@ class CFR1PAgent(BaseSearchAgent):
         plausible_orders_req_size=1000,
         postman_sync_batches=False,
         max_batch_size=700,
+        cache_rollout_results=False,
     ):
         super().__init__(
             model_path=model_path,
@@ -55,6 +55,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.enable_compute_nash_conv=enable_compute_nash_conv
         self.plausible_orders_req_size = plausible_orders_req_size
         self.postman_sync_batches = postman_sync_batches
+        self.cache_rollout_results = cache_rollout_results
 
     def get_orders(self, game, power) -> List[str]:
         timings = TimingCtx()
@@ -64,6 +65,9 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
+
+        if self.cache_rollout_results:
+            rollout_results_cache = RolloutResultsCache()
 
         if self.postman_sync_batches:
             self.client.set_batch_size(torch.LongTensor([self.plausible_orders_req_size]))
@@ -123,8 +127,17 @@ class CFR1PAgent(BaseSearchAgent):
                 for pwr, actions in power_plausible_orders.items()
                 for action in actions
             ]
-            with timings("distribute_rollouts"):
-                all_rollout_results = self.distribute_rollouts(game, set_orders_dicts, N=1)
+
+            # run rollouts or get from cache
+            def on_miss():
+                with timings("distribute_rollouts"):
+                    return self.distribute_rollouts(game, set_orders_dicts, N=1)
+
+            all_rollout_results = (
+                rollout_results_cache.get(set_orders_dicts, on_miss)
+                if self.cache_rollout_results
+                else on_miss()
+            )
 
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
@@ -186,6 +199,9 @@ class CFR1PAgent(BaseSearchAgent):
                 f"Timing[cfr_iter]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
             )
             timings.clear()
+
+            if self.cache_rollout_results and (rollout_i + 1) % 10 == 0:
+                logging.info(f"{rollout_results_cache}")
 
         # return best order: sample from average policy
         ps = self.avg_strategy(power, power_plausible_orders[power])
@@ -313,11 +329,33 @@ class CFR1PAgent(BaseSearchAgent):
         logging.info(f"Nash conv for iter {cfr_iter} = {nash_conv}")
 
 
+class RolloutResultsCache:
+    def __init__(self):
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, set_orders_dicts, onmiss_fn):
+        key = frozenset(frozenset(d.items()) for d in set_orders_dicts)
+        if key in self.cache:
+            self.hits += 1
+            return self.cache[key]
+        else:
+            self.misses += 1
+            r = onmiss_fn()
+            self.cache[key] = r
+            return r
+
+    def __repr__(self):
+        return "RolloutResultsCache[{} / {} = {:.3f}]".format(
+            self.hits, self.hits + self.misses, self.hits / (self.hits + self.misses)
+        )
+
+
 if __name__ == "__main__":
     import diplomacy
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
-    agent = CFR1PAgent(n_rollouts=10, postman_sync_batches=True)
+    agent = CFR1PAgent(n_rollouts=500, postman_sync_batches=True)
     print(agent.get_orders(diplomacy.Game(), "ITALY"))
-    # print(agent.get_orders(diplomacy.Game(), "RUSSIA"))
