@@ -3,6 +3,7 @@ import math
 import time
 import torch
 import torch.nn.functional as F
+import os
 from torch import nn
 from torch.distributions.categorical import Categorical
 
@@ -163,6 +164,7 @@ class DipNet(nn.Module):
         valid_order_idxs,
         temperature,
         teacher_force_orders,
+        log_timings=False,
     ):
         timings = TimingCtx()
 
@@ -208,7 +210,9 @@ class DipNet(nn.Module):
             order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
             order_scores = order_scores.view(-1, 7, *order_scores.shape[1:])
 
-        logging.debug(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
+        if log_timings:
+            logging.debug(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
+
         return order_idxs, order_scores, final_scores
 
     def valid_order_idxs_to_mask(self, valid_order_idxs):
