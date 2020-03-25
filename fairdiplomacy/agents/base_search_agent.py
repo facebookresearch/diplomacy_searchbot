@@ -19,7 +19,7 @@ from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
     zero_inputs,
     encode_state,
-    ORDER_VOCABULARY,
+    decode_order_idxs
 )
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
@@ -128,7 +128,7 @@ class BaseSearchAgent(BaseAgent):
         return (
             [
                 [
-                    tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[b, p, :] if idx != EOS_IDX)
+                    tuple(decode_order_idxs(order_idxs[b, p, :]))
                     for p in range(len(POWERS))
                 ]
                 for b in range(order_idxs.shape[0])

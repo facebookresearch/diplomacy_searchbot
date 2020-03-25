@@ -1,13 +1,10 @@
 import logging
 import math
-import time
 import torch
 import torch.nn.functional as F
-import os
 from torch import nn
 from torch.distributions.categorical import Categorical
 
-from fairdiplomacy.models.dipnet.order_vocabulary import get_incompatible_build_idxs_map
 from fairdiplomacy.models.consts import POWERS, N_SCS
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 
@@ -268,14 +265,6 @@ class LSTMDipNetDecoder(nn.Module):
                 learnable_alignments
             )
 
-        # 13k x 13k table of compatible orders
-        self.compatible_orders_table = ~(torch.eye(orders_vocab_size).bool())
-        incompatible_orders = get_incompatible_build_idxs_map()
-        assert len(incompatible_orders) > 0
-        for order, v in incompatible_orders.items():
-            for incomp_order in v:
-                self.compatible_orders_table[order, incomp_order] = 0
-
     def forward(
         self,
         enc,
@@ -286,7 +275,6 @@ class LSTMDipNetDecoder(nn.Module):
         temperature=1.0,
         teacher_force_orders=None,
     ):
-        totaltic = time.time()
         device = next(self.parameters()).device
 
         if (loc_idxs == -1).all():
@@ -388,19 +376,6 @@ class LSTMDipNetDecoder(nn.Module):
                 order_emb = self.order_embedding(teacher_force_orders[:, step])
             else:
                 order_emb = self.order_embedding(order_idxs).squeeze(1)
-
-            # Mask out chosen actions in future steps to prevent the same
-            # order from occuring twice in a single turn
-            dont_repeat_orders = (
-                teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs
-            )
-
-            # ugh, hack because I don't want to make compatible_orders_table a
-            # buffer (backwards-incompatible)
-            self.compatible_orders_table = self.compatible_orders_table.to(order_mask.device)
-
-            compatible_mask = self.compatible_orders_table[dont_repeat_orders]  # B x 13k
-            order_masks[:, step:] *= compatible_mask.unsqueeze(1)
 
         return torch.stack(all_order_idxs, dim=1), torch.stack(all_order_scores, dim=1)
 

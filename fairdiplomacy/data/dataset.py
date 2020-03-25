@@ -2,6 +2,7 @@ import diplomacy
 import joblib
 import logging
 import torch
+from itertools import combinations, product
 from typing import Union, List, Optional
 
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
@@ -242,18 +243,35 @@ def encode_phase(
     for power_i, power in enumerate(POWERS):
         orders = game.order_history[phase_name].get(power, [])
         order_idxs = []
-        for order in orders:
-            try:
-                order_idxs.append(smarter_order_index(order))
-            except KeyError:
-                continue
 
-        # maybe fill in Hold/Disband for invalid or missing orders
-        all_locs = {LOCS[x] for x in (x_loc_idxs[power_i] != -1).nonzero().squeeze(1)}
-        filled_locs = {ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs}
-        unfilled_locs = all_locs - filled_locs
-        if unfilled_locs:
-            if fill_missing_orders and not x_in_adj_phase[0]:
+        if any(len(order.split()) < 3 for order in orders):
+            # skip over power with unparseably short order
+            valid_power_idxs[power_i] = 0
+            continue
+        elif any(order.split()[2] == "B" for order in orders):
+            # builds are represented as a single ;-separated order
+            assert all(order.split()[2] == "B" for order in orders), orders
+            order = ";".join(sorted(orders))
+            try:
+                order_idx = ORDER_VOCABULARY_TO_IDX[order]
+            except KeyError:
+                logging.warning(f"Invalid build order: {order}")
+                valid_power_idxs[power_i] = 0
+                continue
+            order_idxs.append(order_idx)
+        else:
+            for order in orders:
+                try:
+                    order_idxs.append(smarter_order_index(order))
+                except KeyError:
+                    # skip over invalid orders; we may fill them in later
+                    continue
+
+            # maybe fill in Hold/Disband for invalid or missing orders
+            all_locs = {LOCS[x] for x in (x_loc_idxs[power_i] != -1).nonzero().squeeze(1)}
+            filled_locs = {ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs}
+            unfilled_locs = all_locs - filled_locs
+            if fill_missing_orders and not x_in_adj_phase[0] and unfilled_locs:
                 try:
                     for loc in unfilled_locs:
                         unit = next(unit for unit in phase_state["units"][power] if loc in unit)
@@ -266,10 +284,6 @@ def encode_phase(
                     logging.exception("Error filling missing orders")
                     valid_power_idxs[power_i] = 0
                     continue
-            else:
-                # unfilled locs and not fill_missing_orders, skip this power
-                valid_power_idxs[power_i] = 0
-                continue
 
         # sort by topo order
         order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
@@ -365,9 +379,22 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     n_builds = game_state["builds"][power]["count"]
 
     if n_builds > 0:
-        # build phase: all possible build orders, up to the number of allowed builds
-        _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        all_order_idxs[0, :n_builds, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        # build phase: represented as a single ;-separated string combining all
+        # units to be built.
+        orders = [
+            ";".join(sorted(x))
+            for c in combinations([all_possible_orders[loc] for loc in orderable_locs], n_builds)
+            for x in product(*c)
+        ]
+        try:
+            order_idxs = torch.tensor(
+                [ORDER_VOCABULARY_TO_IDX[x] for x in orders], dtype=torch.int32
+            )
+        except KeyError:
+            import ipdb
+
+            ipdb.set_trace()
+        all_order_idxs[0, :1, : len(order_idxs)] = order_idxs.unsqueeze(0)
         loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_builds
 

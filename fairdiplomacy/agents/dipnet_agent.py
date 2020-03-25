@@ -1,14 +1,13 @@
 import diplomacy
-import logging
-import time
 import torch
+from typing import List
 
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import get_valid_orders_impl
 from fairdiplomacy.models.consts import SEASONS, POWERS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
-from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
 
 ORDER_VOCABULARY = get_order_vocabulary()
 
@@ -33,7 +32,16 @@ class DipnetAgent(BaseAgent):
         with torch.no_grad():
             order_idxs, order_scores, final_scores = self.model(*inputs, temperature=temperature)
 
-        return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, POWERS.index(power), :] if idx != 0]
+        return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
+
+
+def decode_order_idxs(order_idxs) -> List[str]:
+    orders = []
+    for idx in order_idxs:
+        if idx == EOS_IDX:
+            continue
+        orders.extend(ORDER_VOCABULARY[idx].split(";"))
+    return orders
 
 
 def encode_inputs(game, *, all_possible_orders=None, game_state=None):
@@ -130,5 +138,5 @@ def zero_inputs():
 
 
 if __name__ == "__main__":
-    model_path = "/checkpoint/jsgray/diplomacy/slurm/sl_decpow/checkpoint.pth"
-    print(DipnetAgent(model_path).get_orders(diplomacy.Game(), "ITALY"))
+    game = diplomacy.Game()
+    print(DipnetAgent().get_orders(game, "RUSSIA"))
