@@ -386,11 +386,12 @@ def server_handler(
     timings = TimingCtx()
     totaltic = time.time()
 
-    ckpt_sync_every = 30  # Setting timeout in order not to handle with FS too often.
+    ckpt_sync_every = 0  # Setting timeout in order not to handle with FS too often.
     if ckpt_sync_path is not None:
         ckpt_syncer = CkptSyncer(ckpt_sync_path)
         last_ckpt_version = ckpt_syncer.maybe_load_state_dict(model, last_version=None)
-        next_ckpt_sync_time = time.time() + ckpt_sync_every
+        if ckpt_sync_every:
+            next_ckpt_sync_time = time.time() + ckpt_sync_every
 
     with torch.no_grad():
         while True:
@@ -398,11 +399,14 @@ def server_handler(
             try:
                 with q.get(wait_till_full=wait_till_full) as batch:
                     with timings("ckpt_sync"):
-                        if ckpt_sync_path is not None and time.time() >= next_ckpt_sync_time:
+                        if ckpt_sync_path is not None and (
+                            not ckpt_sync_every or time.time() >= next_ckpt_sync_time
+                        ):
                             last_ckpt_version = ckpt_syncer.maybe_load_state_dict(
                                 model, last_ckpt_version
                             )
-                            next_ckpt_sync_time = time.time() + ckpt_sync_every
+                            if ckpt_sync_every:
+                                next_ckpt_sync_time = time.time() + ckpt_sync_every
 
                     with timings("next_batch"):
                         inputs = batch.get_inputs()[0]

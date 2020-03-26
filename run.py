@@ -51,6 +51,13 @@ def launch_bot(cfg):
     launch_bot_run_with_cfg(cfg)
 
 
+@_register
+def exploit(cfg):
+    # Do not load RL stuff by default.
+    import fairdiplomacy.selfplay.exploit
+    fairdiplomacy.selfplay.exploit.task(cfg)
+
+
 @heyhi.save_result_in_cwd
 def main(task, cfg):
     heyhi.setup_logging()

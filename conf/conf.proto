@@ -299,6 +299,25 @@ message TestTask {
   optional SomeEnum enum_value = 4 [ default = ZERO ];
 }
 
+
+message ExploitTask {
+  // DipNet ckpt to initialize both blueprint and explout agents.
+  optional string model_path = 1;
+
+  // Weight of critic loss in total loss.
+  optional float critic_weight = 2 [default=1.0];
+  // Weight of entropy loss in total loss.
+  optional float entropy_weight = 3 [default=0.0];
+
+  message Optimizer {
+    optional float lr = 1;
+  }
+  optional Optimizer optimizer = 4;
+
+
+  optional Launcher launcher = 1000;
+}
+
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -322,6 +341,7 @@ message MetaCfg {
     CompareAgentsTask compare_agents = 101;
     TrainTask train = 102;
     LaunchBotTask launch_bot = 103;
+    ExploitTask exploit = 104;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

@@ -17,6 +17,7 @@ from typing import List, Optional, Tuple
 import glob
 import logging
 import os
+import pathlib
 import time
 
 import torch
@@ -26,9 +27,11 @@ ModelVersion = int
 
 
 class CkptSyncer:
-    def __init__(self, prefix: str, models_to_keep: int = 10):
+    def __init__(self, prefix: str, models_to_keep: int = 10, create_dir=False):
         self.prefix = prefix
         self.models_to_keep = models_to_keep
+        if create_dir:
+            pathlib.Path(prefix).parent.mkdir(exist_ok=True, parents=True)
 
     def get_all_versions(self) -> List[Tuple[ModelVersion, str]]:
         versions = []
@@ -77,5 +80,5 @@ class CkptSyncer:
         """Load model state if needed and return latest model version."""
         version, path = self.get_last_version()
         if version != last_version:
-            torch_module.load_state_dict(path)
+            torch_module.load_state_dict(torch.load(path))
         return version
