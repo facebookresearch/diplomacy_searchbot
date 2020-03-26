@@ -49,6 +49,9 @@ message CFR1PAgent {
 
   // Temperature used for rollouts
   optional float rollout_temperature = 10;
+  
+  // If true, set postman batch size and use wait_till_full
+  optional bool postman_sync_batches = 11;
 }
 
 message BRSearchAgent {

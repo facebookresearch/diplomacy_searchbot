@@ -1,6 +1,6 @@
 cfr1p {
   max_batch_size: 1000
-  max_rollout_length: 3
+  max_rollout_length: 10
   model_path: "/checkpoint/jsgray/diplomacy/dipnet.pth"
   n_gpu: 1
   n_plausible_orders: 8
@@ -9,4 +9,5 @@ cfr1p {
   n_server_procs: 1
   use_predicted_final_scores: true
   rollout_temperature: 0.05
+  postman_sync_batches: true
 }
