@@ -26,7 +26,7 @@ if ! conda env list --json | jq ".envs | .[]" | grep -qE "/${xxx_env_name}\""; t
     sed -i -e 's#/usr/local/cuda/lib64/libculibos.a#/public/apps/cuda/9.2/lib64/libculibos.a#g' $CONDA_PREFIX/lib/python3.7/site-packages/torch/share/cmake/Caffe2/Caffe2Targets.cmake
     pip install -e . -vv
     pip install -e ./thirdparty/github/fairinternal/postman/nest/
-    pip install -e ./thirdparty/github/fairinternal/postman/src/postman/
+    pip install -e ./thirdparty/github/fairinternal/postman/postman/
     pip install -e "git+ssh://git@github.com/fairinternal/submitit@master#egg=submitit"
     pip install -e ./thirdparty/github/diplomacy/diplomacy
 fi
