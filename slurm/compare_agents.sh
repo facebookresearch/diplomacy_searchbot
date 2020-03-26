@@ -70,7 +70,7 @@ python $CODE_CHECKPOINT/run.py \
   I.agent_six=agents/$AGENT_SIX \
   power_one=$POWER \
   seed=\$SLURM_ARRAY_TASK_ID \
-  out=${CHECKPOINT_DIR}/game_${POW}.\$SLURM_ARRAY_TASK_ID.json
+  out=${CHECKPOINT_DIR}/game_${POW}.\$SLURM_ARRAY_TASK_ID.json $@
 
 EOF
 done
