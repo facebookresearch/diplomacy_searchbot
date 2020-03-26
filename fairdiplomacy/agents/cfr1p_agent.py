@@ -51,8 +51,8 @@ class CFR1PAgent(BaseSearchAgent):
         self.n_rollouts = n_rollouts
         self.max_rollout_length = max_rollout_length
         self.n_plausible_orders = n_plausible_orders
-        self.use_optimistic_cfr=use_optimistic_cfr
-        self.enable_compute_nash_conv=enable_compute_nash_conv
+        self.use_optimistic_cfr = use_optimistic_cfr
+        self.enable_compute_nash_conv = enable_compute_nash_conv
         self.plausible_orders_req_size = plausible_orders_req_size
         self.postman_sync_batches = postman_sync_batches
         self.cache_rollout_results = cache_rollout_results
@@ -159,7 +159,6 @@ class CFR1PAgent(BaseSearchAgent):
                     self.last_regrets[(pwr, action)] = regret
                     self.cum_sigma[(pwr, action)] += s
 
-<<<<<<< HEAD
                 if self.use_optimistic_cfr:
                     pos_regrets = [
                         max(0, self.cum_regrets[(pwr, a)] + self.last_regrets[(pwr, a)])
@@ -168,32 +167,16 @@ class CFR1PAgent(BaseSearchAgent):
                 else:
                     pos_regrets = [max(0, self.cum_regrets[(pwr, a)]) for a in actions]
 
-=======
-                pos_regrets = [max(0, self.cum_regrets[(pwr, a)]) for a in actions]
->>>>>>> finishing touches on cfr speedup
                 sum_pos_regrets = sum(pos_regrets)
                 for action, pos_regret in zip(actions, pos_regrets):
                     if sum_pos_regrets == 0:
                         self.sigma[(pwr, action)] = 1.0 / len(actions)
                     else:
                         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
-<<<<<<< HEAD
-
-                if pwr == power:
-                    new_avg_strategy = self.avg_strategy(power, actions)
-                    # logging.debug(
-                    #     "old_avg_strat= {} new_avg_strat= {} mse= {}".format(
-                    #         old_avg_strategy,
-                    #         new_avg_strategy,
-                    #         sum((a - b) ** 2 for a, b in zip(old_avg_strategy, new_avg_strategy)),
-                    #     )
-                    # )
 
             if self.enable_compute_nash_conv and cfr_iter in [25, 50, 100, 200, 400]:
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
-=======
->>>>>>> finishing touches on cfr speedup
 
             logging.info(
                 f"Timing[cfr_iter]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
