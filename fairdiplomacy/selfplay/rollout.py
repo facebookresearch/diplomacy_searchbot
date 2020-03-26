@@ -230,12 +230,14 @@ def yield_rollouts(
                     for power, orders in zip(POWERS, power_orders):
                         game.set_orders(power, list(orders))
 
+                inner_index = 0
                 for i, game in enumerate(games):
                     if not game.is_game_done:
                         game.process()
-                    actions[i].append(exploit_batch_order_ids[i, exploit_power_id])
-                    observations[i].append([x[i] for x in batch_inputs])
-                    game_history[i].append(to_saved_game_format(game))
+                        actions[i].append(exploit_batch_order_ids[inner_index, exploit_power_id])
+                        observations[i].append([x[inner_index] for x in batch_inputs])
+                        game_history[i].append(to_saved_game_format(game))
+                        inner_index += 1
 
             turn_idx += 1
 
