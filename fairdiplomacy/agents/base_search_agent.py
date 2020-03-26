@@ -212,7 +212,7 @@ class BaseSearchAgent(BaseAgent):
             )
         )
         logging.info(
-            "Timings[distribute_rollouts, n={}] {}".format(
+            "Timings[avg.do_rollout, n={}] {}".format(
                 len(all_timings), sum(all_timings) / len(all_timings)
             )
         )

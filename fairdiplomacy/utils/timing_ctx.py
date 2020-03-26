@@ -3,7 +3,7 @@ import time
 
 
 class TimingCtx:
-    def __init__(self, *, init=None):
+    def __init__(self, init=None):
         self.timings = init if init is not None else Counter()
         self.arg = None
         self.last_clear = time.time()
@@ -24,8 +24,8 @@ class TimingCtx:
 
     def __repr__(self):
         return dict(
-            sorted(self.timings.items(), key=lambda kv: kv[1], reverse=True),
             total=time.time() - self.last_clear,
+            **dict(sorted(self.timings.items(), key=lambda kv: kv[1], reverse=True)),
         ).__repr__()
 
     def __add__(self, other):
@@ -35,7 +35,10 @@ class TimingCtx:
             raise ValueError(f"__add__ called with type {type(other)}")
 
     def __truediv__(self, other):
-        return {k: v / other for k, v in self.timings.items()}
+        c = TimingCtx({k: v / other for k, v in self.timings.items()})
+        c.last_clear = self.last_clear
+        return c
+
 
     def __radd__(self, other):
         if other == 0:
