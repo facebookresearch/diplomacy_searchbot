@@ -30,7 +30,6 @@ class CFR1PAgent(BaseSearchAgent):
         rollout_temperature=0.05,
         use_optimistic_cfr=True,
         enable_compute_nash_conv=False,
-        plausible_orders_req_size=1000,
         postman_sync_batches=False,
         max_batch_size=700,
         cache_rollout_results=False,
@@ -43,17 +42,17 @@ class CFR1PAgent(BaseSearchAgent):
             max_batch_size=(
                 n_plausible_orders * len(POWERS) if postman_sync_batches else max_batch_size
             ),
+            max_rollout_length=max_rollout_length,
             use_predicted_final_scores=use_predicted_final_scores,
             rollout_temperature=rollout_temperature,
             postman_wait_till_full=postman_sync_batches,
         )
 
         self.n_rollouts = n_rollouts
-        self.max_rollout_length = max_rollout_length
         self.n_plausible_orders = n_plausible_orders
         self.use_optimistic_cfr = use_optimistic_cfr
         self.enable_compute_nash_conv = enable_compute_nash_conv
-        self.plausible_orders_req_size = plausible_orders_req_size
+        self.plausible_orders_req_size = max_batch_size
         self.postman_sync_batches = postman_sync_batches
         self.cache_rollout_results = cache_rollout_results
 

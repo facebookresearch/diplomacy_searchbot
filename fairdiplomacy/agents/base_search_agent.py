@@ -44,6 +44,7 @@ class BaseSearchAgent(BaseAgent):
         n_server_procs,
         n_gpu,
         max_batch_size,
+        max_rollout_length,
         use_predicted_final_scores=True,
         rollout_temperature,
         postman_wait_till_full=False,
@@ -54,6 +55,8 @@ class BaseSearchAgent(BaseAgent):
         self.n_server_procs = n_server_procs
         self.use_predicted_final_scores = use_predicted_final_scores
         self.rollout_temperature = rollout_temperature
+        self.max_batch_size = max_batch_size
+        self.max_rollout_length = max_rollout_length
 
         logging.info("Launching servers")
         self.servers = []
@@ -134,7 +137,7 @@ class BaseSearchAgent(BaseAgent):
         )
 
     def get_plausible_orders(
-        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=1000
+        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=500
     ) -> Dict[str, Set[Tuple[str]]]:
         assert n % batch_size == 0, f"{n}, {batch_size}"
 
