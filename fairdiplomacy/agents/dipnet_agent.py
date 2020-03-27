@@ -36,18 +36,6 @@ class DipnetAgent(BaseAgent):
         return [ORDER_VOCABULARY[idx] for idx in order_idxs[0, POWERS.index(power), :] if idx != 0]
 
 
-def zero_inputs():
-    """Return empty input encodings"""
-    return (
-        torch.zeros(1, 81, 35),
-        torch.zeros(1, 81, 40),
-        torch.zeros(1, 3),
-        torch.zeros(1, dtype=torch.bool),
-        torch.tensor(1, 7, 17, dtype=torch.long).fill_(-1),
-        torch.zeros(1, 7, 0, 469, dtype=torch.long),
-    )
-
-
 def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     """Return a 6-tuple of tensors
 
@@ -55,7 +43,7 @@ def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
-    loc_idxs: shape=[1, 7, S], dtype=long, 0 < S <= 17
+    loc_idxs: shape=[1, 7, 81], dtype=long, -1, -2, or between 0 and 17
     valid_orders: shape=[1, 7, S, 469] dtype=long, 0 < S <= 17
     """
     if game_state is None:
@@ -118,7 +106,7 @@ def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_loc
 
     Returns:
     - a [1, 17, 469] int tensor of valid move indexes (padded with -1)
-    - a [1, 17] long tensor of loc_idxs, 0 <= idx < 81
+    - a [1, 81] int8 tensor of orderable locs, described below
     - the actual length of the sequence == the number of orders to submit, <= 17
     """
     if all_possible_orders is None:
@@ -129,6 +117,16 @@ def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_loc
     return get_valid_orders_impl(
         power, all_possible_orders, all_orderable_locations, game.get_state()
     )
+
+
+DEFAULT_INPUTS = encode_inputs(diplomacy.Game())
+
+
+def zero_inputs():
+    """Return empty input encodings"""
+    r = [torch.zeros_like(x) for x in DEFAULT_INPUTS]
+    r[-2].fill_(-1)
+    return r
 
 
 if __name__ == "__main__":
