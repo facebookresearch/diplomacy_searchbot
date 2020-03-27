@@ -7,6 +7,8 @@ from setuptools.command.install import install
 
 def _post_install():
     # install diplomacy/web npm dependencies
+    # FIXME: ideally not require conda, specify python version?
+    SITE_PACKAGES = os.path.join(os.environ["CONDA_PREFIX"], "lib/python3.7/site-packages")
     subprocess.check_output(
         ["npm", "install", "."],
         cwd=os.path.join(
