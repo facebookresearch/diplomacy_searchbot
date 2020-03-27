@@ -215,8 +215,8 @@ class BaseSearchAgent(BaseAgent):
             )
         )
         logging.info(
-            "Timings[avg.do_rollout, n={}] {}".format(
-                len(all_timings), sum(all_timings) / len(all_timings)
+            "Timings[avg.do_rollout, n={}, len={}] {}".format(
+                len(all_timings), self.max_rollout_length, sum(all_timings) / len(all_timings)
             )
         )
         return [
