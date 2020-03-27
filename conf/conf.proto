@@ -330,6 +330,9 @@ message ExploitTask {
 
     // How many rollout proccesses to run.
     optional int32 num_rollout_processes = 4;
+
+    // If true, will save one game per block.
+    optional bool dump_games = 5;
   }
 
   optional Rollout rollout = 5;
