@@ -27,6 +27,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.selfplay.ckpt_syncer import CkptSyncer
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
+from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     try:
@@ -458,41 +459,6 @@ def server_handler(
                 logging.info("TimeoutError:", e)
 
     logging.info("SERVER DONE")
-
-
-def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None, seq_dim=2):
-    """
-    Arguments:
-    - tensors: a list of [B x 7 x S x ...] formatted tensors
-    - pad_value: the value used to fill padding
-    - pad_to_len: the desired total length. If none, use the longest sequence.
-
-    Returns:
-    - the result of torch.cat(tensors, dim=0) where each sequence has been
-      padded to pad_to_len or the largest S
-    - a list of S values for each tensor
-    """
-    seq_lens = [t.shape[seq_dim] for t in tensors]
-    max_len = max(seq_lens) if pad_to_len is None else pad_to_len
-
-    padded = [
-        torch.cat(
-            [
-                t,
-                torch.zeros(
-                    *t.shape[:seq_dim],
-                    max_len - t.shape[seq_dim],
-                    *t.shape[seq_dim + 1 :],
-                    dtype=t.dtype,
-                ).fill_(pad_value),
-            ],
-            dim=seq_dim,
-        )
-        if t.shape[seq_dim] < max_len
-        else t
-        for t in tensors
-    ]
-    return torch.cat(padded, dim=0), seq_lens
 
 
 def cat_pad_inputs(xs):

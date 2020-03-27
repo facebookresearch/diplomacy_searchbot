@@ -49,7 +49,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
 
     # forward pass
     teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
-    order_idxs, order_scores, final_scores = net(
+    order_idxs, cand_scores, final_scores = net(
         x_state,
         x_orders,
         x_season,
@@ -61,9 +61,18 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
         x_power=x_power.view(-1, 7),
     )
 
-    # reshape and mask out <EOS> tokens from sequences
+    x_possible_actions = x_possible_actions.to(device)
     y_actions = y_actions.to(device)
-    y_actions = y_actions[:, : order_scores.shape[1]].reshape(-1)  # [B * S]
+
+    # reshape and mask out <EOS> tokens from sequences
+    B, S, C = cand_scores.shape
+    order_scores = (
+        torch.empty(B, S, len(ORDER_VOCABULARY), device=device)
+        .fill_(-1e9)
+        .scatter_(2, x_possible_actions[:, :S, :C], cand_scores)
+    )
+
+    y_actions = y_actions[:, :S].reshape(-1)  # [B * S]
     try:
         order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
     except RuntimeError:
