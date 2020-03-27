@@ -16,19 +16,15 @@ xxx_env_name="${FORCE_ENV_NAME:-"$(basename "$(pwd)")"}"
 if ! conda env list --json | jq ".envs | .[]" | grep -qE "/${xxx_env_name}\""; then
     conda create --yes -n $xxx_env_name python=3.7
     source activate $xxx_env_name
-    conda install -y nodejs
     git submodule init
     git submodule update
-    # Install pytorch and patch cmake files so that things, e.g., postman, could be built against torch.
-    conda install --yes pytorch=1.4 torchvision cudatoolkit=9.2 -c pytorch
-    sed -i -e 's#/usr/local/cuda/lib64/libnvToolsExt.so#/public/apps/cuda/9.2/lib64/libnvToolsExt.so#g' $CONDA_PREFIX/lib/python3.7/site-packages/torch/share/cmake/Caffe2/Caffe2Targets.cmake
-    sed -i -e 's#/usr/local/cuda/lib64/libcudart.so#/public/apps/cuda/9.2/lib64/libcudart.so#g' $CONDA_PREFIX/lib/python3.7/site-packages/torch/share/cmake/Caffe2/Caffe2Targets.cmake
-    sed -i -e 's#/usr/local/cuda/lib64/libculibos.a#/public/apps/cuda/9.2/lib64/libculibos.a#g' $CONDA_PREFIX/lib/python3.7/site-packages/torch/share/cmake/Caffe2/Caffe2Targets.cmake
-    pip install -e . -vv
-    pip install -e ./thirdparty/github/fairinternal/postman/nest/
-    pip install -e ./thirdparty/github/fairinternal/postman/postman/
-    pip install -e "git+ssh://git@github.com/fairinternal/submitit@master#egg=submitit"
-    pip install -e ./thirdparty/github/diplomacy/diplomacy
+    bash bin/install_deps.sh || {
+        echo
+        echo "################################################"
+        echo "## Failed to install deps                      #"
+        echo "## To re-run install: bash bin/install_deps.sh #"
+        echo "################################################"
+    }
 fi
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
 export OMP_NUM_THREADS=1
