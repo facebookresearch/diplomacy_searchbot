@@ -7,4 +7,5 @@ cd $ROOT
 
 protoc conf/conf.proto --python_out .
 
-make -C thirdparty/github/fairinternal/postman develop
+git submodule update
+pip install -e ./thirdparty/github/fairinternal/postman/postman/
