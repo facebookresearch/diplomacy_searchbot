@@ -4,4 +4,5 @@ launch_bot {
   port: 8432
   period: 10
   buffer_size: 128
+  reuse_model_server: false
 }

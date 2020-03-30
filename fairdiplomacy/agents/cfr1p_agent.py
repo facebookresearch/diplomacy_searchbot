@@ -33,6 +33,7 @@ class CFR1PAgent(BaseSearchAgent):
         postman_sync_batches=False,
         max_batch_size=700,
         cache_rollout_results=False,
+        use_server_addr=None,
     ):
         super().__init__(
             model_path=model_path,
@@ -46,6 +47,7 @@ class CFR1PAgent(BaseSearchAgent):
             use_predicted_final_scores=use_predicted_final_scores,
             rollout_temperature=rollout_temperature,
             postman_wait_till_full=postman_sync_batches,
+            use_server_addr=use_server_addr,
         )
 
         self.n_rollouts = n_rollouts

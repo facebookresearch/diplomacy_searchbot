@@ -18,11 +18,13 @@
 import argparse
 import diplomacy
 import logging
+from functools import partial
 from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
 from tornado import gen, ioloop
 
 from fairdiplomacy.agents import build_agent_from_cfg
+from concurrent.futures import ThreadPoolExecutor
 
 LOGGER = logging.getLogger("diplomacy_research.scripts.launch_bot")
 PERIOD_SECONDS = 2
@@ -42,23 +44,39 @@ class Bot:
         - buffer_size: number of powers this bot will ask to manage to server.
     """
 
-    def __init__(self, host, port, agent, *, period_seconds=PERIOD_SECONDS, buffer_size=128):
+    def __init__(
+        self,
+        host,
+        port,
+        agent_cfg,
+        *,
+        period_seconds=PERIOD_SECONDS,
+        buffer_size=128,
+        reuse_agent=False,
+        reuse_model_server=False,
+    ):
         """ Initialize the bot.
             :param host: (required) name of host to connect
             :param port: (required) port to connect
-            :param port: (required) Agent object with get_orders function
+            :param agent_cfg: heyhi config object for agent
             :param period_seconds: time in second between two consecutive bot queries on server. Default 10 seconds.
             :param buffer_size: number of powers to ask to server.
+            :param reuse_agent: if True, agent_fn is called a single time and
+                the agent object is used for all powers
         """
         self.host = host
         self.port = port
-        self.agent = agent
+        self.agent_cfg = agent_cfg
         self.username = constants.PRIVATE_BOT_USERNAME
         self.password = constants.PRIVATE_BOT_PASSWORD
         self.period_seconds = period_seconds
         self.player = None
         self.game_to_phase = {}
         self.buffer_size = buffer_size
+        self.reuse_model_server = reuse_model_server
+
+        self.agents = {}  # (channel, power) -> Agent
+        self.executor = ThreadPoolExecutor(8)
 
     @gen.coroutine
     def run(self):
@@ -89,6 +107,7 @@ class Bot:
             # Server error - Logging, but continuing
             except (exceptions.DiplomacyException, RuntimeError) as error:
                 LOGGER.error(error)
+                raise
 
     @gen.coroutine
     def generate_orders(self, channel, game_id, dummy_power_names):
@@ -104,6 +123,20 @@ class Bot:
             # Join powers.
             yield channel.join_powers(game_id=game_id, power_names=dummy_power_names)
 
+            # Init agents
+            model_sever_addr = None
+            for power in dummy_power_names:
+                key = (channel, power)
+                if key not in self.agents:
+                    self.agents[key] = yield self.executor.submit(
+                        build_agent_from_cfg, self.agent_cfg
+                    )
+                    if self.reuse_model_server and model_sever_addr is None:
+                        model_server_addr = self.agents[key].hostports[0]
+                        getattr(
+                            self.agent_cfg, self.agent_cfg.WhichOneof("agent")
+                        ).use_server_addr = model_server_addr
+
             # Join all games
             games = yield {
                 power_name: channel.join_game(game_id=game_id, power_name=power_name)
@@ -112,7 +145,9 @@ class Bot:
 
             # Retrieves and submits all orders
             yield [
-                self.submit_orders(games[power_name], power_name)
+                self.submit_orders(
+                    games[power_name], power_name, self.agents[(channel, power_name)]
+                )
                 for power_name in dummy_power_names
             ]
 
@@ -120,10 +155,11 @@ class Bot:
             LOGGER.error("Exception occurred while working on game %s: %s", game_id, exc)
 
     @gen.coroutine
-    def submit_orders(self, game, power_name):
+    def submit_orders(self, game, power_name, agent):
         """ Retrieves and submits orders for a power
             :param game: An instance of the game object.
             :param power_name: The name of the power submitting orders (e.g. 'FRANCE')
+            :param agent: Agent object
             :type game: diplomacy.client.network_game.NetworkGame
         """
         with game.current_state():
@@ -131,7 +167,7 @@ class Bot:
             phase_history = yield game.get_phase_history()
             game_copy.set_phase_data(phase_history + [game.get_phase_data()])
 
-            orders = self.agent.get_orders(game_copy, power_name)
+            orders = yield self.executor.submit(agent.get_orders, game_copy, power_name)
             should_draw = False
 
             # Setting vote
@@ -151,10 +187,24 @@ class Bot:
                 ", ".join(orders) if orders else "(empty)",
             )
 
+    @gen.coroutine
+    def create_agent(self):
+        raise NotImplementedError
+
+    @gen.coroutine
+    def get_orders(self, game, power, agent):
+        raise NotImplementedError
+
 
 def run_with_cfg(cfg):
-    agent = build_agent_from_cfg(cfg.agent)
-    bot = Bot(cfg.host, cfg.port, agent, period_seconds=cfg.period, buffer_size=cfg.buffer_size)
+    bot = Bot(
+        cfg.host,
+        cfg.port,
+        cfg.agent,
+        period_seconds=cfg.period,
+        buffer_size=cfg.buffer_size,
+        reuse_model_server=cfg.reuse_model_server,
+    )
     io_loop = ioloop.IOLoop.instance()
     while True:
         try:

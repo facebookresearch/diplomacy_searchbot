@@ -19,7 +19,7 @@ from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
     zero_inputs,
     encode_state,
-    decode_order_idxs
+    decode_order_idxs,
 )
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
@@ -48,6 +48,7 @@ class BaseSearchAgent(BaseAgent):
         use_predicted_final_scores=True,
         rollout_temperature,
         postman_wait_till_full=False,
+        use_server_addr=None,
     ):
         super().__init__()
 
@@ -59,34 +60,45 @@ class BaseSearchAgent(BaseAgent):
         self.max_rollout_length = max_rollout_length
 
         logging.info("Launching servers")
-        self.servers = []
+        servers = []
         assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
-        mp.set_start_method("spawn")
-        for i in range(n_server_procs):
-            q = mp.SimpleQueue()
-            server = ExceptionHandlingProcess(
-                target=run_server,
-                kwargs=dict(
-                    port=0,
-                    batch_size=max_batch_size,
-                    load_model_fn=partial(
-                        load_dipnet_model, model_path, map_location="cuda", eval=True
-                    ),
-                    output_transform=model_output_transform,
-                    seed=0,
-                    device=i % n_gpu,
-                    port_q=q,
-                    wait_till_full=postman_wait_till_full,
-                ),
-                daemon=True,
-            )
-            server.start()
-            self.servers.append((server, q))
+        try:
+            mp.set_start_method("spawn")
+        except RuntimeError:
+            logging.warning("Failed mp.set_start_method")
 
-        logging.info("Waiting for servers")
-        ports = [q.get() for _, q in self.servers]
-        self.hostports = [f"127.0.0.1:{p}" for p in ports]
-        logging.info(f"Servers started on ports {ports}")
+        if use_server_addr is not None:
+            if n_server_procs != 1:
+                raise ValueError(
+                    f"Bad args use_server_addr={use_server_addr} n_server_procs={n_server_procs}"
+                )
+            self.hostports = [use_server_addr]
+        else:
+            for i in range(n_server_procs):
+                q = mp.SimpleQueue()
+                server = ExceptionHandlingProcess(
+                    target=run_server,
+                    kwargs=dict(
+                        port=0,
+                        batch_size=max_batch_size,
+                        load_model_fn=partial(
+                            load_dipnet_model, model_path, map_location="cuda", eval=True
+                        ),
+                        output_transform=model_output_transform,
+                        seed=0,
+                        device=i % n_gpu,
+                        port_q=q,
+                        wait_till_full=postman_wait_till_full,
+                    ),
+                    daemon=True,
+                )
+                server.start()
+                servers.append((server, q))
+
+            logging.info("Waiting for servers")
+            ports = [q.get() for _, q in servers]
+            logging.info(f"Servers started on ports {ports}")
+            self.hostports = [f"127.0.0.1:{p}" for p in ports]
 
         self.client = postman.Client(self.hostports[0])
         logging.info(f"Connecting to {self.hostports[0]} [{os.uname().nodename}]")
@@ -127,10 +139,7 @@ class BaseSearchAgent(BaseAgent):
 
         return (
             [
-                [
-                    tuple(decode_order_idxs(order_idxs[b, p, :]))
-                    for p in range(len(POWERS))
-                ]
+                [tuple(decode_order_idxs(order_idxs[b, p, :])) for p in range(len(POWERS))]
                 for b in range(order_idxs.shape[0])
             ],
             np.mean(final_scores, axis=0),
