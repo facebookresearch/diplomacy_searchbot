@@ -1,4 +1,5 @@
 from typing import Generator, List, Tuple, Sequence
+import collections
 import faulthandler
 import itertools
 import logging
@@ -16,14 +17,33 @@ from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 from fairdiplomacy.agents.base_search_agent import (
     run_server,
     cat_pad_inputs,
-    model_output_transform,
 )
-from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, ORDER_VOCABULARY
+from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, decode_order_idxs
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS, N_SCS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils.timing_ctx import TimingCtx
+
+
+ExploitRollout = collections.namedtuple(
+    "ExploitRollout", "power_id, game_jsons, actions, logprobs, observations"
+)
+
+
+def model_output_transform_exploit(args):
+    order_idxs, order_scores, final_scores = args
+    del final_scores  # Not used.
+    # Assuming no temperature.
+    order_logprobs = torch.nn.functional.log_softmax(order_scores, -1)
+    return order_idxs, order_logprobs
+
+
+def model_output_transform_blueprint(args):
+    order_idxs, order_scores, final_scores = args
+    del order_scores  # Not used.
+    del final_scores  # Not used.
+    return (order_idxs,)
 
 
 class InferencePool:
@@ -45,6 +65,11 @@ class InferencePool:
         for i in range(n_server_procs):
             q = mp.SimpleQueue()
             is_exploit = i % 2 == 0
+            if is_exploit:
+                model_output_transform = model_output_transform_exploit
+            else:
+                model_output_transform = model_output_transform_blueprint
+
             server = ExceptionHandlingProcess(
                 target=run_server,
                 kwargs=dict(
@@ -91,20 +116,17 @@ def do_model_request(client, x, temperature=1.0) -> Tuple[torch.Tensor, torch.Te
     - temperature: model softmax temperature
 
     Returns:
-    - a tensor of order ids [batch, power, MAX_SEQ_LEN]
-    - [7] float32 array of estimated final scores
+    - whatever the client returns
     """
     temp_array = torch.full((x[0].shape[0], 1), temperature)
     req = (*x, temp_array)
     try:
-        order_idxs, final_scores = client.evaluate(req)
+        return client.evaluate(req)
     except Exception:
         logging.error(
             "Caught server error with inputs {}".format([(x.shape, x.dtype) for x in req])
         )
         raise
-
-    return (order_idxs, final_scores.mean(axis=0))
 
 
 def strigify_orders_idxs(order_idxs: torch.Tensor) -> List[List[Tuple[str]]]:
@@ -115,7 +137,7 @@ def strigify_orders_idxs(order_idxs: torch.Tensor) -> List[List[Tuple[str]]]:
     order_idxs = order_idxs.numpy()
     string_orders = [
         [
-            tuple(ORDER_VOCABULARY[idx] for idx in order_idxs[b, p, :] if idx != EOS_IDX)
+            tuple(decode_order_idxs(order_idxs[b, p]))
             for p in range(len(POWERS))
         ]
         for b in range(order_idxs.shape[0])
@@ -132,9 +154,7 @@ def yield_rollouts(
     max_rollout_length=40,
     batch_size=1,
     initial_power_index=0,
-) -> Generator[
-    Tuple[int, List[str], torch.Tensor, List[torch.Tensor]], None, None,
-]:
+) -> Generator[ExploitRollout, None, None]:
     """Do non-stop rollout for 1 (exploit) vs 6 (blueprint).
 
     This method can safely be called in a subprocess
@@ -148,11 +168,7 @@ def yield_rollouts(
     - initial_power_index: index of the country in POWERS to start the
         rollout with. Then will do round robin over all countries.
 
-    yields a tuple:
-    - exploit_power_id
-    - list of game_jsons
-    - batched actions [time, postition]
-    - list of batched observations
+    yields a ExploitRollout.
 
     """
     timings = TimingCtx()
@@ -181,6 +197,7 @@ def yield_rollouts(
             turn_idx = 0
             observations = {i: [] for i in range(batch_size)}
             actions = {i: [] for i in range(batch_size)}
+            logprobs = {i: [] for i in range(batch_size)}
             game_history = {i: [to_saved_game_format(game)] for i, game in enumerate(games)}
 
         while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
@@ -203,15 +220,12 @@ def yield_rollouts(
                 batch_inputs, _ = cat_pad_inputs(xs)
 
             with timings("model"):
-                (blueprint_batch_order_ids, blueprint_final_scores) = do_model_request(
+                (blueprint_batch_order_ids,) = do_model_request(
                     next(blueprint_client_selector), batch_inputs, temperature
                 )
-                (exploit_batch_order_ids, exploit_final_scores) = do_model_request(
+                (exploit_batch_order_ids, exploit_order_logprobs) = do_model_request(
                     next(exploit_client_selector), batch_inputs
                 )
-                # Not used.
-                del blueprint_final_scores
-                del exploit_final_scores
 
             with timings("merging"):
                 # Using all orders from the blueprint model except for ones for the epxloit power.
@@ -236,6 +250,7 @@ def yield_rollouts(
                         game.process()
                         actions[i].append(exploit_batch_order_ids[inner_index, exploit_power_id])
                         observations[i].append([x[inner_index] for x in batch_inputs])
+                        logprobs[i].append(exploit_order_logprobs[inner_index, exploit_power_id])
                         game_history[i].append(to_saved_game_format(game))
                         inner_index += 1
 
@@ -246,6 +261,10 @@ def yield_rollouts(
             f"{ {k : float('{:.3}'.format(v)) for k, v in timings.items()} }."
         )
         for i in range(batch_size):
-            batched_actions = torch.stack(actions[i], 0)
-            batched_observations = [torch.stack(obs, 0) for obs in zip(*observations[i])]
-            yield exploit_power_id, game_history[i], batched_actions, batched_observations
+            yield ExploitRollout(
+                power_id=exploit_power_id,
+                game_jsons=game_history[i],
+                actions=torch.stack(actions[i], 0),
+                logprobs=torch.stack(logprobs[i], 0),
+                observations=[torch.stack(obs, 0) for obs in zip(*observations[i])],
+            )
