@@ -386,14 +386,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
             for c in combinations([all_possible_orders[loc] for loc in orderable_locs], n_builds)
             for x in product(*c)
         ]
-        try:
-            order_idxs = torch.tensor(
-                [ORDER_VOCABULARY_TO_IDX[x] for x in orders], dtype=torch.int32
-            )
-        except KeyError:
-            import ipdb
-
-            ipdb.set_trace()
+        order_idxs = torch.tensor([ORDER_VOCABULARY_TO_IDX[x] for x in orders], dtype=torch.int32)
         all_order_idxs[0, :1, : len(order_idxs)] = order_idxs.unsqueeze(0)
         loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_builds
