@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import time
 import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
@@ -59,8 +60,6 @@ class CFR1PAgent(BaseSearchAgent):
         self.cache_rollout_results = cache_rollout_results
 
     def get_orders(self, game, power) -> List[str]:
-        timings = TimingCtx()
-
         # CFR data structures
         self.sigma: Dict[Tuple[Power, Action], float] = {}
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
@@ -90,6 +89,7 @@ class CFR1PAgent(BaseSearchAgent):
         if len(power_plausible_orders[power]) == 1:
             return list(list(power_plausible_orders[power]).pop())
 
+        timings = TimingCtx()
         for cfr_iter in range(self.n_rollouts):
             discount_factor = (cfr_iter + 0.000001) / (cfr_iter + 1)
 
