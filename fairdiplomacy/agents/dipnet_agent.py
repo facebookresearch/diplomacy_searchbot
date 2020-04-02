@@ -37,6 +37,8 @@ class DipnetAgent(BaseAgent):
                 *inputs, temperature=temperature
             )
 
+        print("final_scores", final_scores)
+
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
 
 

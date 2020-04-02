@@ -22,4 +22,6 @@ train {
     avg_embedding: false;
     write_jsonl: true;
     value_loss_weight: 0.3;
+    value_decoder_init_scale: 0.01;
+    value_decoder_clip_grad_norm: 1e-7;
 }

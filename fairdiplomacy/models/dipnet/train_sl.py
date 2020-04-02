@@ -37,7 +37,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     - policy_losses: [?] FloatTensor, unknown size due to unknown # of non-zero actions
     - value_losses: [B] FloatTensor
     - sampled_idxs: [B, S] LongTensor of sampled order idxs (< 469)
-    - final_scores: [B, 7] estimated final SC counts per power
+    - final_sos: [B, 7] estimated final sum-of-squares share of each power
     """
     assert p_teacher_force == 1
     device = next(net.parameters()).device
@@ -52,7 +52,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
         if torch.rand(1) < p_teacher_force
         else None
     )
-    order_idxs, sampled_idxs, logits, final_scores = net(
+    order_idxs, sampled_idxs, logits, final_sos = net(
         x_state,
         x_orders,
         x_season,
@@ -85,11 +85,15 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
             f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!"
         )
 
-    # calculate loss
+    # calculate policy loss
     policy_loss = policy_loss_fn(logits, y_actions)
-    value_loss = value_loss_fn(final_scores, y_final_scores.squeeze(1).to(device).float())
 
-    return policy_loss, value_loss, sampled_idxs, final_scores
+    # calculate sum-of-squares value loss
+    y_final_scores_sq = y_final_scores.to(device).float().pow(2).squeeze(1)
+    y_final_sos = y_final_scores_sq / y_final_scores_sq.sum(dim=1, keepdim=True)
+    value_loss = value_loss_fn(final_sos, y_final_sos)
+
+    return policy_loss, value_loss, sampled_idxs, final_sos
 
 
 def cand_idxs_to_order_idxs(idxs, candidates, pad_out=EOS_IDX):
@@ -112,6 +116,16 @@ def calculate_accuracy(sampled_idxs, y_truth):
     y_truth = y_truth[: (sampled_idxs.shape[0]), : (sampled_idxs.shape[1])].to(sampled_idxs.device)
     mask = y_truth != EOS_IDX
     return torch.mean((y_truth[mask] == sampled_idxs[mask]).float())
+
+
+def calculate_value_accuracy(final_sos, y_final_scores):
+    """Return top-1 accuracy"""
+    guessed_winner = final_sos.argmax(dim=1)
+    guessed_winner_actual_score = (
+        y_final_scores.squeeze(1).gather(1, guessed_winner.unsqueeze(1)).squeeze(1)
+    )
+    actual_winner_actual_score = y_final_scores.squeeze(1).max(dim=1).values
+    return (guessed_winner_actual_score == actual_winner_actual_score).float().mean()
 
 
 def calculate_split_accuracy_counts(sampled_idxs, y_truth):
@@ -145,22 +159,27 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
 
     with torch.no_grad():
         net.eval()
-        batch_losses, batch_accuracies, batch_acc_split_counts = [], [], []
+
+        batch_losses = []
+        batch_accuracies = []
+        batch_acc_split_counts = []
+        batch_value_accuracies = []
 
         for batch_idxs in torch.arange(len(val_set)).split(batch_size):
             batch = val_set[batch_idxs]
             batch = [x.to(net_device) for x in batch]
-            y_actions = batch[-1]
+            y_final_scores, y_actions = batch[5], batch[-1]
             if y_actions.shape[0] == 0:
                 logger.warning(
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
                 )
                 continue
-            policy_losses, value_losses, sampled_idxs, _ = process_batch(
+            policy_losses, value_losses, sampled_idxs, final_sos = process_batch(
                 net, batch, policy_loss_fn, value_loss_fn, temperature=0.001, p_teacher_force=1.0
             )
             batch_losses.append((policy_losses, value_losses))
             batch_accuracies.append(calculate_accuracy(sampled_idxs, y_actions))
+            batch_value_accuracies.append(calculate_value_accuracy(final_sos, y_final_scores))
             batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, y_actions))
         net.train()
 
@@ -173,6 +192,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
     # validation accuracy
     weights = [len(pl) / len(p_losses) for pl, _ in batch_losses]
     val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
+    val_value_accuracy = sum(a * w for (a, w) in zip(batch_value_accuracies, weights))
 
     # combine accuracy splits
     split_counts = reduce(
@@ -185,7 +205,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
         for k in [k.rsplit(".", 1)[0] for k in split_counts.keys()]
     }
 
-    return val_loss, val_accuracy, split_pcts
+    return val_loss, val_accuracy, split_pcts, val_value_accuracy
 
 
 def maybe_build_jsonl_logger(fpath, do_log):
@@ -276,13 +296,21 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                 net, batch, policy_loss_fn, value_loss_fn, p_teacher_force=args.teacher_force
             )
 
+            # backward
             p_loss = torch.mean(policy_losses)
             v_loss = torch.mean(value_losses)
             loss = (1 - args.value_loss_weight) * p_loss + args.value_loss_weight * v_loss
             loss.backward()
-            logger.debug(f"Running step {batch_i} ...")
+
+            # clip gradients, step
+            value_decoder_grad_norm = torch.nn.utils.clip_grad_norm_(
+                getattr(net, "module", net).value_decoder.parameters(),
+                args.value_decoder_clip_grad_norm,
+            )
             grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip_grad_norm)
             optim.step()
+
+            # log diagnostics
             if rank == 0:
                 scalars = dict(
                     epoch=epoch,
@@ -290,6 +318,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                     loss=loss,
                     lr=optim.state_dict()["param_groups"][0]["lr"],
                     grad_norm=grad_norm,
+                    value_decoder_grad_norm=value_decoder_grad_norm,
                     p_loss=p_loss,
                     v_loss=v_loss,
                 )
@@ -302,7 +331,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            val_loss, val_accuracy, split_pcts = validate(
+            val_loss, val_accuracy, split_pcts, val_value_accuracy = validate(
                 net,
                 val_set,
                 policy_loss_fn,
@@ -310,10 +339,14 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                 args.batch_size,
                 value_loss_weight=args.value_loss_weight,
             )
-            log_scalars(epoch=epoch, val_loss=val_loss, val_accuracy=val_accuracy)
-            logger.info(
-                f"Validation epoch= {epoch} batch= {batch_i} loss= {val_loss} acc= {val_accuracy}"
+            scalars = dict(
+                epoch=epoch,
+                val_loss=val_loss,
+                val_accuracy=val_accuracy,
+                val_value_accuracy=val_value_accuracy,
             )
+            log_scalars(**scalars)
+            logger.info("Validation " + " ".join([f"{k}= {v}" for k, v in scalars.items()]))
             for k, v in sorted(split_pcts.items()):
                 logger.info(f"val split epoch= {epoch} batch= {batch_i}: {k} = {v}")
 

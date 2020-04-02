@@ -34,6 +34,7 @@ def new_model(args):
         learnable_A=args.learnable_A,
         learnable_alignments=args.learnable_alignments,
         avg_embedding=args.avg_embedding,
+        value_decoder_init_scale=args.value_decoder_init_scale,
     )
 
 

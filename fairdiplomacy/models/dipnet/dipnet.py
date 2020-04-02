@@ -32,6 +32,7 @@ class DipNet(nn.Module):
         learnable_A=False,
         learnable_alignments=False,
         avg_embedding=False,
+        value_decoder_init_scale=1.0,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -58,7 +59,7 @@ class DipNet(nn.Module):
             power_emb_size=power_emb_size,
         )
 
-        self.value_decoder = ValueDecoder(inter_emb_size)
+        self.value_decoder = ValueDecoder(inter_emb_size, init_scale=value_decoder_init_scale)
 
     def forward(
         self,
@@ -100,7 +101,7 @@ class DipNet(nn.Module):
             orders for each power
           - logits [B, S, C] or [B, 7, S, C]: masked pre-softmax logits of each
             candidate order, 0 < S <= 17, 0 < C <= 469
-          - final_scores [B, 7]: estimated final SC counts per power
+          - final_sos [B, 7]: estimated sum of squares share for each power
         """
         if x_power is None:
             return self.forward_all_powers(
@@ -152,9 +153,9 @@ class DipNet(nn.Module):
             teacher_force_orders=teacher_force_orders,
             power_1h=x_power,
         )
-        final_scores = self.value_decoder(enc)
+        final_sos = self.value_decoder(enc)
 
-        return order_idxs, sampled_idxs, logits, final_scores
+        return order_idxs, sampled_idxs, logits, final_sos
 
     def forward_all_powers(
         self,
@@ -208,7 +209,7 @@ class DipNet(nn.Module):
             )
 
         with timings("value_decoder"):
-            final_scores = self.value_decoder(enc)
+            final_sos = self.value_decoder(enc)
 
         with timings("finish"):
             # reshape
@@ -226,7 +227,7 @@ class DipNet(nn.Module):
         if log_timings:
             logging.debug(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
 
-        return order_idxs, sampled_idxs, logits, final_scores
+        return order_idxs, sampled_idxs, logits, final_sos
 
 
 class LSTMDipNetDecoder(nn.Module):
@@ -393,7 +394,6 @@ class LSTMDipNetDecoder(nn.Module):
                         )
                     break
 
-                # FIXME: profile this against a matmul version
                 cand_mask = cand_idxs != EOS_IDX
                 cand_mask[invalid_mask] = 1
 
@@ -431,7 +431,8 @@ class LSTMDipNetDecoder(nn.Module):
             )[0]
             r = stacked_order_idxs, stacked_sampled_idxs, stacked_logits
 
-        logging.debug(f"Timings[dec, {step}] {timings}")
+        logging.debug(f"Timings[dec, {enc.shape[0]}x{step}] {timings}")
+
         return r
 
 
@@ -592,11 +593,19 @@ class FiLM(nn.Module):
 
 
 class ValueDecoder(nn.Module):
-    def __init__(self, inter_emb_size):
+    def __init__(self, inter_emb_size, init_scale=1.0):
         super().__init__()
-        self.lin = nn.Linear(81 * inter_emb_size * 2, len(POWERS))
+        emb_flat_size = 81 * inter_emb_size * 2
+        self.lin = nn.Linear(emb_flat_size, len(POWERS))
+
+        # scale down init
+        torch.nn.init.xavier_normal_(self.lin.weight, gain=init_scale)
+        bound = init_scale / (len(POWERS) ** 0.5)
+        torch.nn.init.uniform_(self.lin.bias, -bound, bound)
 
     def forward(self, enc):
-        """Returns [B, 7] FloatTensor summing to 34 across dim=1"""
-        y = self.lin(enc.view(enc.shape[0], -1))  # [B, 7]
-        return y / torch.sum(y, dim=1, keepdim=True) * N_SCS
+        """Returns [B, 7] FloatTensor summing to 1 across dim=1"""
+        y = enc.view(enc.shape[0], -1)
+        y = self.lin(y)
+        y = nn.functional.softmax(y, dim=1)
+        return y
