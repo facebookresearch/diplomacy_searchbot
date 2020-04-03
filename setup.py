@@ -47,6 +47,8 @@ setup(
         "torch",
         "tqdm",
         "tabulate",
+        "tensorboard",
+        "typing_extensions",  # for submitit
         "tornado>=5.0",  # for diplomacy_research
         "protobuf==3.6.1",  # for diplomacy_research
         "pyyaml",  # for diplomacy_research
