@@ -26,17 +26,44 @@ from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProc
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 
 
+DEFAULT_BATCH_SIZE = 128
+
+
 ExploitRollout = collections.namedtuple(
-    "ExploitRollout", "power_id, game_jsons, actions, logprobs, observations"
+    "ExploitRollout", "power_id, game_json, actions, logprobs, observations"
 )
+
+
+def order_logits_to_action_logprobs(logits, order_ids, mask=None):
+    """Combine logits for orders to get log probs for actions (sequence of orders).
+
+    Args:
+        logits: float tensor of shape [..., seq, vocab]
+        order_ids: long tensor of shape [..., seq].
+        mask: float tensor of shape [..., seq] where 1.0 stands for real
+            order, 0 for EOS_IDX. If not given, will be computed from
+            order_ids.
+
+    Returns:
+        action_logprobs: tensor of shape [...].
+    """
+    if mask is None:
+        mask = (order_ids != EOS_IDX).float()
+    order_logprobs = -(
+        torch.nn.functional.nll_loss(
+            torch.nn.functional.log_softmax(torch.flatten(logits, end_dim=-2), dim=-1),
+            torch.flatten(order_ids),
+            reduction="none",
+        ).view_as(order_ids)
+    )
+    return (order_logprobs * mask).sum(-1)
 
 
 def model_output_transform_exploit(args):
     order_idxs, order_scores, final_scores = args
     del final_scores  # Not used.
     # Assuming no temperature.
-    order_logprobs = torch.nn.functional.log_softmax(order_scores, -1)
-    return order_idxs, order_logprobs
+    return order_idxs, order_logits_to_action_logprobs(order_scores, order_idxs)
 
 
 def model_output_transform_blueprint(args):
@@ -54,10 +81,18 @@ class InferencePool:
     static version.
     """
 
-    def __init__(self, *, model_path: str, gpu_ids: Sequence[int], ckpt_sync_path: str):
+    def __init__(
+        self,
+        *,
+        model_path: str,
+        gpu_ids: Sequence[int],
+        ckpt_sync_path: str,
+        max_batch_size: int = 0,
+    ):
+        if not max_batch_size:
+            max_batch_size = DEFAULT_BATCH_SIZE
         n_server_procs = len(gpu_ids) * 1
         assert n_server_procs >= 2, "Not enought servers to have 2 models"
-        max_batch_size = 128
         logging.info("Launching servers",)
         self.servers = []
         mp.set_start_method("spawn")
@@ -136,10 +171,7 @@ def strigify_orders_idxs(order_idxs: torch.Tensor) -> List[List[Tuple[str]]]:
     ), f"Expected tensor of shape (batch, 7, max_orders), got: {order_idxs.shape}"
     order_idxs = order_idxs.numpy()
     string_orders = [
-        [
-            tuple(decode_order_idxs(order_idxs[b, p]))
-            for p in range(len(POWERS))
-        ]
+        [tuple(decode_order_idxs(order_idxs[b, p])) for p in range(len(POWERS))]
         for b in range(order_idxs.shape[0])
     ]
     return string_orders
@@ -198,7 +230,6 @@ def yield_rollouts(
             observations = {i: [] for i in range(batch_size)}
             actions = {i: [] for i in range(batch_size)}
             logprobs = {i: [] for i in range(batch_size)}
-            game_history = {i: [to_saved_game_format(game)] for i, game in enumerate(games)}
 
         while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
             with timings("prep"):
@@ -251,7 +282,6 @@ def yield_rollouts(
                         actions[i].append(exploit_batch_order_ids[inner_index, exploit_power_id])
                         observations[i].append([x[inner_index] for x in batch_inputs])
                         logprobs[i].append(exploit_order_logprobs[inner_index, exploit_power_id])
-                        game_history[i].append(to_saved_game_format(game))
                         inner_index += 1
 
             turn_idx += 1
@@ -263,7 +293,7 @@ def yield_rollouts(
         for i in range(batch_size):
             yield ExploitRollout(
                 power_id=exploit_power_id,
-                game_jsons=game_history[i],
+                game_json=to_saved_game_format(games[i]),
                 actions=torch.stack(actions[i], 0),
                 logprobs=torch.stack(logprobs[i], 0),
                 observations=[torch.stack(obs, 0) for obs in zip(*observations[i])],

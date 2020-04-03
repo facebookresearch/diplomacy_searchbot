@@ -313,9 +313,17 @@ message ExploitTask {
   // Weight of entropy loss in total loss.
   optional float entropy_weight = 3 [ default = 0.0 ];
 
+  // Reward discounting.
+  optional float discounting = 7 [ default = 1.0 ];
+
+  // Optional. Penalty for each move to encorage shorter games.
+  optional float delay_penalty = 8;
+
   message Optimizer {
-    // Learning rate for Adam.
+    // Required. Learning rate for Adam.
     optional float lr = 1;
+    // Optional (but highly recommended). Gradient clipping.
+    optional float grad_clip = 2;
   }
   optional Optimizer optimizer = 4;
 
@@ -324,8 +332,8 @@ message ExploitTask {
     // How many parallel games to batch within single rollout.
     optional int32 batch_size = 2 [ default = 1 ];
 
-    // How many rollout batches to collect from each rollout worker before
-    // moving to the update stage.
+    // How many rollouts to put into single batch for training. Should be 1 of
+    // rebatch is used.
     optional int32 block_size = 3 [ default = 1 ];
 
     // How many rollout proccesses to run.
@@ -333,10 +341,31 @@ message ExploitTask {
 
     // If true, will save one game per block.
     optional bool dump_games = 5;
+
+    // Max batch size in postman inference processes.
+    optional int32 inference_batch_size = 6;
+
+    // Optional. If set, will split/combine rollouts to form batches of this
+    // many frames.
+    optional int32 rebatch_size = 7;
   }
 
   optional Rollout rollout = 5;
 
+  message Trainer {
+    // Optional. By default = infinite.
+    optional int32 max_epochs = 1;
+    // Required. Number of updates per epoch.
+    optional int32 epoch_size = 2;
+    // Optional. Save checkpoint every so many iterations.
+    optional int32 save_checkpoint_every = 3;
+  }
+
+  optional Trainer trainer = 6;
+
+  // Arbitraty comment. Could use to make a "re" run for the same config and
+  // changed code.
+  optional string comment = 999;
   optional Launcher launcher = 1000;
 }
 
