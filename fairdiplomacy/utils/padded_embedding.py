@@ -5,7 +5,10 @@ class PaddedEmbedding(torch.nn.Module):
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None, **kwargs):
         super().__init__()
         self.module = torch.nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx, **kwargs
+            num_embeddings,
+            embedding_dim,
+            padding_idx=None if padding_idx < 0 else padding_idx,
+            **kwargs
         )
         self.embedding_dim = embedding_dim
         self.padding_idx = padding_idx

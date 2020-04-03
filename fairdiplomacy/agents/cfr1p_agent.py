@@ -341,5 +341,10 @@ if __name__ == "__main__":
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
-    agent = CFR1PAgent(n_rollouts=500, postman_sync_batches=True)
+    agent = CFR1PAgent(
+        n_rollouts=100,
+        max_rollout_length=5,
+        model_path="/checkpoint/jsgray/diplomacy/sl_candemb_no13k_ep85.pth",
+        postman_sync_batches=True,
+    )
     print(agent.get_orders(diplomacy.Game(), "ITALY"))

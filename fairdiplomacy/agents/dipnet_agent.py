@@ -13,9 +13,12 @@ ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class DipnetAgent(BaseAgent):
-    def __init__(self, model_path="/checkpoint/jsgray/diplomacy/dipnet.pth", temperature=0.1):
-        self.model = load_dipnet_model(model_path, map_location="cuda", eval=True)
+    def __init__(
+        self, model_path="/checkpoint/jsgray/diplomacy/dipnet.pth", temperature=0.1, device="cuda"
+    ):
+        self.model = load_dipnet_model(model_path, map_location=device, eval=True)
         self.temperature = temperature
+        self.device = device
 
     def get_orders(self, game, power, *, temperature=None, batch_size=1):
         if len(game.get_orderable_locations(power)) == 0:
@@ -23,14 +26,16 @@ class DipnetAgent(BaseAgent):
 
         temperature = temperature if temperature is not None else self.temperature
         inputs = encode_inputs(game)
-        inputs = [x.to("cuda") for x in inputs]
+        inputs = [x.to(self.device) for x in inputs]
 
         if batch_size > 1:
             # fake a big batch
             inputs = [x.expand(batch_size, *x.shape[1:]).contiguous() for x in inputs]
 
         with torch.no_grad():
-            order_idxs, order_scores, final_scores = self.model(*inputs, temperature=temperature)
+            order_idxs, cand_idxs, logits, final_scores = self.model(
+                *inputs, temperature=temperature
+            )
 
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
 
@@ -139,4 +144,8 @@ def zero_inputs():
 
 if __name__ == "__main__":
     game = diplomacy.Game()
-    print(DipnetAgent().get_orders(game, "RUSSIA"))
+    print(
+        DipnetAgent(
+            model_path="/checkpoint/jsgray/diplomacy/sl_candemb_no13k_ep85.pth", device="cpu"
+        ).get_orders(game, "RUSSIA")
+    )

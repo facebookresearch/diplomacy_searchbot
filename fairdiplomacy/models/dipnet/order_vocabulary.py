@@ -8,8 +8,7 @@ from itertools import combinations, product
 from typing import Dict, Set
 
 
-EOS_TOKEN = "<EOS>"
-EOS_IDX = 0
+EOS_IDX = -1
 _ORDER_VOCABULARY = None
 _ORDER_VOCABULARY_BY_UNIT = None
 _ORDER_VOCABULARY_IDXS_BY_UNIT = None
@@ -234,7 +233,7 @@ def _get_order_vocabulary():
 
     orders_by_unit = {k: sorted(list(v)) for k, v in orders_by_unit.items()}
     sorted_unit_keys = sorted(orders_by_unit)
-    final_orders = [EOS_TOKEN]
+    final_orders = []
     for unit in sorted_unit_keys:
         final_orders += orders_by_unit[unit]
 

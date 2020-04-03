@@ -2,7 +2,7 @@ train {
     data_dir: "/checkpoint/jsgray/diplomacy/mila_dataset/data";
     data_cache: "/checkpoint/jsgray/diplomacy/data_cache_final_score.pth";
     num_dataloader_workers: 20;
-    batch_size: 1000;
+    batch_size: 3000;
     lr: 0.001;
     lr_decay: 0.99;
     clip_grad_norm: 5.0;

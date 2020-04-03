@@ -67,7 +67,7 @@ class DipNet(nn.Module):
         x_season_1h,
         in_adj_phase,
         loc_idxs,
-        valid_order_idxs,
+        cand_idxs,
         temperature,
         teacher_force_orders=None,
         x_power=None,
@@ -79,14 +79,14 @@ class DipNet(nn.Module):
         - x_season_1h: [B, 3]
         - in_adj_phase: [B], bool
         - loc_idxs: int8, [B, 81] or [B, 7, 81]
-        - valid_order_idxs: long, [B, S, 469] or [B, 7, S, 469]
+        - all_cand_idxs: long, [B, S, 469] or [B, 7, S, 469]
         - temperature: softmax temp, lower = more deterministic; must be either
           a float or a tensor of [B, 1]
-        - teacher_force_orders: [B, S] int or None
+        - teacher_force_orders: [B, S] long or None, ORDER idxs, NOT candidate idxs, 0-padded
         - x_power: [B, 7] or None
 
         if x_power is None, the model will decode for all 7 powers.
-            - loc_idxs, valid_order_idxs, and teacher_force_orders must have an
+            - loc_idxs, all_cand_idxs, and teacher_force_orders must have an
               extra axis at dim=1 with size 7
             - order_idxs and order_scores will be returned with an extra axis
               at dim=1 with size 7
@@ -94,9 +94,12 @@ class DipNet(nn.Module):
               will be decoded
 
         Returns:
-          - order_idxs [B, S] or [B, 7, S]: idx of sampled orders for each power
-          - order_scores [B, S, 469] or [B, 7, S, 469]: masked pre-softmax
-            logits of each order, for each power
+          - order_idxs [B, S] or [B, 7, S]: idx in ORDER_VOCABULARY of sampled
+            orders for each power
+          - sampled_idxs [B, S] or [B, 7, S]: idx in all_cand_idxs of sampled
+            orders for each power
+          - logits [B, S, C] or [B, 7, S, C]: masked pre-softmax logits of each
+            candidate order, 0 < S <= 17, 0 < C <= 469
           - final_scores [B, 7]: estimated final SC counts per power
         """
         if x_power is None:
@@ -106,7 +109,7 @@ class DipNet(nn.Module):
                 x_season_1h=x_season_1h,
                 in_adj_phase=in_adj_phase,
                 loc_idxs=loc_idxs,
-                valid_order_idxs=valid_order_idxs,
+                cand_idxs=cand_idxs,
                 temperature=temperature,
                 teacher_force_orders=teacher_force_orders,
             )
@@ -117,7 +120,7 @@ class DipNet(nn.Module):
                 x_season_1h=x_season_1h,
                 in_adj_phase=in_adj_phase,
                 loc_idxs=loc_idxs,
-                valid_order_idxs=valid_order_idxs,
+                cand_idxs=cand_idxs,
                 temperature=temperature,
                 teacher_force_orders=teacher_force_orders,
                 x_power=x_power,
@@ -131,27 +134,27 @@ class DipNet(nn.Module):
         x_season_1h,
         in_adj_phase,
         loc_idxs,
-        valid_order_idxs,
+        cand_idxs,
         x_power,
         temperature,
         teacher_force_orders,
     ):
         assert len(loc_idxs.shape) == 2
-        assert len(valid_order_idxs.shape) == 3
+        assert len(cand_idxs.shape) == 3
 
         enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
-        order_idxs, order_scores = self.policy_decoder(
+        order_idxs, sampled_idxs, logits = self.policy_decoder(
             enc,
             in_adj_phase,
             loc_idxs,
-            valid_order_idxs,
+            cand_idxs,
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
             power_1h=x_power,
         )
         final_scores = self.value_decoder(enc)
 
-        return order_idxs, order_scores, final_scores
+        return order_idxs, sampled_idxs, logits, final_scores
 
     def forward_all_powers(
         self,
@@ -161,7 +164,7 @@ class DipNet(nn.Module):
         x_season_1h,
         in_adj_phase,
         loc_idxs,
-        valid_order_idxs,
+        cand_idxs,
         temperature,
         teacher_force_orders,
         log_timings=False,
@@ -169,7 +172,7 @@ class DipNet(nn.Module):
         timings = TimingCtx()
 
         assert len(loc_idxs.shape) == 3
-        assert len(valid_order_idxs.shape) == 4
+        assert len(cand_idxs.shape) == 4
 
         with timings("enc"):
             enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
@@ -178,7 +181,7 @@ class DipNet(nn.Module):
             enc = enc.repeat_interleave(7, dim=0)
             in_adj_phase = in_adj_phase.repeat_interleave(7, dim=0)
             loc_idxs = loc_idxs.view(-1, loc_idxs.shape[2])
-            valid_order_idxs = valid_order_idxs.view(-1, *valid_order_idxs.shape[2:])
+            cand_idxs = cand_idxs.view(-1, *cand_idxs.shape[2:])
             temperature = (
                 temperature.repeat_interleave(7, dim=0)
                 if hasattr(temperature, "repeat_interleave")
@@ -194,11 +197,11 @@ class DipNet(nn.Module):
             power_1h = torch.eye(7, device=enc.device).repeat((enc.shape[0] // 7, 1))
 
         with timings("policy_decoder"):
-            order_idxs, order_scores = self.policy_decoder(
+            order_idxs, sampled_idxs, logits = self.policy_decoder(
                 enc,
                 in_adj_phase,
                 loc_idxs,
-                valid_order_idxs,
+                cand_idxs,
                 temperature=temperature,
                 teacher_force_orders=teacher_force_orders,
                 power_1h=power_1h,
@@ -208,15 +211,22 @@ class DipNet(nn.Module):
             final_scores = self.value_decoder(enc)
 
         with timings("finish"):
+            # reshape
             order_idxs = order_idxs.view(-1, 7, *order_idxs.shape[1:])
-            valid_order_idxs = valid_order_idxs.view(-1, 7, *valid_order_idxs.shape[1:])
-            order_idxs *= (valid_order_idxs != 0).any(dim=-1).long()
-            order_scores = order_scores.view(-1, 7, *order_scores.shape[1:])
+            sampled_idxs = sampled_idxs.view(-1, 7, *sampled_idxs.shape[1:])
+            cand_idxs = cand_idxs.view(-1, 7, *cand_idxs.shape[1:])
+            logits = logits.view(-1, 7, *logits.shape[1:])
+
+            # mask out garbage outputs
+            valid_mask = (cand_idxs != EOS_IDX).any(dim=-1)
+            eos_fill = torch.empty_like(order_idxs, requires_grad=False).fill_(EOS_IDX)
+            order_idxs = torch.where(valid_mask, order_idxs, eos_fill)
+            sampled_idxs = torch.where(valid_mask, sampled_idxs, eos_fill)
 
         if log_timings:
             logging.debug(f"Timings[model, B={x_bo.shape[0]}]: {timings}")
 
-        return order_idxs, order_scores, final_scores
+        return order_idxs, sampled_idxs, logits, final_scores
 
 
 class LSTMDipNetDecoder(nn.Module):
@@ -241,7 +251,7 @@ class LSTMDipNetDecoder(nn.Module):
         self.power_emb_size = power_emb_size
 
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
-        self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=0)
+        self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
         self.lstm = nn.LSTM(
             2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True
@@ -260,7 +270,7 @@ class LSTMDipNetDecoder(nn.Module):
         enc,
         in_adj_phase,
         loc_idxs,
-        cand_idxs,
+        all_cand_idxs,
         power_1h,
         temperature=1.0,
         teacher_force_orders=None,
@@ -271,8 +281,13 @@ class LSTMDipNetDecoder(nn.Module):
 
             if (loc_idxs == -1).all():
                 return (
-                    torch.zeros(*cand_idxs.shape[:2], dtype=torch.long, device=device),
-                    torch.zeros(*cand_idxs.shape, device=device),
+                    torch.empty(*all_cand_idxs.shape[:2], dtype=torch.long, device=device).fill_(
+                        EOS_IDX
+                    ),
+                    torch.empty(*all_cand_idxs.shape[:2], dtype=torch.long, device=device).fill_(
+                        EOS_IDX
+                    ),
+                    torch.zeros(*all_cand_idxs.shape, device=device),
                 )
 
             self.lstm.flatten_parameters()
@@ -289,9 +304,10 @@ class LSTMDipNetDecoder(nn.Module):
             assert len(power_1h.shape) == 2 and power_1h.shape[1] == 7, power_1h.shape
             power_emb = self.power_lin(power_1h)
 
-            # return values: chosen order idxs, and scores (logits)
+            # return values: chosen order idxs, candidate idxs, and logits
             all_order_idxs = []
-            all_order_scores = []
+            all_sampled_idxs = []
+            all_logits = []
 
             # reuse same dropout weights for all steps
             dropout_in = (
@@ -313,12 +329,12 @@ class LSTMDipNetDecoder(nn.Module):
             )
 
             # find max # of valid cand idxs per step
-            max_cand_per_step = (cand_idxs != 0).sum(dim=2).max(dim=0).values  # [S]
+            max_cand_per_step = (all_cand_idxs != EOS_IDX).sum(dim=2).max(dim=0).values  # [S]
 
-        for step in range(cand_idxs.shape[1]):
+        for step in range(all_cand_idxs.shape[1]):
             with timings("dec.loc_enc"):
                 num_cands = max_cand_per_step[step]
-                cand_idx = cand_idxs[:, step, :num_cands].long().contiguous()
+                cand_idxs = all_cand_idxs[:, step, :num_cands].long().contiguous()
 
                 if self.avg_embedding:
                     # no attention: average across loc embeddings
@@ -348,54 +364,72 @@ class LSTMDipNetDecoder(nn.Module):
                 out = out.squeeze(1).unsqueeze(2)
 
             with timings("dec.cand_emb"):
-                cand_emb = self.cand_embedding(cand_idx)
+                cand_emb = self.cand_embedding(cand_idxs)
 
-            with timings("dec.scores"):
-                order_scores = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
+            with timings("dec.logits"):
+                logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
 
             with timings("dec.invalid_mask"):
                 # unmask where there are no actions or the sampling will crash. The
                 # losses at these points will be masked out later, so this is safe.
-                invalid_mask = ~(cand_idx != 0).any(dim=1)
+                invalid_mask = ~(cand_idxs != EOS_IDX).any(dim=1)
                 if invalid_mask.all():
                     # early exit
                     logging.debug(f"Breaking at step {step} because no more orders to give")
-                    for _step in range(step, cand_idxs.shape[1]):  # fill in garbage
+                    for _step in range(step, all_cand_idxs.shape[1]):  # fill in garbage
                         all_order_idxs.append(
-                            torch.zeros(
-                                cand_idxs.shape[0], dtype=torch.long, device=cand_idxs.device
-                            )
+                            torch.empty(
+                                all_cand_idxs.shape[0],
+                                dtype=torch.long,
+                                device=all_cand_idxs.device,
+                            ).fill_(EOS_IDX)
+                        )
+                        all_sampled_idxs.append(
+                            torch.empty(
+                                all_cand_idxs.shape[0],
+                                dtype=torch.long,
+                                device=all_cand_idxs.device,
+                            ).fill_(EOS_IDX)
                         )
                     break
 
                 # FIXME: profile this against a matmul version
-                cand_mask = cand_idx != 0
+                cand_mask = cand_idxs != EOS_IDX
                 cand_mask[invalid_mask] = 1
 
-            with timings("dec.scores_mask"):
-                # make scores for invalid actions a large negative
-                order_scores = torch.min(order_scores, cand_mask.float() * 1e9 - 1e8)
-                all_order_scores.append(order_scores)
+            with timings("dec.logits_mask"):
+                # make logits for invalid actions a large negative
+                logits = torch.min(logits, cand_mask.float() * 1e9 - 1e8)
+                all_logits.append(logits)
 
             with timings("dec.sample"):
-                sampled_idxs = Categorical(logits=order_scores / temperature).sample()
+                sampled_idxs = Categorical(logits=logits / temperature).sample()
+                all_sampled_idxs.append(sampled_idxs)
 
             with timings("dec.order_idxs"):
-                order_idxs = torch.gather(cand_idx, 1, sampled_idxs.view(-1, 1)).view(-1)
+                order_idxs = torch.gather(cand_idxs, 1, sampled_idxs.view(-1, 1)).view(-1)
                 all_order_idxs.append(order_idxs)
 
             with timings("dec.order_emb"):
                 if teacher_force_orders is not None:
                     order_emb = self.order_embedding(teacher_force_orders[:, step])
                 else:
-                    order_emb = self.order_embedding(order_idxs).squeeze(1)
+                    order_emb = self.order_embedding(
+                        # nn.Embedding does not like negative padding
+                        torch.where(
+                            order_idxs == EOS_IDX,
+                            torch.zeros_like(order_idxs, requires_grad=False),
+                            order_idxs,
+                        )
+                    ).squeeze(1)
 
         with timings("dec.fin"):
             stacked_order_idxs = torch.stack(all_order_idxs, dim=1)
-            stacked_order_scores = cat_pad_sequences(
-                [x.unsqueeze(1) for x in all_order_scores], seq_dim=2, cat_dim=1
+            stacked_sampled_idxs = torch.stack(all_sampled_idxs, dim=1)
+            stacked_logits = cat_pad_sequences(
+                [x.unsqueeze(1) for x in all_logits], seq_dim=2, cat_dim=1, pad_value=-1e8
             )[0]
-            r = stacked_order_idxs, stacked_order_scores
+            r = stacked_order_idxs, stacked_sampled_idxs, stacked_logits
 
         logging.debug(f"Timings[dec, {step}] {timings}")
         return r

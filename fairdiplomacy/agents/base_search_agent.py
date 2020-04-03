@@ -478,7 +478,7 @@ def cat_pad_inputs(xs):
 
 def model_output_transform(y):
     # return only order_idxs, final_scores
-    return y[0], y[2]
+    return y[0], y[-1]
 
 
 def call(f):

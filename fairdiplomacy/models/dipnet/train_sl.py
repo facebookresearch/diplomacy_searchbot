@@ -36,8 +36,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     Returns:
     - policy_losses: [?] FloatTensor, unknown size due to unknown # of non-zero actions
     - value_losses: [B] FloatTensor
-    - order_scores: FIXME FIXME FIXME
-    - order_idxs: [B, S] LongTensor of sampled order idxs
+    - sampled_idxs: [B, S] LongTensor of sampled order idxs (< 469)
     - final_scores: [B, 7] estimated final SC counts per power
     """
     assert p_teacher_force == 1
@@ -48,8 +47,12 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     )
 
     # forward pass
-    teacher_force_orders = y_actions if torch.rand(1) < p_teacher_force else None
-    order_idxs, cand_scores, final_scores = net(
+    teacher_force_orders = (
+        cand_idxs_to_order_idxs(y_actions, x_possible_actions, pad_out=0)
+        if torch.rand(1) < p_teacher_force
+        else None
+    )
+    order_idxs, sampled_idxs, logits, final_scores = net(
         x_state,
         x_orders,
         x_season,
@@ -65,56 +68,63 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     y_actions = y_actions.to(device)
 
     # reshape and mask out <EOS> tokens from sequences
-    B, S, C = cand_scores.shape
-    order_scores = (
-        torch.empty(B, S, len(ORDER_VOCABULARY), device=device)
-        .fill_(-1e9)
-        .scatter_(2, x_possible_actions[:, :S, :C], cand_scores)
-    )
-
-    y_actions = y_actions[:, :S].reshape(-1)  # [B * S]
+    y_actions = y_actions[:, : logits.shape[1]].reshape(-1)  # [B * S]
     try:
-        order_scores = order_scores.view(len(y_actions), len(ORDER_VOCABULARY))
+        logits = logits.view(len(y_actions), -1)
     except RuntimeError:
-        logger.error(
-            f"Bad view: {order_scores.shape} != {len(y_actions)} * {len(ORDER_VOCABULARY)}, {order_idxs.shape}, {order_scores.shape}"
-        )
+        logger.error(f"Bad view: {logits.shape}, {order_idxs.shape}, {y_actions.shape}")
         raise
 
-    order_scores = order_scores[y_actions != EOS_IDX]
+    logits = logits[y_actions != EOS_IDX]
     y_actions = y_actions[y_actions != EOS_IDX]
 
-    observed_order_scores = order_scores.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
-    if observed_order_scores.min() < -1e7:
-        min_score, min_idx = observed_order_scores.min(0)
+    observed_logits = logits.gather(1, y_actions.unsqueeze(-1)).squeeze(-1)
+    if observed_logits.min() < -1e7:
+        min_score, min_idx = observed_logits.min(0)
         logger.warning(
             f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!"
         )
 
     # calculate loss
-    policy_loss = policy_loss_fn(order_scores, y_actions)
+    policy_loss = policy_loss_fn(logits, y_actions)
     value_loss = value_loss_fn(final_scores, y_final_scores.squeeze(1).to(device).float())
 
-    return policy_loss, value_loss, order_scores, order_idxs, final_scores
+    return policy_loss, value_loss, sampled_idxs, final_scores
 
 
-def calculate_accuracy(order_idxs, y_truth):
-    y_truth = y_truth[: (order_idxs.shape[0]), : (order_idxs.shape[1])].to(order_idxs.device)
+def cand_idxs_to_order_idxs(idxs, candidates, pad_out=EOS_IDX):
+    """Convert from idxs in candidates to idxs in ORDER_VOCABULARY
+
+    Arguments:
+    - idxs: [B, S] candidate idxs, each 0 - 469, padding=EOS_IDX
+    - candidates: [B, S, 469] order idxs of each candidate, 0 - 13k
+
+    Return [B, S] of order idxs, 0 - 13k, padding=pad_out
+    """
+    mask = idxs.view(-1) != EOS_IDX
+    flat_candidates = candidates.view(-1, candidates.shape[2])
+    r = torch.empty_like(idxs).fill_(pad_out).view(-1)
+    r[mask] = flat_candidates[mask].gather(1, idxs.view(-1)[mask].unsqueeze(1)).view(-1)
+    return r.view(*idxs.shape)
+
+
+def calculate_accuracy(sampled_idxs, y_truth):
+    y_truth = y_truth[: (sampled_idxs.shape[0]), : (sampled_idxs.shape[1])].to(sampled_idxs.device)
     mask = y_truth != EOS_IDX
-    return torch.mean((y_truth[mask] == order_idxs[mask]).float())
+    return torch.mean((y_truth[mask] == sampled_idxs[mask]).float())
 
 
-def calculate_split_accuracy_counts(order_idxs, y_truth):
+def calculate_split_accuracy_counts(sampled_idxs, y_truth):
     counts = Counter()
 
-    y_truth = y_truth[: (order_idxs.shape[0]), : (order_idxs.shape[1])].to(order_idxs.device)
+    y_truth = y_truth[: (sampled_idxs.shape[0]), : (sampled_idxs.shape[1])].to(sampled_idxs.device)
     for b in range(y_truth.shape[0]):
         for s in range(y_truth.shape[1]):
             if y_truth[b, s] == EOS_IDX:
                 continue
 
             truth_order = ORDER_VOCABULARY[y_truth[b, s]]
-            correct = y_truth[b, s] == order_idxs[b, s]
+            correct = y_truth[b, s] == sampled_idxs[b, s]
 
             # stats by loc
             loc = truth_order.split()[1]
@@ -146,12 +156,12 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
                 )
                 continue
-            policy_losses, value_losses, order_scores, order_idxs, _ = process_batch(
+            policy_losses, value_losses, sampled_idxs, _ = process_batch(
                 net, batch, policy_loss_fn, value_loss_fn, temperature=0.001, p_teacher_force=1.0
             )
             batch_losses.append((policy_losses, value_losses))
-            batch_accuracies.append(calculate_accuracy(order_idxs, y_actions))
-            batch_acc_split_counts.append(calculate_split_accuracy_counts(order_idxs, y_actions))
+            batch_accuracies.append(calculate_accuracy(sampled_idxs, y_actions))
+            batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, y_actions))
         net.train()
 
     # validation loss
@@ -262,7 +272,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             # learn
             logger.debug("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
-            policy_losses, value_losses, order_scores, order_idxs, _ = process_batch(
+            policy_losses, value_losses, _, _ = process_batch(
                 net, batch, policy_loss_fn, value_loss_fn, p_teacher_force=args.teacher_force
             )
 

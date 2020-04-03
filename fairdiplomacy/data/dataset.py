@@ -91,7 +91,9 @@ class Dataset(torch.utils.data.Dataset):
             1
         ) + torch.arange(MAX_SEQ_LEN).unsqueeze(0)
         x_possible_actions = self.encoded_games[6][possible_actions_idx.view(-1)]
-        x_possible_actions_padded = x_possible_actions.to_padded(total_length=MAX_VALID_LEN)
+        x_possible_actions_padded = x_possible_actions.to_padded(
+            total_length=MAX_VALID_LEN, padding_value=EOS_IDX
+        )
         fields[6] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
 
         assert (
@@ -239,7 +241,7 @@ def encode_phase(
 
     # encode actions
     valid_power_idxs = torch.ones(len(POWERS), dtype=torch.bool)
-    y_actions = torch.zeros(len(POWERS), MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
+    y_actions = torch.empty(len(POWERS), MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
     for power_i, power in enumerate(POWERS):
         orders = game.order_history[phase_name].get(power, [])
         order_idxs = []
@@ -288,33 +290,20 @@ def encode_phase(
         # sort by topo order
         order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
         for i, order_idx in enumerate(order_idxs):
-            y_actions[power_i, i] = order_idx
+            try:
+                cand_idx = (x_possible_actions[power_i, i] == order_idx).nonzero()[0, 0]
+                y_actions[power_i, i] = cand_idx
+            except IndexError:
+                # filter away powers whose orders are not in valid_orders
+                # most common reasons why this happens:
+                # - actual garbage orders (e.g. moves between non-adjacent locations)
+                # - too many orders (e.g. three build orders with only two allowed builds)
+                valid_power_idxs[power_i] = 0
+                break
 
     # filter away powers that have no orders
     valid_power_idxs &= torch.any(y_actions != EOS_IDX, dim=1)
     assert valid_power_idxs.ndimension() == 1
-
-    # filter away powers whose orders are not in valid_orders
-    # most common reasons why this happens:
-    # - actual garbage orders (e.g. moves between non-adjacent locations)
-    # - too many orders (e.g. three build orders with only two allowed builds)
-    for power_idx in (
-        ~(
-            ((y_actions.unsqueeze(2) == x_possible_actions) | (y_actions.unsqueeze(2) == 0))
-            .any(dim=2)
-            .all(dim=1)
-        )
-    ).nonzero():
-        valid_power_idxs[power_idx] = 0
-        # logging.warning(
-        #     "Order not possible: {} {} {} {}".format(
-        #         y_actions[power_idx],
-        #         game.order_history[phase_name].get(POWERS[power_idx]),
-        #         x_possible_actions[power_idx, :5, :50],
-        #         phase_state,
-        #         all_possible_orders,
-        #     )
-        # )
 
     # Maybe filter away powers that don't finish with enough SC.
     # If all players finish with fewer SC, include everybody.
@@ -327,7 +316,7 @@ def encode_phase(
                     valid_power_idxs[i] = 0
 
     x_possible_actions = TensorList.from_padded(
-        x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN)
+        x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN), padding_value=EOS_IDX
     )
 
     return (
@@ -348,7 +337,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     """Return a list of valid orders
 
     Returns:
-    - a [1, 17, 469] int tensor of valid move indexes (padded with 0)
+    - a [1, 17, 469] int tensor of valid move indexes (padded with EOS_IDX)
     - a [1, 81] int8 tensor of orderable locs, described below
     - the actual length of the sequence == the number of orders to submit, <= 17
 
@@ -356,8 +345,8 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
     - not adj phase: X[i] = s if LOCS[i] is orderable at step s (0 <= s < 17), -1 otherwise
     - in adj phase: X[i] = -2 if LOCS[i] is orderable this phase, -1 otherwise
     """
-    all_order_idxs = torch.zeros(1, MAX_SEQ_LEN, MAX_VALID_LEN, dtype=torch.int32)
-    loc_idxs = torch.zeros(1, len(LOCS), dtype=torch.int8).fill_(-1)
+    all_order_idxs = torch.empty(1, MAX_SEQ_LEN, MAX_VALID_LEN, dtype=torch.int32).fill_(EOS_IDX)
+    loc_idxs = torch.empty(1, len(LOCS), dtype=torch.int8).fill_(-1)
 
     if power not in all_orderable_locations:
         return all_order_idxs, loc_idxs, 0
