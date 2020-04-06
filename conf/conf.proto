@@ -316,9 +316,6 @@ message ExploitTask {
   // Reward discounting.
   optional float discounting = 7 [ default = 1.0 ];
 
-  // Optional. Penalty for each move to encorage shorter games.
-  optional float delay_penalty = 8;
-
   message Optimizer {
     // Required. Learning rate for Adam.
     optional float lr = 1;
@@ -328,27 +325,46 @@ message ExploitTask {
   optional Optimizer optimizer = 4;
 
   message Rollout {
-    optional int32 max_rollout_length = 1;
-    // How many parallel games to batch within single rollout.
-    optional int32 batch_size = 2 [ default = 1 ];
+    // Required. Max number of steps to do in the rollout.
+    optional int32 rollout_max_length = 1;
 
-    // How many rollouts to put into single batch for training. Should be 1 of
-    // rebatch is used.
-    optional int32 block_size = 3 [ default = 1 ];
+    // Optional. How many parallel games to batch within single rollout.
+    optional int32 rollout_batch_size = 2 [ default = 1 ];
 
-    // How many rollout proccesses to run.
-    optional int32 num_rollout_processes = 4;
+    // Optional. How many rollout proccesses to run.
+    optional int32 num_rollout_processes = 4 [default = 1];
 
-    // If true, will save one game per block.
-    optional bool dump_games = 5;
+    // Optional. If set, will save games with this stride.
+    optional int32 dump_games_every = 5;
 
-    // Max batch size in postman inference processes.
+    // Optional. Max batch size in postman inference processes.
     optional int32 inference_batch_size = 6;
 
-    // Optional. If set, will split/combine rollouts to form batches of this
-    // many frames.
-    optional int32 rebatch_size = 7;
+    // Required. The size of the produces batches. That what the training loop will receive.
+    optional int32 batch_size = 7;
+
+    // Optional. How much adjancent batches overleave. Note that default value
+    // (1) means that each action frame will be used exactly once as last item
+    // in a batch is remove in impala.
+    optional int32 batch_interleave_size = 8;
+
+    // Optional. If set, the batches will concatenate rollouts until batch_size
+    // is reached, instead of following it exactly.
+    optional bool do_not_split_rollouts = 9;
+
+    message Reward {
+      // TODO(akhti): better comment.
+      // Required. Name of the score metric from ScoreDict.
+      optional string score_name = 1;
+
+      // Optional. Penalty for each move to encourage shorter games.
+      optional float delay_penalty = 2;
+    }
+
+    // Required. How to compute rewards.
+    optional Reward reward = 10;
   }
+
 
   optional Rollout rollout = 5;
 
