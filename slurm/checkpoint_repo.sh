@@ -15,4 +15,4 @@ rsync -az \
     --exclude thirdparty/github/diplomacy/diplomacy/diplomacy/web \
     $ROOT $TMPDIR
 
-echo "$TMPDIR/fairdiplomacy"
+echo "$TMPDIR/$(basename $ROOT)"
