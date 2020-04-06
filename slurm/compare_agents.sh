@@ -29,7 +29,7 @@ TIME=${TIME:-2880}
 shift 3
 
 SBATCH_ARGS="--partition=$PARTITION --cpus-per-task=$CPU \
-             --gres=gpu:$GPU --mem=$MEM --time=$TIME --open-mode=append \
+             --gpus=$GPU --mem=$MEM --time=$TIME --open-mode=append \
              --chdir=$CHECKPOINT_DIR \
              --array=0-$(($NUM_TRIALS - 1))"
 
