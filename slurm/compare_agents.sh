@@ -35,7 +35,10 @@ SBATCH_ARGS="--partition=$PARTITION --cpus-per-task=$CPU \
 
 
 # copy repo
-CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
+if [ -z $CODE_CHECKPOINT ]
+then
+    CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
+fi
 
 # log some stuff locally to make it easier to see what's going on
 mkdir -p $CHECKPOINT_DIR
