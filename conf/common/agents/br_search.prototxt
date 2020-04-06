@@ -8,4 +8,5 @@ br_search {
   n_server_procs: 1
   rollouts_per_plausible_order: 20
   use_predicted_final_scores: true
+  rollout_temperature: 0.05
 }

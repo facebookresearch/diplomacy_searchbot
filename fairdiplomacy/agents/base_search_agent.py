@@ -242,8 +242,8 @@ class BaseSearchAgent(BaseAgent):
         game_json,
         hostport,
         set_orders_dict={},
-        temperature=0.05,
-        max_rollout_length=40,
+        temperature,
+        max_rollout_length,
         batch_size=1,
         use_predicted_final_scores=True,
     ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:

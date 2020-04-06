@@ -17,30 +17,9 @@ class BRSearchAgent(BaseSearchAgent):
     4. Choose the order set with the highest score.
     """
 
-    def __init__(
-        self,
-        *,
-        model_path="/checkpoint/jsgray/diplomacy/dipnet.pth",
-        n_rollout_procs=70,
-        n_server_procs=1,
-        n_gpu=1,
-        max_batch_size=1000,
-        rollouts_per_plausible_order=10,
-        max_rollout_length=20,
-        use_predicted_final_scores=True,
-        n_plausible_orders=8,
-    ):
-        super().__init__(
-            model_path=model_path,
-            n_rollout_procs=n_rollout_procs,
-            n_server_procs=n_server_procs,
-            n_gpu=n_gpu,
-            max_batch_size=max_batch_size,
-            use_predicted_final_scores=use_predicted_final_scores,
-        )
-
+    def __init__(self, *, rollouts_per_plausible_order, n_plausible_orders, **kwargs):
+        super().__init__(**kwargs)
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
-        self.max_rollout_length = max_rollout_length
         self.n_plausible_orders = n_plausible_orders
 
     def get_orders(self, game, power) -> List[str]:

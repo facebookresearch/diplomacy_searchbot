@@ -85,6 +85,9 @@ message BRSearchAgent {
 
   // Number of order-sets (actions) to consider at each step in search code
   optional uint32 n_plausible_orders = 9;
+
+  // Temperature used for rollouts
+  optional float rollout_temperature = 10;
 }
 
 message CE1PAgent {
