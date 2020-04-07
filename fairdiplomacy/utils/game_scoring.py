@@ -38,5 +38,7 @@ def average_game_scores(many_games_scores: Sequence[GameScores]) -> GameScores:
     assert many_games_scores, "Must be non_empty"
     result = {}
     for key in GameScores._fields:
-        result[key] = sum(getattr(scores, key) for scores in many_games_scores) / len(many_games_scores)
+        result[key] = sum(getattr(scores, key) for scores in many_games_scores) / len(
+            many_games_scores
+        )
     return GameScores(**result)

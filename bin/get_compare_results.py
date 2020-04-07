@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import collections
 import json
 import re
 import glob
@@ -9,7 +10,7 @@ from collections import Counter
 import tabulate
 
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.selfplay.exploit import compute_game_scores
+from fairdiplomacy.utils.game_scoring import average_game_scores, compute_game_scores, GameScores
 
 
 def get_power_one(game_json_path):
@@ -100,27 +101,19 @@ def print_rl_stats(results, args):
         # TODO(akhti): do csv
         return
     print("==== AVERAGE REWARDS ====")
-    stats_per_power = {}
+    stats_per_power = collections.defaultdict(list)
     for _, real_power, _, rl_stats in results:
-        for power in (real_power, "_TOTAL"):
-            if power not in stats_per_power:
-                stats_per_power[power] = rl_stats.copy()
-                stats_per_power[power]["num_games"] = 1
-            else:
-                for k, v in rl_stats.items():
-                    stats_per_power[power][k] += v
-                stats_per_power[power]["num_games"] += 1
+        stats_per_power[real_power].append(rl_stats)
+        stats_per_power["_TOTAL"].append(rl_stats)
+    stats_per_power = {
+        power: average_game_scores(stats) for power, stats in stats_per_power.items()
+    }
 
-    for power in stats_per_power:
-        for k in list(stats_per_power[power]):
-            if k != "num_games":
-                stats_per_power[power][k] /= stats_per_power[power]["num_games"]
-
-    cols = list(stats_per_power[POWERS[0]])
+    cols = list(GameScores._fields)
 
     table = [["-"] + cols]
     for power, stats in sorted(stats_per_power.items()):
-        table.append([power[:3]] + [stats[col] for col in cols])
+        table.append([power[:3]] + [getattr(stats, col) for col in cols])
     print(tabulate.tabulate(table, headers="firstrow"))
 
 
