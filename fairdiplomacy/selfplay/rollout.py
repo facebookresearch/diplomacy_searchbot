@@ -63,7 +63,8 @@ def model_output_transform_exploit(args):
     order_idxs, order_scores, final_scores = args
     del final_scores  # Not used.
     # Assuming no temperature.
-    return order_idxs, order_logits_to_action_logprobs(order_scores, order_idxs)
+    action_logprobs = order_logits_to_action_logprobs(order_scores, order_idxs)
+    return order_idxs, action_logprobs
 
 
 def model_output_transform_blueprint(args):

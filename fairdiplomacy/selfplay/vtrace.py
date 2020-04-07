@@ -44,7 +44,7 @@ VTraceFromLogitsReturns = collections.namedtuple(
     ],
 )
 
-VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages")
+VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages rhos clipped_rhos")
 
 
 def action_log_probs(policy_logits, actions, mask):
@@ -221,4 +221,4 @@ def from_importance_weights(
         pg_advantages = clipped_pg_rhos * (rewards + discounts * vs_t_plus_1 - values)
 
         # Make sure no gradients backpropagated through the returned values.
-        return VTraceReturns(vs=vs, pg_advantages=pg_advantages)
+        return VTraceReturns(vs=vs, pg_advantages=pg_advantages, rhos=rhos, clipped_rhos=clipped_rhos)
