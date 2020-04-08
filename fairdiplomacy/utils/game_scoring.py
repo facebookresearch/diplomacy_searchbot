@@ -13,6 +13,7 @@ GameScores = collections.namedtuple(
         "is_complete_unroll",  # 0/1 whether last phase is complete.
         "is_clear_win",  # 0/1 whether the player has more than half SC.
         "is_leader",  # 0/1 whether the player has at least as many SCs as anyone else.
+        "num_games",  # Number of games being averaged
     ],
 )
 
@@ -31,14 +32,18 @@ def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
         is_leader=float(center_counts[power_id] == max(center_counts)),
     )
     metrics["square_score"] = 1.0 if is_clear_win else metrics["square_ratio"]
-    return GameScores(**metrics)
+    return GameScores(**metrics, num_games=1)
 
 
 def average_game_scores(many_games_scores: Sequence[GameScores]) -> GameScores:
     assert many_games_scores, "Must be non_empty"
     result = {}
+    tot_n_games = sum(scores.num_games for scores in many_games_scores)
     for key in GameScores._fields:
-        result[key] = sum(getattr(scores, key) for scores in many_games_scores) / len(
-            many_games_scores
+        if key == "num_games":
+            continue
+        result[key] = (
+            sum(getattr(scores, key) * scores.num_games for scores in many_games_scores)
+            / tot_n_games
         )
-    return GameScores(**result)
+    return GameScores(**result, num_games=tot_n_games)

@@ -57,50 +57,7 @@ def get_result(game_json_path):
         return "six", power_one, power_won, rl_rewards
 
 
-def print_power_h2h(results, args):
-    table = (
-        [["player_one"] + [p[:3] for p in POWERS] + ["games_played"]]
-        + [
-            [p[:3]]
-            + [sum(1 for _, p_, w_, _ in results if p_ == p and w_ == w) for w in POWERS]
-            + [sum(1 for _, p_, _, _ in results if p_ == p)]
-            for p in POWERS
-        ]
-        + [""]
-        + [
-            ["total won"]
-            + [sum(1 for _, _, w_, _ in results if w_ == w) for w in POWERS]
-            + [len(results)]
-        ]
-    )
-    if args.csv:
-        print("POWER H2H")
-        print("\n".join([",".join(map(str, cols)) for cols in table]))
-    else:
-        print("====  POWER H2H  ====")
-        print(tabulate.tabulate(table, headers="firstrow"))
-
-
-def print_win_rates(results, args):
-    if args.csv:
-        print("WIN RATES")
-    else:
-        print("====  WIN RATES  ====")
-
-    counts = Counter([w for w, _, _, _ in results])
-    for k in ["draw", "one", "six"]:
-        v = counts[k]
-        if args.csv:
-            print(k, v, v / len(results), sep=",")
-        else:
-            print(f"{k}: {v}, {v/len(results)}")
-
-
 def print_rl_stats(results, args):
-    if args.csv:
-        # TODO(akhti): do csv
-        return
-    print("==== AVERAGE REWARDS ====")
     stats_per_power = collections.defaultdict(list)
     for _, real_power, _, rl_stats in results:
         stats_per_power[real_power].append(rl_stats)
@@ -120,7 +77,6 @@ def print_rl_stats(results, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("results_dir", help="Directory containing game.json files")
-    parser.add_argument("--csv", action="store_true")
     args = parser.parse_args()
 
     results_dir = ""
@@ -131,15 +87,4 @@ if __name__ == "__main__":
             break
 
     results = [get_result(path) for path in paths]
-
-    print_power_h2h(results, args)
-    print("\n\n")
-    print_win_rates(results, args)
-    print("\n\n")
     print_rl_stats(results, args)
-    print("\n\n")
-
-    if args.csv:
-        with open(glob.glob(f"{results_dir}/*/config.prototxt")[0]) as f:
-            print("CONFIG")
-            print(f.read())
