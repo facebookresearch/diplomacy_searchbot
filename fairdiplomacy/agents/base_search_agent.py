@@ -275,7 +275,8 @@ class BaseSearchAgent(BaseAgent):
             torch.set_num_threads(1)
 
             games = [from_saved_game_format(game_json) for _ in range(batch_size)]
-            assert len({g.game_id for g in games}) == len(games), "Bad duplicate game ids"
+            for i in range(len(games)):
+                games[i].game_id += f"_{i}"
             est_final_scores = {}
 
             # set orders if specified
