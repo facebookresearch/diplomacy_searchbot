@@ -1,6 +1,6 @@
 train {
     data_dir: "/checkpoint/jsgray/diplomacy/mila_dataset/data";
-    data_cache: "/checkpoint/jsgray/diplomacy/data_cache_final_score.pth";
+    data_cache: "/checkpoint/jsgray/diplomacy/data_cache_candidx.pth";
     num_dataloader_workers: 20;
     batch_size: 2500;
     lr: 0.001;
