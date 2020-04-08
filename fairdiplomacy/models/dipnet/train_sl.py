@@ -120,12 +120,10 @@ def calculate_accuracy(sampled_idxs, y_truth):
 
 def calculate_value_accuracy(final_sos, y_final_scores):
     """Return top-1 accuracy"""
-    guessed_winner = final_sos.argmax(dim=1)
-    guessed_winner_actual_score = (
-        y_final_scores.squeeze(1).gather(1, guessed_winner.unsqueeze(1)).squeeze(1)
-    )
-    actual_winner_actual_score = y_final_scores.squeeze(1).max(dim=1).values
-    return (guessed_winner_actual_score == actual_winner_actual_score).float().mean()
+    y_final_scores = y_final_scores.squeeze(1)
+    actual_winner = y_final_scores == y_final_scores.max(dim=1, keepdim=True).values
+    guessed_winner = final_sos == final_sos.max(dim=1, keepdim=True).values
+    return (actual_winner & guessed_winner).any(dim=1).float().mean()
 
 
 def calculate_split_accuracy_counts(sampled_idxs, y_truth):
