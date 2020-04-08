@@ -20,20 +20,20 @@ class CFR1PAgent(BaseSearchAgent):
     def __init__(
         self,
         *,
-        model_path="/checkpoint/jsgray/diplomacy/dipnet.pth",
+        model_path,
+        max_rollout_length,
+        n_rollouts,
+        rollout_temperature,
+        cache_rollout_results=False,
+        enable_compute_nash_conv=False,
+        max_batch_size=700,
+        n_gpu=1,
+        n_plausible_orders=8,
         n_rollout_procs=70,
         n_server_procs=1,
-        n_gpu=1,
-        n_rollouts=100,
-        max_rollout_length=10,
-        use_predicted_final_scores=True,
-        n_plausible_orders=8,
-        rollout_temperature,
-        use_optimistic_cfr=True,
-        enable_compute_nash_conv=False,
         postman_sync_batches=False,
-        max_batch_size=700,
-        cache_rollout_results=False,
+        use_optimistic_cfr=True,
+        use_predicted_final_scores=True,
         use_server_addr=None,
     ):
         super().__init__(
@@ -344,7 +344,8 @@ if __name__ == "__main__":
     agent = CFR1PAgent(
         n_rollouts=100,
         max_rollout_length=5,
-        model_path="/checkpoint/jsgray/diplomacy/sl_candemb_no13k_ep85.pth",
+        model_path="/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth",
         postman_sync_batches=True,
+        rollout_temperature=0.5,
     )
     print(agent.get_orders(diplomacy.Game(), "ITALY"))

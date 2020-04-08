@@ -1,4 +1,4 @@
 dipnet {
-    model_path: "/checkpoint/jsgray/diplomacy/dipnet.pth"
+    model_path: "/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth"
     temperature: 0.1
 }

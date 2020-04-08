@@ -84,21 +84,3 @@ class Env:
         logging.info("Saving to {}".format(output_path))
         diplomacy.utils.export.to_saved_game_format(self.game, output_path)
 
-
-if __name__ == "__main__":
-    # mila_sl_agent = MilaSLAgent()
-    dipnet_agent = DipnetAgent("/checkpoint/jsgray/diplomacy/dipnet.pth")
-    env = Env(
-        {
-            "ITALY": dipnet_agent,
-            "ENGLAND": dipnet_agent,
-            "FRANCE": dipnet_agent,
-            "GERMANY": dipnet_agent,
-            "AUSTRIA": dipnet_agent,
-            "RUSSIA": dipnet_agent,
-            "TURKEY": dipnet_agent,
-        }
-    )
-    results = env.process_all_turns()
-    logging.info("Game over! Results: {}".format(results))
-    # env.save("game.json")

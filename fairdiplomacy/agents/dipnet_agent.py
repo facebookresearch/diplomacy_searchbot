@@ -13,9 +13,7 @@ ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class DipnetAgent(BaseAgent):
-    def __init__(
-        self, model_path="/checkpoint/jsgray/diplomacy/dipnet.pth", temperature=0.1, device="cuda"
-    ):
+    def __init__(self, model_path, temperature, device="cuda"):
         self.model = load_dipnet_model(model_path, map_location=device, eval=True)
         self.temperature = temperature
         self.device = device
@@ -36,8 +34,6 @@ class DipnetAgent(BaseAgent):
             order_idxs, cand_idxs, logits, final_scores = self.model(
                 *inputs, temperature=temperature
             )
-
-        print("final_scores", final_scores)
 
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
 
