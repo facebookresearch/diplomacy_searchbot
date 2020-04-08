@@ -179,7 +179,7 @@ class DipNet(nn.Module):
             enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
 
         with timings("policy_decoder_prep"):
-            enc = enc.repeat_interleave(7, dim=0)
+            enc_repeat = enc.repeat_interleave(7, dim=0)
             in_adj_phase = in_adj_phase.repeat_interleave(7, dim=0)
             loc_idxs = loc_idxs.view(-1, loc_idxs.shape[2])
             cand_idxs = cand_idxs.view(-1, *cand_idxs.shape[2:])
@@ -195,11 +195,11 @@ class DipNet(nn.Module):
             )
             # N.B. use repeat, not repeat_interleave, for power_1h only. Each
             # batch is contiguous, and we want a 7x7 identity matrix for each batch.
-            power_1h = torch.eye(7, device=enc.device).repeat((enc.shape[0] // 7, 1))
+            power_1h = torch.eye(7, device=enc.device).repeat((enc.shape[0], 1))
 
         with timings("policy_decoder"):
             order_idxs, sampled_idxs, logits = self.policy_decoder(
-                enc,
+                enc_repeat,
                 in_adj_phase,
                 loc_idxs,
                 cand_idxs,

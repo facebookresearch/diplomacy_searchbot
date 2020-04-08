@@ -112,9 +112,7 @@ class BaseSearchAgent(BaseAgent):
         logging.info("Done warming up pool")
 
     @classmethod
-    def do_model_request(
-        cls, client, x, temperature=1.0
-    ) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
+    def do_model_request(cls, client, x, temperature) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
         """Synchronous request to model server
 
         Arguments:
@@ -245,7 +243,7 @@ class BaseSearchAgent(BaseAgent):
         temperature,
         max_rollout_length,
         batch_size=1,
-        use_predicted_final_scores=True,
+        use_predicted_final_scores,
     ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:
         """Complete game, optionally setting orders for the current turn
 
@@ -277,6 +275,7 @@ class BaseSearchAgent(BaseAgent):
             torch.set_num_threads(1)
 
             games = [from_saved_game_format(game_json) for _ in range(batch_size)]
+            assert len({g.game_id for g in games}) == len(games), "Bad duplicate game ids"
             est_final_scores = {}
 
             # set orders if specified

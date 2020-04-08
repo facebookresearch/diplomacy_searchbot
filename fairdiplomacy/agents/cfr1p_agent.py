@@ -28,7 +28,7 @@ class CFR1PAgent(BaseSearchAgent):
         max_rollout_length=10,
         use_predicted_final_scores=True,
         n_plausible_orders=8,
-        rollout_temperature=0.05,
+        rollout_temperature,
         use_optimistic_cfr=True,
         enable_compute_nash_conv=False,
         postman_sync_batches=False,
