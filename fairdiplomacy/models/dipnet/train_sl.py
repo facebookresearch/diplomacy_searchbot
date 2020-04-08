@@ -89,8 +89,12 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     policy_loss = policy_loss_fn(logits, y_actions)
 
     # calculate sum-of-squares value loss
-    y_final_scores_sq = y_final_scores.to(device).float().pow(2).squeeze(1)
+    y_final_scores = y_final_scores.to(device).float().squeeze(1)
+    y_final_scores_sq = y_final_scores.pow(2)
     y_final_sos = y_final_scores_sq / y_final_scores_sq.sum(dim=1, keepdim=True)
+    y_final_sos = torch.where(
+        (y_final_scores > 17).any(dim=1, keepdim=True), (y_final_scores > 17).float(), y_final_sos
+    )
     value_loss = value_loss_fn(final_sos, y_final_sos)
 
     return policy_loss, value_loss, sampled_idxs, final_sos
