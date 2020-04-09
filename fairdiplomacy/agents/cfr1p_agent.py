@@ -20,44 +20,29 @@ class CFR1PAgent(BaseSearchAgent):
     def __init__(
         self,
         *,
-        model_path,
-        max_rollout_length,
         n_rollouts,
-        rollout_temperature,
         cache_rollout_results=False,
         enable_compute_nash_conv=False,
-        max_batch_size=700,
-        n_gpu=1,
         n_plausible_orders=8,
-        n_rollout_procs=70,
-        n_server_procs=1,
         postman_sync_batches=False,
         use_optimistic_cfr=True,
-        use_predicted_final_scores=True,
-        use_server_addr=None,
+        max_batch_size=700,
+        **kwargs,
     ):
         super().__init__(
-            model_path=model_path,
-            n_rollout_procs=n_rollout_procs,
-            n_server_procs=n_server_procs,
-            n_gpu=n_gpu,
+            **kwargs,
             max_batch_size=(
                 n_plausible_orders * len(POWERS) if postman_sync_batches else max_batch_size
             ),
-            max_rollout_length=max_rollout_length,
-            use_predicted_final_scores=use_predicted_final_scores,
-            rollout_temperature=rollout_temperature,
-            postman_wait_till_full=postman_sync_batches,
-            use_server_addr=use_server_addr,
         )
 
         self.n_rollouts = n_rollouts
-        self.n_plausible_orders = n_plausible_orders
-        self.use_optimistic_cfr = use_optimistic_cfr
-        self.enable_compute_nash_conv = enable_compute_nash_conv
-        self.plausible_orders_req_size = max_batch_size
-        self.postman_sync_batches = postman_sync_batches
         self.cache_rollout_results = cache_rollout_results
+        self.enable_compute_nash_conv = enable_compute_nash_conv
+        self.n_plausible_orders = n_plausible_orders
+        self.postman_sync_batches = postman_sync_batches
+        self.use_optimistic_cfr = use_optimistic_cfr
+        self.plausible_orders_req_size = max_batch_size
 
     def get_orders(self, game, power) -> List[str]:
         # CFR data structures

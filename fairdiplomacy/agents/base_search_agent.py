@@ -41,15 +41,16 @@ class BaseSearchAgent(BaseAgent):
         self,
         *,
         model_path,
-        n_rollout_procs,
-        n_server_procs,
-        n_gpu,
         max_batch_size,
         max_rollout_length,
-        use_predicted_final_scores=True,
         rollout_temperature,
+        n_server_procs=1,
+        n_gpu=1,
+        n_rollout_procs=70,
+        use_predicted_final_scores=True,
         postman_wait_till_full=False,
         use_server_addr=None,
+        device=None,
     ):
         super().__init__()
 
@@ -87,7 +88,7 @@ class BaseSearchAgent(BaseAgent):
                         ),
                         output_transform=model_output_transform,
                         seed=0,
-                        device=i % n_gpu,
+                        device=i % n_gpu if device is None else device,
                         port_q=q,
                         wait_till_full=postman_wait_till_full,
                     ),
@@ -385,12 +386,13 @@ def server_handler(
     device=0,
     ckpt_sync_path=None,
     wait_till_full=False,
+    empty_cache=True,
 ):
 
-    if device != 0:
+    if device > 0:
         torch.cuda.set_device(device)
     model = load_model_fn()
-    logging.info(f"Server {os.getpid()} loaded model")
+    logging.info(f"Server {os.getpid()} loaded model, device={device}")
 
     if seed is not None:
         torch.manual_seed(seed)
@@ -408,7 +410,8 @@ def server_handler(
 
     with torch.no_grad():
         while True:
-            torch.cuda.empty_cache()
+            if empty_cache:
+                torch.cuda.empty_cache()
             try:
                 with q.get(wait_till_full=wait_till_full) as batch:
                     with timings("ckpt_sync"):

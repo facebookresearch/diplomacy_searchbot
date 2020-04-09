@@ -18,11 +18,13 @@
 import argparse
 import diplomacy
 import logging
+from copy import deepcopy
 from functools import partial
 from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
 from tornado import gen, ioloop
 
+import torch
 from fairdiplomacy.agents import build_agent_from_cfg
 from concurrent.futures import ThreadPoolExecutor
 
@@ -53,7 +55,7 @@ class Bot:
         period_seconds=PERIOD_SECONDS,
         buffer_size=128,
         reuse_agent=False,
-        reuse_model_server=False,
+        reuse_model_servers=0,
     ):
         """ Initialize the bot.
             :param host: (required) name of host to connect
@@ -63,6 +65,8 @@ class Bot:
             :param buffer_size: number of powers to ask to server.
             :param reuse_agent: if True, agent_fn is called a single time and
                 the agent object is used for all powers
+            :param reuse_model_servers: int, if non-zero then start this number of
+                model servers and reuse them for all agents
         """
         self.host = host
         self.port = port
@@ -73,7 +77,7 @@ class Bot:
         self.player = None
         self.game_to_phase = {}
         self.buffer_size = buffer_size
-        self.reuse_model_server = reuse_model_server
+        self.reuse_model_servers = reuse_model_servers
 
         self.agents = {}  # (channel, power) -> Agent
         self.executor = ThreadPoolExecutor(8)
@@ -124,18 +128,44 @@ class Bot:
             yield channel.join_powers(game_id=game_id, power_names=dummy_power_names)
 
             # Init agents
-            model_sever_addr = None
-            for power in dummy_power_names:
-                key = (channel, power)
-                if key not in self.agents:
-                    self.agents[key] = yield self.executor.submit(
-                        build_agent_from_cfg, self.agent_cfg
-                    )
-                    if self.reuse_model_server and model_sever_addr is None:
-                        model_server_addr = self.agents[key].hostports[0]
-                        getattr(
-                            self.agent_cfg, self.agent_cfg.WhichOneof("agent")
-                        ).use_server_addr = model_server_addr
+            keys = [(channel, power) for power in dummy_power_names]
+            missing_keys = [k for k in keys if k not in self.agents]
+            if self.reuse_model_servers <= 0:
+                # don't reuse model servers
+                futures = [
+                    self.executor.submit(build_agent_from_cfg, self.agent_cfg)
+                    for _ in missing_keys
+                ]
+                for key, future in zip(missing_keys, futures):
+                    self.agents[key] = yield future
+            else:
+                # reuse model servers: first launch agents with unique servers
+                assert self.reuse_model_servers <= torch.cuda.device_count()
+                futures = []
+                for i in range(self.reuse_model_servers):
+                    cfg = deepcopy(self.agent_cfg)
+                    getattr(cfg, cfg.WhichOneof("agent")).device = i  # use different gpus
+                    future = self.executor.submit(build_agent_from_cfg, cfg)
+                    futures.append(future)
+                agents = yield futures
+
+                # then launch remaining agents, reusing servers
+                server_addrs = [agent.hostports[0] for agent in agents]
+                cfgs = [deepcopy(self.agent_cfg) for _ in server_addrs]
+                for addr, cfg in zip(server_addrs, cfgs):
+                    getattr(cfg, cfg.WhichOneof("agent")).use_server_addr = addr
+                more_agents = yield [
+                    self.executor.submit(build_agent_from_cfg, cfgs[i % len(cfgs)])
+                    for i in range(len(dummy_power_names) - self.reuse_model_servers)
+                ]
+                agents.extend(more_agents)
+
+                # assign agents to powers
+                assert len(missing_keys) == len(agents), "{} != {}".format(
+                    len(missing_keys), len(agents)
+                )
+                for key, agent in zip(missing_keys, agents):
+                    self.agents[key] = agent
 
             # Join all games
             games = yield {
@@ -203,7 +233,7 @@ def run_with_cfg(cfg):
         cfg.agent,
         period_seconds=cfg.period,
         buffer_size=cfg.buffer_size,
-        reuse_model_server=cfg.reuse_model_server,
+        reuse_model_servers=cfg.reuse_model_servers,
     )
     io_loop = ioloop.IOLoop.instance()
     while True:

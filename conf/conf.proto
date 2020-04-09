@@ -55,6 +55,9 @@ message CFR1PAgent {
 
   // Optional host:port for model server
   optional string use_server_addr = 12;
+
+  // CUDA device to use, if > 0
+  optional int32 device = 13 [ default= -1 ];
 }
 
 message BRSearchAgent {
@@ -291,8 +294,8 @@ message LaunchBotTask {
   // Number of powers to manage on server
   optional uint32 buffer_size = 5;
 
-  // If True, launch one model server for all agents.
-  optional bool reuse_model_server = 6;
+  // If non-zero, # of model servers to launch and reuse
+  optional uint32 reuse_model_servers = 6;
 
   optional Launcher launcher = 1000;
 }
