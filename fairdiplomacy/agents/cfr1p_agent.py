@@ -165,7 +165,7 @@ class CFR1PAgent(BaseSearchAgent):
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
 
             logging.info(
-                f"Timing[cfr_iter]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
+                f"Timing[cfr_iter {cfr_iter}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
             )
             timings.clear()
 
