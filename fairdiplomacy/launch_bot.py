@@ -15,11 +15,9 @@
 # edited by jsgray to accomodate for different bots, work with heyhi cfg
 #
 # ==============================================================================
-import argparse
 import diplomacy
 import logging
 from copy import deepcopy
-from functools import partial
 from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
 from tornado import gen, ioloop
@@ -80,6 +78,7 @@ class Bot:
         self.reuse_model_servers = reuse_model_servers
 
         self.agents = {}  # (channel, power) -> Agent
+        self.cfgs_with_server = []
         self.executor = ThreadPoolExecutor(8)
 
     @gen.coroutine
@@ -130,6 +129,7 @@ class Bot:
             # Init agents
             keys = [(channel, power) for power in dummy_power_names]
             missing_keys = [k for k in keys if k not in self.agents]
+            LOGGER.info(f"Missing agents for keys: {missing_keys}")
             if self.reuse_model_servers <= 0:
                 # don't reuse model servers
                 futures = [
@@ -141,30 +141,27 @@ class Bot:
             else:
                 # reuse model servers: first launch agents with unique servers
                 assert self.reuse_model_servers <= torch.cuda.device_count()
-                futures = []
-                for i in range(self.reuse_model_servers):
-                    cfg = deepcopy(self.agent_cfg)
-                    getattr(cfg, cfg.WhichOneof("agent")).device = i  # use different gpus
-                    future = self.executor.submit(build_agent_from_cfg, cfg)
-                    futures.append(future)
-                agents = yield futures
+                n_missing_server_agents = min(
+                    len(missing_keys), self.reuse_model_servers - len(self.cfgs_with_server)
+                )
+                LOGGER.info(f"Launching {n_missing_server_agents} new server agents")
+                new_server_agents = yield self.launch_n_server_agents(n_missing_server_agents)
 
-                # then launch remaining agents, reusing servers
-                server_addrs = [agent.hostports[0] for agent in agents]
-                cfgs = [deepcopy(self.agent_cfg) for _ in server_addrs]
-                for addr, cfg in zip(server_addrs, cfgs):
-                    getattr(cfg, cfg.WhichOneof("agent")).use_server_addr = addr
-                more_agents = yield [
-                    self.executor.submit(build_agent_from_cfg, cfgs[i % len(cfgs)])
-                    for i in range(len(dummy_power_names) - self.reuse_model_servers)
-                ]
-                agents.extend(more_agents)
+                # then launch agents reusing servers
+                n_missing_serverless_agents = len(missing_keys) - len(self.cfgs_with_server)
+                LOGGER.info(f"Launching {n_missing_serverless_agents} new serverless agents")
+                new_serverless_agents = yield self.launch_n_serverless_agents(
+                    n_missing_serverless_agents
+                )
 
                 # assign agents to powers
-                assert len(missing_keys) == len(agents), "{} != {}".format(
-                    len(missing_keys), len(agents)
+                assert len(missing_keys) == len(new_server_agents) + len(
+                    new_serverless_agents
+                ), "Launched wrong number of agents, {} != {} + {}".format(
+                    len(missing_keys), len(new_server_agents), len(new_serverless_agents)
                 )
-                for key, agent in zip(missing_keys, agents):
+
+                for key, agent in zip(missing_keys, new_server_agents + new_serverless_agents):
                     self.agents[key] = agent
 
             # Join all games
@@ -218,12 +215,37 @@ class Bot:
             )
 
     @gen.coroutine
-    def create_agent(self):
-        raise NotImplementedError
+    def launch_n_server_agents(self, n):
+        """Return a list of Agent objects"""
+        futures = []
+        for i in range(n):
+            cfg = deepcopy(self.agent_cfg)
+            getattr(cfg, cfg.WhichOneof("agent")).device = i  # use different gpus
+            future = self.executor.submit(build_agent_from_cfg, cfg)
+            futures.append(future)
+        agents = yield futures
+
+        # save server addrs in reusable cfgs for serverless agents
+        server_addrs = [agent.hostports[0] for agent in agents]
+        cfgs = [deepcopy(self.agent_cfg) for _ in server_addrs]
+        for addr, cfg in zip(server_addrs, cfgs):
+            getattr(cfg, cfg.WhichOneof("agent")).use_server_addr = addr
+        self.cfgs_with_server.extend(cfgs)
+
+        LOGGER.info(f"Launched {len(cfgs)} new server agents, {len(self.cfgs_with_server)} total")
+
+        return agents
 
     @gen.coroutine
-    def get_orders(self, game, power, agent):
-        raise NotImplementedError
+    def launch_n_serverless_agents(self, n):
+        agents = yield [
+            self.executor.submit(
+                build_agent_from_cfg, self.cfgs_with_server[i % len(self.cfgs_with_server)]
+            )
+            for i in range(n)
+        ]
+        LOGGER.info(f"Launched {len(agents)} new serverless agents")
+        return agents
 
 
 def run_with_cfg(cfg):
