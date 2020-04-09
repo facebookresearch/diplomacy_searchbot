@@ -4,7 +4,7 @@ cfr1p {
   model_path: "/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth"
   n_gpu: 1
   n_plausible_orders: 8
-  n_rollout_procs: 70
+  n_rollout_procs: 56
   n_rollouts: 100
   n_server_procs: 1
   use_predicted_final_scores: true

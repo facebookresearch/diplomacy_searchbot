@@ -162,6 +162,14 @@ After [opening the visualizer](#visualizing-a-saved-game), create a new standard
 python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt I.agent=agents/dipnet
 ```
 
+To play against six CFR bots sharing two GPUs, run
+```
+python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt \
+    I.agent=agents/cfr1p \
+    agent.cfr1p.postman_sync_batches=False \
+    reuse_model_servers=2
+```
+
 # A Primer on the diplomacy.Game object
 
 `game.get_state()` returns a dict containing the current board position. The most commonly accessed keys are:
