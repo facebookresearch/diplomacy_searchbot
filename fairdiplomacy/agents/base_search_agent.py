@@ -274,7 +274,7 @@ class BaseSearchAgent(BaseAgent):
             client.connect(3)
 
         with timings("setup"):
-            faulthandler.register(signal.SIGUSR1)
+            faulthandler.register(signal.SIGUSR2)
             torch.set_num_threads(1)
 
             games = [from_saved_game_format(game_json) for _ in range(batch_size)]

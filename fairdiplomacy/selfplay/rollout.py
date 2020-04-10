@@ -217,7 +217,7 @@ def yield_rollouts(
     blueprint_client_selector = create_client_selector(blueprint_hostports)
     exploit_client_selector = create_client_selector(exploit_hostports)
 
-    faulthandler.register(signal.SIGUSR1)
+    faulthandler.register(signal.SIGUSR2)
     torch.set_num_threads(1)
 
     exploit_power_selector = itertools.cycle(tuple(range(len(POWERS))))
