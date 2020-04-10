@@ -49,9 +49,7 @@ def load_dipnet_model(checkpoint_path, map_location="cpu", eval=False):
         for k, v in checkpoint["model"].items()
     }
     model.load_state_dict(state_dict)
-
-    if map_location == "cuda":
-        model.cuda()
+    model = model.to(map_location)
 
     if eval:
         model.eval()

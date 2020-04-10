@@ -60,6 +60,7 @@ class BaseSearchAgent(BaseAgent):
         self.rollout_temperature = rollout_temperature
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
+        device = int(device.lstrip("cuda:")) if type(device) == str else device
 
         logging.info("Launching servers")
         servers = []
@@ -78,17 +79,18 @@ class BaseSearchAgent(BaseAgent):
         else:
             for i in range(n_server_procs):
                 q = mp.SimpleQueue()
+                device = i % n_gpu if device is None else device
                 server = ExceptionHandlingProcess(
                     target=run_server,
                     kwargs=dict(
                         port=0,
                         batch_size=max_batch_size,
                         load_model_fn=partial(
-                            load_dipnet_model, model_path, map_location="cuda", eval=True
+                            load_dipnet_model, model_path, map_location=f"cuda:{device}", eval=True
                         ),
                         output_transform=model_output_transform,
                         seed=0,
-                        device=i % n_gpu if device is None else device,
+                        device=device,
                         port_q=q,
                         wait_till_full=postman_wait_till_full,
                     ),
