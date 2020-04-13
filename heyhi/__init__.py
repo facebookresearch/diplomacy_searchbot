@@ -8,6 +8,7 @@ from .util import (
     is_aws,
     setup_logging,
     log_git_status,
+    get_job_env,
     get_slurm_job_id,
     reset_slurm_cache,
     save_result_in_cwd,

@@ -43,6 +43,14 @@ def reset_slurm_cache():
     _SLURM_CACHE.clear()
 
 
+def get_job_env() -> submitit.JobEnvironment:
+    """Get info about the job including global_rank, local_rank, and num_tasks.
+
+    See submitit docs for all fields.
+    """
+    return submitit.JobEnvironment()
+
+
 def is_aws():
     return "S3_SHARED" in os.environ
 
@@ -416,6 +424,7 @@ def run_with_config(
         logging.info("stdout:\n\ttail -F %s/%s_0_log.out", exp_handle.slurm_path, job.job_id)
         logging.info("stderr:\n\ttail -F %s/%s_0_log.err", exp_handle.slurm_path, job.job_id)
     else:
+        os.environ["SUBMITIT_LOCAL_JOB_ID"] = "1"
         exp_handle.save_job_id(LOCAL_JOB_ID)
         callable()
     os.chdir(old_cwd)
