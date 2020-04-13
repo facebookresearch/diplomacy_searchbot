@@ -1,6 +1,8 @@
 from typing import Dict, Optional
 import collections
+import datetime
 import importlib
+import json
 import logging
 import pathlib
 import subprocess
@@ -116,3 +118,28 @@ class MaxCounter:
 
     def value(self):
         return self._value
+
+
+class Logger:
+    def __init__(self):
+        # TODO(akhti): rank 0!
+        self.writer = torch.utils.tensorboard.SummaryWriter(log_dir="tb")
+        self.jsonl_writer = open("metrics.jsonl", "a")
+
+    def log_metrics(self, metrics, step):
+        for key, value in metrics.items():
+            self.writer.add_scalar(key, value, global_step=step)
+        created_at = datetime.datetime.utcnow().isoformat()
+        print(
+            json.dumps(dict(epoch=step, created_at=created_at, **metrics)),
+            file=self.jsonl_writer,
+            flush=True,
+        )
+
+    def __del__(self):
+        if self.writer is not None:
+            self.writer.close()
+            self.writer = None
+        if self.jsonl_writer is not None:
+            self.jsonl_writer.close()
+            self.jsonl_writer = None
