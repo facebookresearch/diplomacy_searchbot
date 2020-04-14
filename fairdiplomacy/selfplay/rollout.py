@@ -12,12 +12,7 @@ import torch
 
 import postman
 
-import diplomacy
-from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
-from fairdiplomacy.agents.base_search_agent import (
-    run_server,
-    cat_pad_inputs,
-)
+from fairdiplomacy.agents.base_search_agent import run_server, cat_pad_inputs
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, decode_order_idxs
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS, N_SCS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
@@ -226,7 +221,7 @@ def yield_rollouts(
 
     for exploit_power_id in exploit_power_selector:
         with timings("setup"):
-            games = [from_saved_game_format(game_json) for _ in range(batch_size)]
+            games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
             turn_idx = 0
             observations = {i: [] for i in range(batch_size)}
             actions = {i: [] for i in range(batch_size)}
@@ -294,7 +289,7 @@ def yield_rollouts(
         for i in range(batch_size):
             yield ExploitRollout(
                 power_id=exploit_power_id,
-                game_json=to_saved_game_format(games[i]),
+                game_json=games[i].to_saved_game_format(),
                 actions=torch.stack(actions[i], 0),
                 logprobs=torch.stack(logprobs[i], 0),
                 observations=[torch.stack(obs, 0) for obs in zip(*observations[i])],

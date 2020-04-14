@@ -1,8 +1,7 @@
 import logging
 import time
 
-import diplomacy
-
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents.dipnet_agent import DipnetAgent
 
 
@@ -10,7 +9,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
     agent = DipnetAgent("/checkpoint/jsgray/diplomacy/dipnet.pth")
-    game = diplomacy.Game()
+    game = Game()
     orders = agent.get_orders(game, "ITALY")
     logging.info("Submit orders: {}".format(orders))
 

@@ -2,6 +2,7 @@ import diplomacy
 import torch
 from typing import List
 
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import get_valid_orders_impl
 from fairdiplomacy.models.consts import SEASONS, POWERS
@@ -130,7 +131,7 @@ def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_loc
     )
 
 
-DEFAULT_INPUTS = encode_inputs(diplomacy.Game())
+DEFAULT_INPUTS = encode_inputs(Game())
 
 
 def zero_inputs():
@@ -141,7 +142,7 @@ def zero_inputs():
 
 
 if __name__ == "__main__":
-    game = diplomacy.Game()
+    game = Game()
     print(
         DipnetAgent(
             model_path="/checkpoint/jsgray/diplomacy/sl_candemb_no13k_ep85.pth", device="cpu"

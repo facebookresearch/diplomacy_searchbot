@@ -322,7 +322,8 @@ class RolloutResultsCache:
 
 
 if __name__ == "__main__":
-    import diplomacy
+    from fairdiplomacy.game import Game
+    import os
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
@@ -333,4 +334,4 @@ if __name__ == "__main__":
         postman_sync_batches=True,
         rollout_temperature=0.5,
     )
-    print(agent.get_orders(diplomacy.Game(), "ITALY"))
+    print(agent.get_orders(Game(), "AUSTRIA"))

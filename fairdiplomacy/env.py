@@ -5,8 +5,7 @@ import time
 import torch
 from concurrent.futures import ThreadPoolExecutor
 
-import diplomacy
-
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents.random_agent import RandomAgent
 from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
 from fairdiplomacy.agents.dipnet_agent import DipnetAgent
@@ -23,7 +22,7 @@ class Env:
             2. a dict of power name -> Agent object,
                 e.g.  {"AUSTRIA": <Agent>, "FRANCE": <Agent>, ...}
         """
-        self.game = diplomacy.Game()
+        self.game = Game()
         self.thread_pool = ThreadPoolExecutor(max_workers=len(self.game.powers))
 
         # set random seeds
@@ -82,5 +81,4 @@ class Env:
 
     def save(self, output_path):
         logging.info("Saving to {}".format(output_path))
-        diplomacy.utils.export.to_saved_game_format(self.game, output_path)
-
+        self.game.to_saved_game_format(output_path)

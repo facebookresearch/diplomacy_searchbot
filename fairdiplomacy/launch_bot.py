@@ -23,6 +23,7 @@ from diplomacy.utils import constants, exceptions, strings
 from tornado import gen, ioloop
 
 import torch
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents import build_agent_from_cfg
 from concurrent.futures import ThreadPoolExecutor
 
@@ -190,7 +191,7 @@ class Bot:
             :type game: diplomacy.client.network_game.NetworkGame
         """
         with game.current_state():
-            game_copy = diplomacy.Game()
+            game_copy = Game()
             phase_history = yield game.get_phase_history()
             game_copy.set_phase_data(phase_history + [game.get_phase_data()])
 

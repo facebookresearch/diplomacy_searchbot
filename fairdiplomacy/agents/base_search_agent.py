@@ -12,8 +12,8 @@ import numpy as np
 import postman
 import torch
 import torch.multiprocessing as mp
-from diplomacy.utils.export import to_saved_game_format, from_saved_game_format
 
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
@@ -188,7 +188,7 @@ class BaseSearchAgent(BaseAgent):
         """Run N x len(set_orders_dicts) rollouts
 
         Arguments:
-        - game: diplomacy.Game
+        - game: fairdiplomacy.Game
         - set_orders_dicts: List[Dict[power, orders]], each dict representing
           the orders to set for the first turn
         - N: int
@@ -199,7 +199,7 @@ class BaseSearchAgent(BaseAgent):
             -> final_scores: Dict[power, supply count],
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
-        game_json = to_saved_game_format(game)
+        game_json = game.to_saved_game_format()
 
         # divide up the rollouts among the processes
         procs_per_order = max(1, self.n_rollout_procs // len(set_orders_dicts))
@@ -277,7 +277,7 @@ class BaseSearchAgent(BaseAgent):
             faulthandler.register(signal.SIGUSR2)
             torch.set_num_threads(1)
 
-            games = [from_saved_game_format(game_json) for _ in range(batch_size)]
+            games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
             for i in range(len(games)):
                 games[i].game_id += f"_{i}"
             est_final_scores = {}
@@ -394,7 +394,7 @@ def server_handler(
     if device > 0:
         torch.cuda.set_device(device)
     model = load_model_fn()
-    logging.info(f"Server {os.getpid()} loaded model, device={device}")
+    logging.info(f"Server {os.getpid()} loaded model, device={device}, seed={seed}")
 
     if seed is not None:
         torch.manual_seed(seed)

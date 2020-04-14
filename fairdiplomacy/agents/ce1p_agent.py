@@ -3,6 +3,7 @@ import numpy as np
 from collections import defaultdict
 from typing import List, Tuple, Dict
 
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 from fairdiplomacy.models.consts import POWERS
 
@@ -427,8 +428,6 @@ class CE1PAgent(BaseSearchAgent):
 
 
 if __name__ == "__main__":
-    import diplomacy
-
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
-    print(CE1PAgent().get_orders(diplomacy.Game(), "ITALY"))
+    print(CE1PAgent().get_orders(Game(), "ITALY"))

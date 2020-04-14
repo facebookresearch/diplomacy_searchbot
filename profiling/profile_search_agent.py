@@ -1,15 +1,15 @@
-import diplomacy
 import logging
 import os
 import time
 
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents import BRSearchAgent
 
 if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
     logging.info("PID: {}".format(os.getpid()))
 
-    game = diplomacy.Game()
+    game = Game()
 
     agent = BRSearchAgent()
     logging.info("Constructed agent")
