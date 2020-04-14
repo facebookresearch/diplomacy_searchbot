@@ -11,21 +11,6 @@ The following command will create/activate conda env with all needed modules:
 . fair_activate.sh
 ```
 
-Or you can do this manually:
-```
-conda create -y --name fairdiplomacy python=3.7
-conda activate fairdiplomacy
-conda install -y nodejs
-pip install -e . -vv
-pip install -e ./thirdparty/github/fairinternal/postman/nest/
-pip install /checkpoint/hnr/wheels/postman-0.1.1-cp37-cp37m-linux_x86_64.whl
-```
-
-Install singularity 3.x, or on FAIR cluster run:
-```
-module load singularity/3.4.1/gcc.7.3.0
-```
-
 If you are getting warnings about `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION`, you may also need to set this environment variable:
 ```
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
@@ -170,7 +155,7 @@ python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt \
     reuse_model_servers=2
 ```
 
-# A Primer on the diplomacy.Game object
+# A Primer on the Game object
 
 `game.get_state()` returns a dict containing the current board position. The most commonly accessed keys are:
 
