@@ -50,14 +50,14 @@ To train a model on the cluster, see the scripts in [slurm/](slurm/), specifical
 
 # Training exploit agent
 
-Exploit agent learns to play against fixed supervised agent. Configs for
+Exploit agent learns to play against a fixed supervised agent. Configs for
 exploit agents are in [conf/c04_exploit/](conf/c04_exploit/). Take the latest
 and run:
 ```
 python run.py --adhoc --cfg conf/c04_exploit/exploit_03_fast.prototxt I.launcher=slurm_8gpus
 ```
 
-The most important metrics is `scores/is_clear_win`, i.e., the win rate. It should be above 0.2 after an ten minutes and above 0.6 after an hour.
+The most important metric is `score/is_clear_win`, i.e., the win rate. It should be above 0.2 after ten minutes (7 epochs) and above 0.6 after an hour.
 
 
 # Comparing Agents
