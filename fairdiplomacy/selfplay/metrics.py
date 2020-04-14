@@ -136,10 +136,13 @@ class Logger:
             flush=True,
         )
 
-    def __del__(self):
+    def close(self):
         if self.writer is not None:
             self.writer.close()
             self.writer = None
         if self.jsonl_writer is not None:
             self.jsonl_writer.close()
             self.jsonl_writer = None
+
+    def __del__(self):
+        self.close()

@@ -8,7 +8,10 @@ import logging
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
+import socket
+import sys
 import time
 
 import submitit
@@ -53,6 +56,53 @@ def get_job_env() -> submitit.JobEnvironment:
 
 def is_aws():
     return "S3_SHARED" in os.environ
+
+
+def requeue_myself():
+    job_id = get_slurm_job_id()
+    logging.warning("Requeuing job %s", job_id)
+    os.system("scontrol requeue %s" % job_id)
+
+
+def sig_handler(master_callback, signum, frame):
+    del frame  # Not used.
+    logging.warning("Signal handler called with signal %s", signum)
+    job_env = get_job_env()
+    logging.warning("Host: %s - Global rank: %i", job_env.hostname, job_env.global_rank)
+    if job_env.global_rank == 0:
+        if master_callback is not None:
+            logging.info("Calling pre-termination callback")
+            try:
+                master_callback()
+            except Exception:
+                logging.exception("Pre-termination callback raise an exceptio")
+            else:
+                logging.exception("Pre-termination callback finished")
+        requeue_myself()
+    else:
+        logging.warning("Not the master process, no need to requeue.")
+    sys.exit(-1)
+
+
+def term_handler(signum, frame):
+    del frame  # Not used.
+    logging.warning("Signal handler called with signal %s", signum)
+    logging.warning("Bypassing SIGTERM.")
+
+
+def maybe_init_requeue_handler(master_callback:Optional[Callable]=None) -> None:
+    """Handle signals sent by SLURM for time limit / pre-emption.
+
+    Args:
+        master_callback: If provided, will be called on the master before
+            killing and requeuing the job. If callback raises exception, the
+            job will be requeued anyway.
+    """
+    if not is_on_slurm():
+        return
+    signal.signal(signal.SIGUSR1, functools.partial(sig_handler, master_callback))
+    signal.signal(signal.SIGTERM, term_handler)
+    logging.warning("Signal handler installed.")
 
 
 def setup_logging():
@@ -136,7 +186,10 @@ def is_on_slurm() -> bool:
 
 
 def get_slurm_job_id() -> Optional[str]:
-    return os.environ.get("SLURM_JOBID")
+    if "SLURM_ARRAY_JOB_ID" in os.environ:
+        return "%s_%s" % (os.environ["SLURM_ARRAY_JOB_ID"], os.environ["SLURM_ARRAY_TASK_ID"])
+    else:
+        return os.environ["SLURM_JOB_ID"]
 
 
 def is_master() -> bool:
@@ -241,7 +294,7 @@ def _get_config_folder_tag(path: pathlib.Path) -> str:
     assert path.exists(), path
     config_path = str(path.parent.absolute())
     if config_path.startswith(str(conf.CONF_ROOT)):
-        components = config_path[len(str(conf.CONF_ROOT)):].strip("/").split("/")
+        components = config_path[len(str(conf.CONF_ROOT)) :].strip("/").split("/")
         if components:
             folder = "_".join(components)
         else:
@@ -301,7 +354,7 @@ def get_exp_id(
     return exp_id_pattern % tags
 
 
-def handle_dst( exp_handle, mode: ModeType) -> bool:
+def handle_dst(exp_handle, mode: ModeType) -> bool:
     """Creates/recreates a ExperimentDir and checks whether an action is needed.
 
     If mode is:
