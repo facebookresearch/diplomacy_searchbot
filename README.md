@@ -48,6 +48,18 @@ python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpu
 To train a model on the cluster, see the scripts in [slurm/](slurm/), specifically [example_train_sl.sh](slurm/example_train_sl.sh).
 
 
+# Training exploit agent
+
+Exploit agent learns to play against fixed supervised agent. Configs for
+exploit agents are in [conf/c04_exploit/](conf/c04_exploit/). Take the latest
+and run:
+```
+python run.py --adhoc --cfg conf/c04_exploit/exploit_03_fast.prototxt I.launcher=slurm_8gpus
+```
+
+The most important metrics is `scores/is_clear_win`, i.e., the win rate. It should be above 0.2 after an ten minutes and above 0.6 after an hour.
+
+
 # Comparing Agents
 
 Comparing agents is also executed via config. See [conf/c01_ag_cmp/cmp.prototxt](conf/c01_ag_cmp/cmp.prototxt) for an example config. The following will play Dipnet model vs 6 Mila bots:

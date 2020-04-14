@@ -375,6 +375,9 @@ def run_server(port, batch_size, port_q=None, **kwargs):
             port_q.put(bound_port)  # send port to parent proc
 
         server_handler(eval_queue, **kwargs)  # FIXME: try multiple threads?
+    except Exception as e:
+        logging.exception("Caught exception in the server (%s)", e)
+        raise
     finally:
         eval_queue.close()
         server.stop()
@@ -461,7 +464,7 @@ def server_handler(
                         totaltic = time.time()
 
             except TimeoutError as e:
-                logging.info("TimeoutError:", e)
+                logging.info("TimeoutError: %s", e)
 
     logging.info("SERVER DONE")
 

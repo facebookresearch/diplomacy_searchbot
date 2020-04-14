@@ -80,5 +80,5 @@ class CkptSyncer:
         """Load model state if needed and return latest model version."""
         version, path = self.get_last_version()
         if version != last_version:
-            torch_module.load_state_dict(torch.load(path))
+            torch_module.load_state_dict(torch.load(path, map_location="cpu"))
         return version

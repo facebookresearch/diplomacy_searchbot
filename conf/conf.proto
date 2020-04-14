@@ -57,7 +57,7 @@ message CFR1PAgent {
   optional string use_server_addr = 12;
 
   // CUDA device to use, if > 0
-  optional int32 device = 13 [ default= -1 ];
+  optional int32 device = 13 [ default = -1 ];
 }
 
 message BRSearchAgent {
@@ -344,7 +344,7 @@ message ExploitTask {
     optional int32 rollout_batch_size = 2 [ default = 1 ];
 
     // Optional. How many rollout proccesses to run.
-    optional int32 num_rollout_processes = 4 [default = 1];
+    optional int32 num_rollout_processes = 4 [ default = 1 ];
 
     // Optional. If set, will save games with this stride.
     optional int32 dump_games_every = 5;
@@ -352,7 +352,8 @@ message ExploitTask {
     // Optional. Max batch size in postman inference processes.
     optional int32 inference_batch_size = 6;
 
-    // Required. The size of the produces batches. That what the training loop will receive.
+    // Required. The size of the produces batches. That what the training loop
+    // will receive.
     optional int32 batch_size = 7;
 
     // Optional. How much adjancent batches overleave. Note that default value
@@ -363,6 +364,9 @@ message ExploitTask {
     // Optional. If set, the batches will concatenate rollouts until batch_size
     // is reached, instead of following it exactly.
     optional bool do_not_split_rollouts = 9;
+
+    optional bool single_rollout_gpu = 11;
+    optional int32 server_procs_per_gpu = 12 [ default = 1 ];
 
     message Reward {
       // TODO(akhti): better comment.
@@ -375,8 +379,10 @@ message ExploitTask {
 
     // Required. How to compute rewards.
     optional Reward reward = 10;
-  }
 
+    // Optional. Whether do self plat instead of exploitability.
+    optional bool selfplay = 13;
+  }
 
   optional Rollout rollout = 5;
 
