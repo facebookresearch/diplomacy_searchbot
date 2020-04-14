@@ -114,7 +114,7 @@ class MaxCounter:
         self._value = default
 
     def update(self, value):
-        self._value = max(value, self._value)
+        self._value = max(_sanitize(value), self._value)
 
     def value(self):
         return self._value
