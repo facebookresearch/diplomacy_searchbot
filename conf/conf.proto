@@ -427,6 +427,9 @@ message ExploitTask {
 
   optional Trainer trainer = 6;
 
+  // Optional. If positive, will set random seed for torch on the main process.
+  optional int32 seed = 9 [default = -1];
+
   // Arbitraty comment. Could use to make a "re" run for the same config and
   // changed code.
   optional string comment = 999;

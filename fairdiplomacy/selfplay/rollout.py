@@ -107,7 +107,8 @@ class InferencePool:
         logging.info("Launching servers",)
         self.servers = []
         for gpu_id in gpu_ids:
-            for proc_id in range(server_procs_per_gpu):
+            for _ in range(server_procs_per_gpu):
+                seed = int(torch.rand(1).item() * 100000)
                 q = mp.SimpleQueue()
                 server = ExceptionHandlingProcess(
                     target=run_server,
@@ -123,7 +124,7 @@ class InferencePool:
                         ckpt_sync_path=ckpt_sync_path,
                         ckpt_sync_every=ckpt_sync_every,
                         output_transform=model_output_transform,
-                        seed=proc_id,
+                        seed=seed,
                         device=gpu_id,
                         port_q=q,
                     ),
