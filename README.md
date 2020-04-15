@@ -11,9 +11,9 @@ The following command will create/activate conda env with all needed modules:
 . fair_activate.sh
 ```
 
-If you are getting warnings about `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION`, you may also need to set this environment variable:
+Once that runs successfully, then install the module:
 ```
-PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=cpp
+pip install -e .
 ```
 
 # Training a Model
