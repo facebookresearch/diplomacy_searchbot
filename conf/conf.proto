@@ -407,6 +407,13 @@ message ExploitTask {
     optional int32 save_sync_checkpoint_every = 4 [default = 1];
     // Optional. Debugging option. Stop updating model after this number of updates.
     optional int32 max_updates = 5 [default = 0];
+    // Optional. If set, will train a model being in eval mode.
+    optional bool train_as_eval = 6;
+    optional bool train_encoder_as_eval = 7;
+    optional bool train_decoder_as_eval = 8;
+    // Run everything in eval mode except for batch norm modules. Essentially it
+    // puts only dropout to eval mode.
+    optional bool train_as_eval_but_batchnorm = 9;
   }
 
   optional Trainer trainer = 6;
