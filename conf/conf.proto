@@ -396,6 +396,11 @@ message ExploitTask {
 
     // Optional. Whether do self plat instead of exploitability.
     optional bool selfplay = 13;
+
+    // Required in selfplay. Number of rollout proccess to do eval rollouts
+    // against the supervised model. These rollouts are ingored for training.
+    // These workers are subtracted from num_rollout_processes.
+    optional int32 num_eval_rollout_processes = 15;
   }
 
   optional Rollout rollout = 5;
