@@ -334,6 +334,10 @@ message ExploitTask {
   // Reward discounting.
   optional float discounting = 7 [ default = 1.0 ];
 
+  // Optional. If set, weights of the exploit agent will be randomly
+  // initialized.
+  optional bool reset_agent_weights = 8;
+
   message Optimizer {
     // Required. Learning rate for Adam.
     optional float lr = 1;
