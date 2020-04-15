@@ -358,6 +358,10 @@ message ExploitTask {
     // Optional. Max batch size in postman inference processes.
     optional int32 inference_batch_size = 6;
 
+    // Optional. Wait at least this number of seconds before loading new model
+    // in the inference worker. By default check before every forward.
+    optional int32 inference_ckpt_sync_every = 14;
+
     // Required. The size of the produces batches. That what the training loop
     // will receive.
     optional int32 batch_size = 7;
@@ -399,6 +403,10 @@ message ExploitTask {
     optional int32 epoch_size = 2;
     // Optional. Save checkpoint every so many iterations.
     optional int32 save_checkpoint_every = 3;
+    // Optional. Communicate current ckpt to inference workers every so often.
+    optional int32 save_sync_checkpoint_every = 4 [default = 1];
+    // Optional. Debugging option. Stop updating model after this number of updates.
+    optional int32 max_updates = 5 [default = 0];
   }
 
   optional Trainer trainer = 6;
