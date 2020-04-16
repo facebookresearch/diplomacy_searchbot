@@ -19,11 +19,11 @@ GameScores = collections.namedtuple(
 )
 
 
-def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
-    last_phase_centers = game_json["phases"][-1]["state"]["centers"]
+def compute_phase_scores(power_id: int, phase_json: Dict) -> GameScores:
+    last_phase_centers = phase_json["state"]["centers"]
     center_counts = [len(last_phase_centers[p]) for p in POWERS]
     center_squares = [x ** 2 for x in center_counts]
-    complete_unroll = game_json["phases"][-1]["name"] == "COMPLETED"
+    complete_unroll = phase_json["name"] == "COMPLETED"
     is_clear_win = center_counts[power_id] > N_SCS / 2
     is_clear_loss = center_counts[power_id] == 0 or (
         not is_clear_win and any(c > N_SCS / 2 for c in center_counts)
@@ -40,6 +40,10 @@ def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
         1.0 if is_clear_win else (0 if is_clear_loss else metrics["square_ratio"])
     )
     return GameScores(**metrics, num_games=1)
+
+
+def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
+    return compute_phase_scores(power_id, game_json["phases"][-1])
 
 
 def average_game_scores(many_games_scores: Sequence[GameScores]) -> GameScores:
