@@ -141,6 +141,13 @@ class InferencePool:
     def hostports(self) -> Tuple[str, ...]:
         return self._hostports
 
+    def terminate(self):
+        logging.info(
+            "Terminating inference pool. The following servers will go down: %s", self.hostports
+        )
+        for server, _ in self.servers:
+            server.kill()
+
 
 def do_model_request(client, x, temperature=1.0) -> Tuple[torch.Tensor, torch.Tensor]:
     """Synchronous request to model server
