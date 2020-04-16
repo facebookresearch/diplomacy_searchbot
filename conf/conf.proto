@@ -383,12 +383,15 @@ message ExploitTask {
     optional int32 server_procs_per_gpu = 12 [ default = 1 ];
 
     message Reward {
-      // TODO(akhti): better comment.
-      // Required. Name of the score metric from ScoreDict.
+      // Required. Name of the score metric from fairdiplomacy.utils.game_scoring.
       optional string score_name = 1;
 
       // Optional. Penalty for each move to encourage shorter games.
       optional float delay_penalty = 2;
+
+      // Optional. If set, then the reward will be a difference between the
+      // score before the action and after the action.
+      optional bool differential_reward = 3;
     }
 
     // Required. How to compute rewards.
