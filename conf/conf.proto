@@ -297,6 +297,12 @@ message LaunchBotTask {
   // If non-zero, # of model servers to launch and reuse
   optional uint32 reuse_model_servers = 6;
 
+  // If specified, connect only to this game
+  optional string game_id = 7;
+
+  // If specified, connect only as this power
+  optional string power = 8;
+
   optional Launcher launcher = 1000;
 }
 
