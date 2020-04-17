@@ -405,11 +405,13 @@ def run_with_cfg(args):
         train_dataset = Dataset(
             train_game_jsons,
             fill_missing_orders=args.fill_missing_orders,
+            only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
         )
         val_dataset = Dataset(
             val_game_jsons,
             fill_missing_orders=args.fill_missing_orders,
+            only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
         )
         if args.data_cache:

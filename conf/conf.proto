@@ -275,6 +275,10 @@ message TrainTask {
   // Max gradient norm in value decoder params
   optional float value_decoder_clip_grad_norm = 25;
 
+  // Minimal score (num SC) of the at the enf of the game needed to include the
+  // power into the training set.
+  optional int32 only_with_min_final_score = 26 [default = 7];
+
   optional Launcher launcher = 1000;
 }
 

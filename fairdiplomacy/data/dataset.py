@@ -26,13 +26,18 @@ class Dataset(torch.utils.data.Dataset):
         game_json_paths: List[str],
         debug_only_opening_phase=False,
         fill_missing_orders=False,
+        only_with_min_final_score=7,
         n_jobs=20,
     ):
         self.game_json_paths = game_json_paths
         assert not debug_only_opening_phase, "FIXME"
 
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(encode_game)(p, fill_missing_orders=fill_missing_orders)
+            joblib.delayed(encode_game)(
+                p,
+                fill_missing_orders=fill_missing_orders,
+                only_with_min_final_score=only_with_min_final_score,
+            )
             for p in game_json_paths
         )
 
