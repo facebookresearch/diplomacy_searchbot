@@ -52,7 +52,7 @@ class CkptSyncer:
             new_id = versions[-1][0] + 1
         else:
             new_id = 0
-        path = f"{self.prefix}_{new_id:05d}"
+        path = f"{self.prefix}_{new_id:08d}"
         torch.save(obj, path + ".tmp")
         os.rename(path + ".tmp", path)
         models_to_delete = (len(versions) + 1) - self.models_to_keep
