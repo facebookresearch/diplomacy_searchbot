@@ -297,6 +297,12 @@ message LaunchBotTask {
   // If non-zero, # of model servers to launch and reuse
   optional uint32 reuse_model_servers = 6;
 
+  // If specified, connect only to this game
+  optional string game_id = 7;
+
+  // If specified, connect only as this power
+  optional string power = 8;
+
   optional Launcher launcher = 1000;
 }
 
@@ -328,6 +334,10 @@ message ExploitTask {
   // Reward discounting.
   optional float discounting = 7 [ default = 1.0 ];
 
+  // Optional. If set, weights of the exploit agent will be randomly
+  // initialized.
+  optional bool reset_agent_weights = 8;
+
   message Optimizer {
     // Required. Learning rate for Adam.
     optional float lr = 1;
@@ -351,6 +361,10 @@ message ExploitTask {
 
     // Optional. Max batch size in postman inference processes.
     optional int32 inference_batch_size = 6;
+
+    // Optional. Wait at least this number of seconds before loading new model
+    // in the inference worker. By default check before every forward.
+    optional int32 inference_ckpt_sync_every = 14;
 
     // Required. The size of the produces batches. That what the training loop
     // will receive.
@@ -382,6 +396,11 @@ message ExploitTask {
 
     // Optional. Whether do self plat instead of exploitability.
     optional bool selfplay = 13;
+
+    // Required in selfplay. Number of rollout proccess to do eval rollouts
+    // against the supervised model. These rollouts are ingored for training.
+    // These workers are subtracted from num_rollout_processes.
+    optional int32 num_eval_rollout_processes = 15;
   }
 
   optional Rollout rollout = 5;
@@ -393,9 +412,23 @@ message ExploitTask {
     optional int32 epoch_size = 2;
     // Optional. Save checkpoint every so many iterations.
     optional int32 save_checkpoint_every = 3;
+    // Optional. Communicate current ckpt to inference workers every so often.
+    optional int32 save_sync_checkpoint_every = 4 [default = 1];
+    // Optional. Debugging option. Stop updating model after this number of updates.
+    optional int32 max_updates = 5 [default = 0];
+    // Optional. If set, will train a model being in eval mode.
+    optional bool train_as_eval = 6;
+    optional bool train_encoder_as_eval = 7;
+    optional bool train_decoder_as_eval = 8;
+    // Run everything in eval mode except for batch norm modules. Essentially it
+    // puts only dropout to eval mode.
+    optional bool train_as_eval_but_batchnorm = 9;
   }
 
   optional Trainer trainer = 6;
+
+  // Optional. If positive, will set random seed for torch on the main process.
+  optional int32 seed = 9 [default = -1];
 
   // Arbitraty comment. Could use to make a "re" run for the same config and
   // changed code.

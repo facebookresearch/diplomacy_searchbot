@@ -55,6 +55,8 @@ class Bot:
         buffer_size=128,
         reuse_agent=False,
         reuse_model_servers=0,
+        game_id="",
+        power="",
     ):
         """ Initialize the bot.
             :param host: (required) name of host to connect
@@ -77,6 +79,8 @@ class Bot:
         self.game_to_phase = {}
         self.buffer_size = buffer_size
         self.reuse_model_servers = reuse_model_servers
+        self.game_id = game_id
+        self.power = power
 
         self.agents = {}  # (channel, power) -> Agent
         self.cfgs_with_server = []
@@ -105,6 +109,7 @@ class Bot:
                     yield [
                         self.generate_orders(channel, game_id, dummy_power_names)
                         for game_id, dummy_power_names in all_dummy_power_names.items()
+                        if not self.game_id or game_id == self.game_id
                     ]
                 yield gen.sleep(self.period_seconds)
 
@@ -124,7 +129,16 @@ class Bot:
             :type game_channel: diplomacy.client.channel.Channel
         """
         try:
+            if self.power:
+                if self.power in dummy_power_names:
+                    LOGGER.info(f"Overriding power={self.power}, prev={dummy_power_names}")
+                    dummy_power_names = [self.power]
+                else:
+                    # power is not waiting for orders
+                    return
+
             # Join powers.
+            LOGGER.info(f"Joining powers game_id={game_id}, powers={dummy_power_names}")
             yield channel.join_powers(game_id=game_id, power_names=dummy_power_names)
 
             # Init agents
@@ -257,6 +271,8 @@ def run_with_cfg(cfg):
         period_seconds=cfg.period,
         buffer_size=cfg.buffer_size,
         reuse_model_servers=cfg.reuse_model_servers,
+        game_id=cfg.game_id,
+        power=cfg.power,
     )
     io_loop = ioloop.IOLoop.instance()
     while True:

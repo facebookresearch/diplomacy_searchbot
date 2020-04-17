@@ -1,5 +1,6 @@
 from typing import Generator, List, Optional, Tuple, Sequence
 import collections
+import enum
 import faulthandler
 import itertools
 import logging
@@ -23,6 +24,12 @@ from fairdiplomacy.utils.timing_ctx import TimingCtx
 
 
 DEFAULT_BATCH_SIZE = 128
+
+
+class RolloutMode(enum.Enum):
+    EXPLOIT = enum.auto()
+    SELFPLAY = enum.auto()
+    EVAL = enum.auto()
 
 
 ExploitRollout = collections.namedtuple(
@@ -90,6 +97,7 @@ class InferencePool:
         model_path: str,
         gpu_ids: Sequence[int],
         ckpt_sync_path: Optional[str],
+        ckpt_sync_every: int = 0,
         model_output_transform=_noop_transform,
         max_batch_size: int = 0,
         server_procs_per_gpu: int = 1,
@@ -99,7 +107,8 @@ class InferencePool:
         logging.info("Launching servers",)
         self.servers = []
         for gpu_id in gpu_ids:
-            for proc_id in range(server_procs_per_gpu):
+            for _ in range(server_procs_per_gpu):
+                seed = int(torch.rand(1).item() * 100000)
                 q = mp.SimpleQueue()
                 server = ExceptionHandlingProcess(
                     target=run_server,
@@ -113,8 +122,9 @@ class InferencePool:
                             eval=True,
                         ),
                         ckpt_sync_path=ckpt_sync_path,
+                        ckpt_sync_every=ckpt_sync_every,
                         output_transform=model_output_transform,
-                        seed=proc_id,
+                        seed=seed,
                         device=gpu_id,
                         port_q=q,
                     ),
@@ -171,6 +181,7 @@ def yield_rollouts(
     exploit_hostports: Sequence[str],
     blueprint_hostports: Optional[Sequence[str]],
     game_json,
+    mode: RolloutMode,
     temperature=0.05,
     max_rollout_length=40,
     batch_size=1,
@@ -184,8 +195,9 @@ def yield_rollouts(
     - exploit_hostports: list of "{host}:{port}" of model servers for the
         agents that is training.
     - blueprint_hostports: list of "{host}:{port}" of model servers for the
-        agents that is exploited. In selfplay, this is None.
+        agents that is exploited. Ignored in SELFPLAY model
     - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
+    - mode: what kind of rollout to do. Defiens what will be outputed.
     - temperature: model softmax temperature for rollout policy on the blueprint agent.
     - max_rollout_length: return SC count after at most # steps
     - batch_size: rollout # of games in parallel
@@ -206,10 +218,9 @@ def yield_rollouts(
         return iter(itertools.cycle(clients))
 
     exploit_client_selector = create_client_selector(exploit_hostports)
-    self_play = blueprint_hostports is None
-    blueprint_client_selector = (
-        create_client_selector(blueprint_hostports) if not self_play else None
-    )
+    if mode != RolloutMode.SELFPLAY:
+        assert blueprint_hostports is not None
+        blueprint_client_selector = create_client_selector(blueprint_hostports)
 
     faulthandler.register(signal.SIGUSR2)
     torch.set_num_threads(1)
@@ -219,7 +230,7 @@ def yield_rollouts(
         next(exploit_power_selector)
 
     for exploit_power_id in exploit_power_selector:
-        if self_play:
+        if mode == RolloutMode.SELFPLAY:
             # Not used.
             del exploit_power_id
         with timings("setup"):
@@ -250,7 +261,7 @@ def yield_rollouts(
                 batch_inputs, _ = cat_pad_inputs(xs)
 
             with timings("model"):
-                if not self_play:
+                if mode != RolloutMode.SELFPLAY:
                     (blueprint_batch_order_ids,) = do_model_request(
                         next(blueprint_client_selector), batch_inputs, temperature
                     )
@@ -261,7 +272,7 @@ def yield_rollouts(
                 ) = do_model_request(next(exploit_client_selector), batch_inputs)
 
             with timings("merging"):
-                if self_play:
+                if mode == RolloutMode.SELFPLAY:
                     batch_order_idx = exploit_batch_order_ids
                 else:
                     # Using all orders from the blueprint model except for ones for the epxloit power.
@@ -286,9 +297,9 @@ def yield_rollouts(
                 for i, game in enumerate(games):
                     if not game.is_game_done:
                         game.process()
-                        if self_play:
+                        if mode == RolloutMode.SELFPLAY:
                             actions[i].append(exploit_batch_order_ids[inner_index])
-                            cand_actions[i].append(exploit_batch_order_ids[inner_index])
+                            cand_actions[i].append(exploit_cand_ids[inner_index])
                             logprobs[i].append(exploit_order_logprobs[inner_index])
                         else:
                             actions[i].append(
@@ -309,15 +320,15 @@ def yield_rollouts(
         )
         for i in range(batch_size):
             final_game_json = games[i].to_saved_game_format()
-            if self_play:
-                assert False, "add cand index"
+            if mode == RolloutMode.SELFPLAY:
                 for power_id in range(len(POWERS)):
                     yield ExploitRollout(
                         power_id=power_id,
                         game_json=final_game_json,
                         actions=torch.stack([x[power_id] for x in actions[i]], 0),
                         logprobs=torch.stack([x[power_id] for x in logprobs[i]], 0),
-                        observations=[torch.stack(obs, 0) for obs in zip(*observations[i])],
+                        observations=[torch.stack(obs, 0) for obs in zip(*observations[i])]
+                        + [torch.stack([x[power_id] for x in cand_actions[i]], 0)],
                     )
             else:
                 yield ExploitRollout(

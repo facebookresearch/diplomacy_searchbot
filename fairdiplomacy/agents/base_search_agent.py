@@ -390,6 +390,7 @@ def server_handler(
     seed=None,
     device=0,
     ckpt_sync_path=None,
+    ckpt_sync_every=0,
     wait_till_full=False,
     empty_cache=True,
 ):
@@ -406,7 +407,6 @@ def server_handler(
     timings = TimingCtx()
     totaltic = time.time()
 
-    ckpt_sync_every = 0  # Setting timeout in order not to handle with FS too often.
     if ckpt_sync_path is not None:
         ckpt_syncer = CkptSyncer(ckpt_sync_path)
         last_ckpt_version = ckpt_syncer.maybe_load_state_dict(model, last_version=None)
