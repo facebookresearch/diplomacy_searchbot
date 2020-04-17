@@ -26,6 +26,7 @@ class CFR1PAgent(BaseSearchAgent):
         n_plausible_orders=8,
         postman_sync_batches=False,
         use_optimistic_cfr=True,
+        use_final_iter=True,
         max_batch_size=700,
         **kwargs,
     ):
@@ -42,6 +43,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.n_plausible_orders = n_plausible_orders
         self.postman_sync_batches = postman_sync_batches
         self.use_optimistic_cfr = use_optimistic_cfr
+        self.use_final_iter = use_final_iter
         self.plausible_orders_req_size = max_batch_size
 
     def get_orders(self, game, power) -> List[str]:
@@ -105,7 +107,7 @@ class CFR1PAgent(BaseSearchAgent):
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
-            logging.info(f"power_sampled_orders: {power_sampled_orders}")
+            # logging.info(f"power_sampled_orders: {power_sampled_orders}")
 
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
@@ -160,20 +162,23 @@ class CFR1PAgent(BaseSearchAgent):
                     else:
                         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
 
-            if self.enable_compute_nash_conv and cfr_iter in [25, 50, 100, 200, 400]:
+            if self.enable_compute_nash_conv and cfr_iter in [24, 49, 99, 199, 399]:
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
 
-            logging.info(
-                f"Timing[cfr_iter {cfr_iter}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
-            )
+            # logging.info(
+            #     f"Timing[cfr_iter {cfr_iter}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
+            # )
             timings.clear()
 
             if self.cache_rollout_results and (rollout_i + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
 
         # return best order: sample from average policy
-        ps = self.avg_strategy(power, power_plausible_orders[power])
+        if self.use_final_iter:
+            ps = self.strategy(power, power_plausible_orders[power])
+        else:
+            ps = self.avg_strategy(power, power_plausible_orders[power])
         idx = np.random.choice(range(len(ps)), p=ps)
         return list(power_plausible_orders[power][idx])
 
@@ -210,7 +215,8 @@ class CFR1PAgent(BaseSearchAgent):
             max_state_utility[pwr] = 0
         # total_state_utility = [0 for u in idxs]
         nash_conv = 0
-        for _ in range(100):
+        br_iters = 100
+        for _ in range(br_iters):
             # sample policy for all powers
             idxs = {
                 pwr: np.random.choice(range(len(action_ps)), p=action_ps)
@@ -271,7 +277,7 @@ class CFR1PAgent(BaseSearchAgent):
             # ps = self.avg_strategy(pwr, power_plausible_orders[pwr])
             for i in range(len(actions)):
                 action = actions[i]
-                total_action_utilities[(pwr, action)] /= 100.0
+                total_action_utilities[(pwr, action)] /= br_iters
                 if total_action_utilities[(pwr, action)] > max_state_utility[pwr]:
                     max_state_utility[pwr] = total_action_utilities[(pwr, action)]
                 total_state_utility[pwr] += (
