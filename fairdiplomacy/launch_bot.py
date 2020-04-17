@@ -28,6 +28,7 @@ from fairdiplomacy.agents import build_agent_from_cfg
 from concurrent.futures import ThreadPoolExecutor
 
 LOGGER = logging.getLogger("diplomacy_research.scripts.launch_bot")
+LOGGER.setLevel(logging.DEBUG)
 PERIOD_SECONDS = 2
 
 
@@ -91,6 +92,7 @@ class Bot:
         """ Main bot code. """
 
         # Connecting to server
+        LOGGER.warning("About to connect")
         connection = yield connect(self.host, self.port)
         LOGGER.info("Connected to %s", connection.url)
         LOGGER.info("Opening a channel.")
@@ -99,9 +101,15 @@ class Bot:
 
         while True:
             try:
+                get_dummy_waiting_powers_kwargs = {"buffer_size": self.buffer_size}
+                if self.game_id:
+                    get_dummy_waiting_powers_kwargs["only_game_id"] = self.game_id
+                if self.power:
+                    get_dummy_waiting_powers_kwargs["only_power"] = self.power
                 all_dummy_power_names = yield channel.get_dummy_waiting_powers(
-                    buffer_size=self.buffer_size
+                    **get_dummy_waiting_powers_kwargs
                 )
+                LOGGER.debug(f"all_dummy_power_names={all_dummy_power_names}")
 
                 # Getting orders for the dummy powers
                 if all_dummy_power_names:

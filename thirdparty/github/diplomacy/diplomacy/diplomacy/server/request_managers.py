@@ -285,7 +285,7 @@ def on_get_dummy_waiting_powers(server, request, connection_handler):
     """
     verify_request(server, request, connection_handler)
     return responses.DataGamesToPowerNames(
-        data=server.get_dummy_waiting_power_names(request.buffer_size, request.token), request_id=request.request_id)
+        data=server.get_dummy_waiting_power_names(request.buffer_size, request.token, request.only_game_id, request.only_power), request_id=request.request_id)
 
 def on_get_games_info(server, request, connection_handler):
     """ Manage request GetGamesInfo.
