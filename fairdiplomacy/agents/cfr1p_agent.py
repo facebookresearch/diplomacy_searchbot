@@ -334,10 +334,11 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
     agent = CFR1PAgent(
-        n_rollouts=100,
+        n_rollouts=10,
         max_rollout_length=5,
-        model_path="/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth",
+        model_path="/home/jsgray/sl_candidx_B2.5k_vclip1e-7.pth",
         postman_sync_batches=True,
         rollout_temperature=0.5,
+        n_rollout_procs=60
     )
     print(agent.get_orders(Game(), "AUSTRIA"))
