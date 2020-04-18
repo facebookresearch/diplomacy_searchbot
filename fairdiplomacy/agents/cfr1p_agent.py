@@ -107,7 +107,7 @@ class CFR1PAgent(BaseSearchAgent):
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
-            # logging.info(f"power_sampled_orders: {power_sampled_orders}")
+            logging.info(f"power_sampled_orders: {power_sampled_orders}")
 
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
@@ -166,9 +166,9 @@ class CFR1PAgent(BaseSearchAgent):
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
 
-            # logging.info(
-            #     f"Timing[cfr_iter {cfr_iter}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
-            # )
+            logging.info(
+                f"Timing[cfr_iter {cfr_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
+            )
             timings.clear()
 
             if self.cache_rollout_results and (rollout_i + 1) % 10 == 0:
@@ -336,9 +336,10 @@ if __name__ == "__main__":
     agent = CFR1PAgent(
         n_rollouts=10,
         max_rollout_length=5,
-        model_path="/home/jsgray/sl_candidx_B2.5k_vclip1e-7.pth",
+        model_path="/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth",
         postman_sync_batches=True,
         rollout_temperature=0.5,
-        n_rollout_procs=60
+        n_rollout_procs=60,
+        mix_square_ratio_scoring=0.1,
     )
     print(agent.get_orders(Game(), "AUSTRIA"))

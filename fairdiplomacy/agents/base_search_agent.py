@@ -28,6 +28,7 @@ from fairdiplomacy.selfplay.ckpt_syncer import CkptSyncer
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
+from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     try:
@@ -51,6 +52,7 @@ class BaseSearchAgent(BaseAgent):
         postman_wait_till_full=False,
         use_server_addr=None,
         device=None,
+        mix_square_ratio_scoring=0,
     ):
         super().__init__()
 
@@ -60,6 +62,7 @@ class BaseSearchAgent(BaseAgent):
         self.rollout_temperature = rollout_temperature
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
+        self.mix_square_ratio_scoring = mix_square_ratio_scoring
         device = int(device.lstrip("cuda:")) if type(device) == str else device
 
         logging.info("Launching servers")
@@ -219,6 +222,7 @@ class BaseSearchAgent(BaseAgent):
                         max_rollout_length=self.max_rollout_length,
                         batch_size=batch_size,
                         use_predicted_final_scores=self.use_predicted_final_scores,
+                        mix_square_ratio_scoring=self.mix_square_ratio_scoring
                     )
                     for d in set_orders_dicts
                     for i, batch_size in enumerate(batch_sizes)
@@ -247,6 +251,7 @@ class BaseSearchAgent(BaseAgent):
         max_rollout_length,
         batch_size=1,
         use_predicted_final_scores,
+        mix_square_ratio_scoring=0,
     ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:
         """Complete game, optionally setting orders for the current turn
 
@@ -336,13 +341,36 @@ class BaseSearchAgent(BaseAgent):
             other_powers = POWERS  # no set orders on subsequent turns
 
         with timings("final_scores"):
-            final_scores = [
-                {k: len(v) for k, v in game.get_state()["centers"].items()}
-                if game.is_game_done or not use_predicted_final_scores
-                else dict(zip(POWERS, est_final_scores[game.game_id]))
+            # get GameScores objects for current game state
+            current_game_scores = [
+                {
+                    p: compute_game_scores_from_state(i, game.get_state())
+                    for i, p in enumerate(POWERS)
+                }
                 for game in games
             ]
-            result = (set_orders_dict, final_scores)
+
+            # get estimated or current sum of squares scoring
+            final_game_scores = [
+                (
+                    {p: v.square_score for p, v in current_scores.items()}
+                    if game.is_game_done or not use_predicted_final_scores
+                    else dict(zip(POWERS, est_final_scores[game.game_id]))
+                )
+                for game, current_scores in zip(games, current_game_scores)
+            ]
+
+            # mix in current sum of squares ratio to encourage losing powers to try hard
+            if mix_square_ratio_scoring > 0:
+                for game, final_scores, current_scores in zip(
+                    games, final_game_scores, current_game_scores
+                ):
+                    for p in POWERS:
+                        final_scores[p] = (1 - mix_square_ratio_scoring) * final_scores[p] + (
+                            mix_square_ratio_scoring * current_scores[p].square_ratio
+                        )
+
+            result = (set_orders_dict, final_game_scores)
 
         return result, timings
 

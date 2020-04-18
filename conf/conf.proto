@@ -58,6 +58,9 @@ message CFR1PAgent {
 
   // CUDA device to use, if > 0
   optional int32 device = 13 [ default = -1 ];
+
+  // Optional float 0 - 1 to mix in raw sum of squares ratio
+  optional float mix_square_ratio_scoring = 14;
 }
 
 message BRSearchAgent {
