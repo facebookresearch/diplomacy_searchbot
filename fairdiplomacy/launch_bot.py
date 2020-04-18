@@ -17,6 +17,7 @@
 # ==============================================================================
 import diplomacy
 import logging
+import sys
 from copy import deepcopy
 from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
@@ -83,6 +84,7 @@ class Bot:
         self.game_id = game_id
         self.power = power
 
+        # FIXME: there is only one channel, this should be (game_id, power)
         self.agents = {}  # (channel, power) -> Agent
         self.cfgs_with_server = []
         self.executor = ThreadPoolExecutor(8)
@@ -101,6 +103,19 @@ class Bot:
 
         while True:
             try:
+                if self.game_id:
+                    games = yield channel.list_games()
+                    try:
+                        game = [g for g in games if g.game_id == self.game_id][0]
+                        if game.status == "completed":
+                            LOGGER.info("Game {self.game_id} completed, exiting...")
+                            sys.exit(0)
+                    except IndexError:
+                        if len(self.agents):
+                            # game not found, but must have existed previously
+                            LOGGER.info("Game {self.game_id} not found, exiting...")
+                            sys.exit(0)
+
                 get_dummy_waiting_powers_kwargs = {"buffer_size": self.buffer_size}
                 if self.game_id:
                     get_dummy_waiting_powers_kwargs["only_game_id"] = self.game_id
@@ -289,6 +304,6 @@ def run_with_cfg(cfg):
         except KeyboardInterrupt:
             LOGGER.error("Bot interrupted.")
             break
-        except Exception as exc:  # pylint: disable=broad-except
-            LOGGER.error(exc)
+        except Exception as err:  # pylint: disable=broad-except
+            LOGGER.exception(err)
             LOGGER.info("Restarting bot...")

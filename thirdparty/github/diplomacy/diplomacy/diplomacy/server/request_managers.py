@@ -26,6 +26,8 @@
 """
 #pylint:disable=too-many-lines
 import logging
+import os
+import subprocess
 
 from tornado import gen
 from tornado.concurrent import Future
@@ -164,6 +166,15 @@ def on_create_game(server, request, connection_handler):
         server.start_game(server_game)
 
     server.save_game(server_game)
+
+    if os.environ.get('DIP_POST_CREATE_HOOK'):
+        script = os.environ.get('DIP_POST_CREATE_HOOK')
+        script = script.replace('__POWER__', power_name)
+        script = script.replace('__GAMEID__', game_id)
+        try:
+            subprocess.run(script, shell=True, timeout=5, check=True)
+        except Exception:
+            LOGGER.exception(f"Caught in failed DIP_POST_CREATE_HOOK: {script}")
 
     return responses.DataGame(data=client_game, request_id=request.request_id)
 
