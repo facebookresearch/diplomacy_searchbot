@@ -63,7 +63,7 @@ if __name__ == "__main__":
                 "--cpus-per-task=32",
                 "--gpus=1",
                 "--mem=0",
-                "--time=480",
+                "--time=1440",
                 # f"--chdir={exp_dir}",
             ],
             check=True,
