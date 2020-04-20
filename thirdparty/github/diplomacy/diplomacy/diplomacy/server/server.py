@@ -660,7 +660,7 @@ class Server:
         except ValueError as exc:
             # Error occurred while parsing JSON file: bad JSON file.
             try:
-                os.remove(game_filename)
+                os.rename(game_filename, game_filename + ".deleted")
             finally:
                 # This should be an internal server error.
                 raise exc
@@ -720,9 +720,9 @@ class Server:
         game_filename = os.path.join(self.games_path, '%s.json' % server_game.game_id)
         backup_game_filename = get_backup_filename(game_filename)
         if os.path.isfile(game_filename):
-            os.remove(game_filename)
+            os.rename(game_filename, game_filename + '.deleted')
         if os.path.isfile(backup_game_filename):
-            os.remove(backup_game_filename)
+            os.rename(backup_game_filename, backup_game_filename + ".deleted")
         self.games.pop(server_game.game_id, None)
         self.backup_games.pop(server_game.game_id, None)
         self.games_with_dummy_powers.pop(server_game.game_id, None)
