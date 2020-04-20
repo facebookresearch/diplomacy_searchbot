@@ -53,6 +53,8 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
+        phase = game.get_state()['name']
+
         if self.cache_rollout_results:
             rollout_results_cache = RolloutResultsCache()
 
@@ -66,7 +68,7 @@ class CFR1PAgent(BaseSearchAgent):
             batch_size=self.plausible_orders_req_size,
         )
         power_plausible_orders = {p: sorted(v) for p, v in power_plausible_orders.items()}
-        logging.info(f"power_plausible_orders: {power_plausible_orders}")
+        logging.info(f"{phase} power_plausible_orders: {power_plausible_orders}")
 
         if self.postman_sync_batches:
             self.client.set_batch_size(
@@ -107,7 +109,7 @@ class CFR1PAgent(BaseSearchAgent):
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
-            logging.info(f"power_sampled_orders: {power_sampled_orders}")
+            logging.info(f"{phase}.{cfr_iter} power_sampled_orders: {power_sampled_orders}")
 
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
