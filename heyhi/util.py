@@ -426,10 +426,11 @@ def _build_slurm_executor(exp_handle, cfg):
         slurm_params["cpus_per_task"] = cfg.cpus_per_gpu * gpus // ntasks_per_node
     if cfg.volta32:
         slurm_params["constraint"] = "volta32gb"
-    if cfg.pascal:
-        slurm_params["constraint"] = "pascal"
-    if cfg.volta:
+    elif cfg.volta:
         slurm_params["constraint"] = "volta"
+    if cfg.pascal:
+        assert not cfg.volta and not cfg.volta32, "Cannot use volta AND pascal"
+        slurm_params["constraint"] = "pascal"
     if is_aws():
         slurm_params["mem"] = 0
         if "constraint" in slurm_params["constraint"]:
