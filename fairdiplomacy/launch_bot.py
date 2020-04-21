@@ -108,12 +108,12 @@ class Bot:
                     try:
                         game = [g for g in games if g.game_id == self.game_id][0]
                         if game.status == "completed":
-                            LOGGER.info("Game {self.game_id} completed, exiting...")
+                            LOGGER.info(f"Game {self.game_id} completed, exiting...")
                             sys.exit(0)
                     except IndexError:
                         if len(self.agents):
                             # game not found, but must have existed previously
-                            LOGGER.info("Game {self.game_id} not found, exiting...")
+                            LOGGER.info(f"Game {self.game_id} not found, exiting...")
                             sys.exit(0)
 
                 get_dummy_waiting_powers_kwargs = {"buffer_size": self.buffer_size}
