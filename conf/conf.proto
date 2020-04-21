@@ -408,6 +408,9 @@ message ExploitTask {
     // against the supervised model. These rollouts are ingored for training.
     // These workers are subtracted from num_rollout_processes.
     optional int32 num_eval_rollout_processes = 15;
+
+    // Required. Temperature for the oponent agent.
+    optional float blueprint_temperature = 16;
   }
 
   optional Rollout rollout = 5;
