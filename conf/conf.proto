@@ -61,6 +61,9 @@ message CFR1PAgent {
 
   // Optional float 0 - 1 to mix in raw sum of squares ratio
   optional float mix_square_ratio_scoring = 14;
+
+  // Optional, # of rollouts to run in parallel for each possible action
+  optional uint32 average_n_rollouts = 15;
 }
 
 message BRSearchAgent {

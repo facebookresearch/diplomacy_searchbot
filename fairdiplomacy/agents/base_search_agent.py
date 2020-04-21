@@ -175,28 +175,29 @@ class BaseSearchAgent(BaseAgent):
             for p, power in enumerate(POWERS):
                 counters[power].update(batch_orders[p])
 
-        logging.debug(
+        logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
-                n, temperature, list(map(len, counters)), limit
+                n, temperature, list(map(len, counters.values())), limit
             )
         )
+
         return {
             power: set([orders for orders, _ in counter.most_common(limit)])
             for power, counter in counters.items()
         }
 
     def distribute_rollouts(
-        self, game, set_orders_dicts: List[Dict], N
+        self, game, set_orders_dicts: List[Dict], average_n_rollouts=1
     ) -> List[Tuple[Dict, Dict]]:
-        """Run N x len(set_orders_dicts) rollouts
+        """Run average_n_rollouts x len(set_orders_dicts) rollouts
 
         Arguments:
         - game: fairdiplomacy.Game
         - set_orders_dicts: List[Dict[power, orders]], each dict representing
           the orders to set for the first turn
-        - N: int
+        - average_n_rollouts: int, # of rollouts to run in parallel for each dict
 
-        Returns: List[Tuple[order_dict, final_scores]], where
+        Returns: List[Tuple[order_dict, final_scores]], len=average_n_rollouts * len(set_orders_dicts)
             -> order_dict: Dict[power, orders],
                e.g. {"ITALY": ("A ROM H", "F NAP - ION", "A VEN H"), ...}
             -> final_scores: Dict[power, supply count],
@@ -205,10 +206,6 @@ class BaseSearchAgent(BaseAgent):
         game_json = game.to_saved_game_format()
 
         # divide up the rollouts among the processes
-        procs_per_order = max(1, self.n_rollout_procs // len(set_orders_dicts))
-        logging.info(f"num_orders={len(set_orders_dicts)} , procs_per_order={procs_per_order}")
-        batch_sizes = [len(x) for x in torch.arange(N).chunk(procs_per_order) if len(x) > 0]
-        logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
         all_results, all_timings = zip(
             *self.proc_pool.map(
                 call,
@@ -220,24 +217,25 @@ class BaseSearchAgent(BaseAgent):
                         hostport=self.hostports[i % self.n_server_procs],
                         temperature=self.rollout_temperature,
                         max_rollout_length=self.max_rollout_length,
-                        batch_size=batch_size,
+                        batch_size=average_n_rollouts,
                         use_predicted_final_scores=self.use_predicted_final_scores,
-                        mix_square_ratio_scoring=self.mix_square_ratio_scoring
+                        mix_square_ratio_scoring=self.mix_square_ratio_scoring,
                     )
-                    for d in set_orders_dicts
-                    for i, batch_size in enumerate(batch_sizes)
+                    for i, d in enumerate(set_orders_dicts)
                 ],
             )
         )
         logging.info(
-            "Timings[avg.do_rollout, n={}, len={}] {}".format(
-                len(all_timings), self.max_rollout_length, sum(all_timings) / len(all_timings)
+            "Timings[avg.do_rollout, n={}*{}, len={}] {}".format(
+                len(set_orders_dicts),
+                average_n_rollouts,
+                self.max_rollout_length,
+                sum(all_timings) / len(all_timings),
             )
         )
         return [
-            (order_dict, scores)
+            (order_dict, average_score_dicts(list_of_scores_dicts))
             for order_dict, list_of_scores_dicts in all_results
-            for scores in list_of_scores_dicts
         ]
 
     @classmethod
@@ -269,7 +267,7 @@ class BaseSearchAgent(BaseAgent):
         Returns a 2-tuple:
         - results, a 2-tuple:
           - set_orders_dict: Dict[power, orders]
-          - list of Dict[power, final_score]
+          - list of Dict[power, final_score], len=batch_size
         - timings: a TimingCtx
         """
         timings = TimingCtx()
@@ -528,3 +526,7 @@ def call(f):
 
 def unpad_lists(lists, lens):
     return [lst[:length] for lst, length in zip(lists, lens)]
+
+
+def average_score_dicts(score_dicts: List[Dict]) -> Dict:
+    return {p: sum(d.get(p, 0) for d in score_dicts) / len(score_dicts) for p in POWERS}

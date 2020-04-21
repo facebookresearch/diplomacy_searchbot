@@ -28,14 +28,23 @@ class CFR1PAgent(BaseSearchAgent):
         use_optimistic_cfr=True,
         use_final_iter=True,
         max_batch_size=700,
+        average_n_rollouts=1,
+        n_rollout_procs,
         **kwargs,
     ):
         super().__init__(
             **kwargs,
+            n_rollout_procs=(
+                n_plausible_orders * len(POWERS) if postman_sync_batches else n_rollout_procs
+            ),
             max_batch_size=(
                 n_plausible_orders * len(POWERS) if postman_sync_batches else max_batch_size
             ),
+            postman_wait_till_full=postman_sync_batches,
         )
+
+        if postman_sync_batches:
+            assert n_rollout_procs >= n_plausible_orders * len(POWERS)
 
         self.n_rollouts = n_rollouts
         self.cache_rollout_results = cache_rollout_results
@@ -45,6 +54,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.use_optimistic_cfr = use_optimistic_cfr
         self.use_final_iter = use_final_iter
         self.plausible_orders_req_size = max_batch_size
+        self.average_n_rollouts = average_n_rollouts
 
     def get_orders(self, game, power) -> List[str]:
         # CFR data structures
@@ -53,7 +63,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
-        phase = game.get_state()['name']
+        phase = game.get_state()["name"]
 
         if self.cache_rollout_results:
             rollout_results_cache = RolloutResultsCache()
@@ -121,7 +131,9 @@ class CFR1PAgent(BaseSearchAgent):
             # run rollouts or get from cache
             def on_miss():
                 with timings("distribute_rollouts"):
-                    return self.distribute_rollouts(game, set_orders_dicts, N=1)
+                    return self.distribute_rollouts(
+                        game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
+                    )
 
             all_rollout_results = (
                 rollout_results_cache.get(set_orders_dicts, on_miss)
@@ -240,7 +252,9 @@ class CFR1PAgent(BaseSearchAgent):
                 for pwr, actions in power_plausible_orders.items()
                 for action in actions
             ]
-            all_rollout_results = self.distribute_rollouts(game, set_orders_dicts, N=1)
+            all_rollout_results = self.distribute_rollouts(
+                game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
+            )
 
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
@@ -335,13 +349,18 @@ if __name__ == "__main__":
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
+    np.random.seed(0)
+    torch.manual_seed(0)
+
     agent = CFR1PAgent(
         n_rollouts=10,
         max_rollout_length=5,
         model_path="/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth",
-        postman_sync_batches=True,
+        postman_sync_batches=False,
         rollout_temperature=0.5,
-        n_rollout_procs=60,
+        n_rollout_procs=24*7,
         mix_square_ratio_scoring=0.1,
+        n_plausible_orders=24,
+        average_n_rollouts=3,
     )
     print(agent.get_orders(Game(), "AUSTRIA"))
