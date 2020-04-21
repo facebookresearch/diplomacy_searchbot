@@ -90,7 +90,7 @@ def term_handler(signum, frame):
     logging.warning("Bypassing SIGTERM.")
 
 
-def maybe_init_requeue_handler(master_callback:Optional[Callable]=None) -> None:
+def maybe_init_requeue_handler(master_callback: Optional[Callable] = None) -> None:
     """Handle signals sent by SLURM for time limit / pre-emption.
 
     Args:
