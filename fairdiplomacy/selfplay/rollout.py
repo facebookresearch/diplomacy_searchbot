@@ -189,6 +189,7 @@ def yield_rollouts(
     blueprint_hostports: Optional[Sequence[str]],
     game_json,
     mode: RolloutMode,
+    fast_finish: bool = False,
     temperature=0.05,
     max_rollout_length=40,
     batch_size=1,
@@ -205,6 +206,7 @@ def yield_rollouts(
         agents that is exploited. Ignored in SELFPLAY model
     - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
     - mode: what kind of rollout to do. Defiens what will be outputed.
+    - fast_finish: if True, the rollout is stopped once all non-blueprint agents lost.
     - temperature: model softmax temperature for rollout policy on the blueprint agent.
     - max_rollout_length: return SC count after at most # steps
     - batch_size: rollout # of games in parallel
@@ -240,6 +242,10 @@ def yield_rollouts(
         if mode == RolloutMode.SELFPLAY:
             # Not used.
             del exploit_power_id
+            exploit_ids = frozenset(range(len(POWERS)))
+        else:
+            exploit_ids = frozenset([exploit_power_id])
+
         with timings("setup"):
             games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
             turn_idx = 0
@@ -248,20 +254,30 @@ def yield_rollouts(
             cand_actions = {i: [] for i in range(batch_size)}
             logprobs = {i: [] for i in range(batch_size)}
 
-        while not all(game.is_game_done for game in games) and turn_idx < max_rollout_length:
+        while turn_idx < max_rollout_length:
             with timings("prep"):
                 batch_data = []
-                for game in games:
+                for batch_idx, game in enumerate(games):
                     if game.is_game_done:
                         continue
+                    if fast_finish:
+                        last_centers = game.get_state()["centers"]
+                        if not any(
+                            len(last_centers[p]) > 0
+                            for i, p in enumerate(POWERS)
+                            if i not in exploit_ids
+                        ):
+                            continue
                     inputs = encode_inputs(
                         game,
                         all_possible_orders=game.get_all_possible_orders(),  # expensive
                         game_state=encode_state(game),
                     )
-                    batch_data.append((game, inputs))
+                    batch_data.append((game, inputs, batch_idx))
 
-            assert batch_data
+            if not batch_data:
+                # All games are done.
+                break
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
@@ -296,12 +312,11 @@ def yield_rollouts(
                 )
 
                 # set_orders and process
-                for (game, _), power_orders in zip(batch_data, batch_orders):
+                for (game, _, _), power_orders in zip(batch_data, batch_orders):
                     for power, orders in zip(POWERS, power_orders):
                         game.set_orders(power, list(orders))
 
-                inner_index = 0
-                for i, game in enumerate(games):
+                for inner_index, (game, _, i) in enumerate(batch_data):
                     if not game.is_game_done:
                         game.process()
                         if mode == RolloutMode.SELFPLAY:
@@ -317,7 +332,6 @@ def yield_rollouts(
                                 exploit_order_logprobs[inner_index, exploit_power_id]
                             )
                         observations[i].append([x[inner_index] for x in batch_inputs])
-                        inner_index += 1
 
             turn_idx += 1
 
