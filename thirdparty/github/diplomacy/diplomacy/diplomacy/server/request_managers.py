@@ -662,9 +662,14 @@ def on_leave_game(server, request, connection_handler):
         level.game.set_controlled(level.power_name, None)
         Notifier(server, ignore_addresses=[request.address_in_game]).notify_game_powers_controllers(level.game)
         server.stop_game_if_needed(level.game)
+        server.save_game(level.game)
+        LOGGER.info(f"on_leave_game {level.game.game_id} {level.power_name}, {level.game.count_controlled_powers()} left")
+        if level.game.count_controlled_powers() == 0:
+            LOGGER.info(f"deleting game {level.game.game_id}")
+            server.delete_game(level.game)
     else:
         level.game.remove_special_token(request.game_role, request.token)
-    server.save_game(level.game)
+        server.save_game(level.game)
 
 def on_list_games(server, request, connection_handler):
     """ Manage request ListGames.
