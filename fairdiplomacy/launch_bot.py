@@ -231,6 +231,7 @@ class Bot:
             game_copy = Game()
             phase_history = yield game.get_phase_history()
             game_copy.set_phase_data(phase_history + [game.get_phase_data()])
+            game_copy.to_saved_game_format("game.json")
 
             orders = yield self.executor.submit(agent.get_orders, game_copy, power_name)
             should_draw = False

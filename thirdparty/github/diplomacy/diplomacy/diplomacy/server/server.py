@@ -404,6 +404,7 @@ class Server:
         LOGGER.debug('Processing game %s (status %s).', server_game.game_id, server_game.status)
         previous_phase_data, current_phase_data, kicked_powers = server_game.process()
         self.save_game(server_game)
+        self.backup_now()
 
         if previous_phase_data is None and kicked_powers is None:
             # Game must be unscheduled immediately.
