@@ -15,7 +15,7 @@ import torch.utils.tensorboard
 import fairdiplomacy.selfplay.metrics
 import fairdiplomacy.selfplay.vtrace
 from fairdiplomacy.game import Game
-from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.models.consts import POWERS, POWER2IDX
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils import game_scoring
 from fairdiplomacy.selfplay.rollout import (
@@ -51,7 +51,7 @@ def get_ckpt_sync_dir():
 def yield_rewarded_rollouts(reward_kwargs, rollout_kwargs, output_games):
     for item in yield_rollouts(**rollout_kwargs):
         game_json = item.game_json if output_games else None
-        yield (rollout_to_batch(item, **reward_kwargs), game_json)
+        yield (rollout_to_batch(item, reward_kwargs), game_json)
 
 
 def queue_rollouts(out_queue: mp.Queue, reward_kwargs, rollout_kwargs, output_games=False) -> None:
@@ -82,31 +82,95 @@ def queue_scores(out_queue: mp.Queue, reward_kwargs, rollout_kwargs) -> None:
         raise
 
 
-def rollout_to_batch(
-    rollout: ExploitRollout,
-    *,
-    score_name: str = None,
-    delay_penalty=False,
-    differential_reward=False,
-) -> Tuple[RolloutBatch, ScoreDict]:
-    assert score_name is not None, "score_name is required"
-    N = len(rollout.actions)
-    scores = game_scoring.compute_game_scores(rollout.power_id, rollout.game_json)._asdict()
+def _compute_simpler_reward(
+    power_id: int, game_json: Dict, *, differential_reward: bool, score_name: str
+) -> torch.Tensor:
+    N = len(game_json["phases"]) - 1
     if differential_reward:
-        assert len(rollout.game_json["phases"]) == N + 1, (len(rollout.game_json["phases"]), N)
         target_score_history = torch.FloatTensor(
             [
-                getattr(game_scoring.compute_phase_scores(rollout.power_id, phase), score_name,)
-                for phase in rollout.game_json["phases"]
+                getattr(game_scoring.compute_phase_scores(power_id, phase), score_name)
+                for phase in game_json["phases"]
             ]
         )
         rewards = target_score_history[1:] - target_score_history[:-1]
     else:
+        scores = game_scoring.compute_game_scores(power_id, game_json)._asdict()
         rewards = torch.zeros([N], dtype=torch.float)
         rewards[-1] = scores[score_name]
+    return rewards
 
+
+def build_alliance_map(alliance_type: int) -> torch.Tensor:
+    def groups_to_map(*alliance_groups: Sequence[str]):
+        alliance_map = torch.eye(len(POWERS))
+        for group_names in alliance_groups:
+            group = [POWER2IDX[x] for x in group_names]
+            for i, j in itertools.combinations(group, 2):
+                alliance_map[i, j] = alliance_map[j, i] = 1.0
+        alliance_map /= alliance_map.sum(-1, keepdim=True)
+        return alliance_map
+
+    if alliance_type == 1:
+        return groups_to_map(
+            ["ENGLAND", "FRANCE", "GERMANY"], ["AUSTRIA", "GERMANY", "ITALY", "RUSSIA", "TURKEY"],
+        )
+    if alliance_type == 2:
+        return groups_to_map(
+            ["ENGLAND", "FRANCE", "GERMANY", "ITALY"], ["AUSTRIA", "GERMANY", "RUSSIA", "TURKEY"],
+        )
+    if alliance_type == 3:
+        return groups_to_map(
+            ["ENGLAND", "FRANCE", "RUSSIA"], ["AUSTRIA", "GERMANY", "ITALY", "TURKEY"],
+        )
+    raise ValueError(f"Unknown alliance group: {alliance_type}")
+
+
+def compute_reward(
+    rollout: ExploitRollout,
+    *,
+    score_name: str,
+    delay_penalty=False,
+    differential_reward=False,
+    alliance_type: Optional[int] = None,
+) -> torch.Tensor:
+    if not alliance_type:
+        rewards = _compute_simpler_reward(
+            rollout.power_id,
+            rollout.game_json,
+            score_name=score_name,
+            differential_reward=differential_reward,
+        )
+    else:
+        alliance_map = build_alliance_map(alliance_type)
+        per_power_rewards = [
+            _compute_simpler_reward(
+                i,
+                rollout.game_json,
+                score_name=score_name,
+                differential_reward=differential_reward,
+            )
+            for i in range(len(POWERS))
+        ]
+        # Shape: [T, 7].
+        per_power_rewards = torch.stack(per_power_rewards, -1)
+        rewards = torch.mv(per_power_rewards, alliance_map[rollout.power_id])
     if delay_penalty:
         rewards -= delay_penalty
+    return rewards
+
+
+def rollout_to_batch(
+    rollout: ExploitRollout, reward_kwargs: Dict,
+) -> Tuple[RolloutBatch, ScoreDict]:
+    assert len(rollout.game_json["phases"]) == len(rollout.actions) + 1, (
+        len(rollout.game_json["phases"]),
+        len(rollout.actions),
+    )
+    N = len(rollout.actions)
+    scores = game_scoring.compute_game_scores(rollout.power_id, rollout.game_json)._asdict()
+
+    rewards = compute_reward(rollout, **reward_kwargs)
 
     is_final = torch.zeros([N], dtype=torch.bool)
     is_final[-1] = True
@@ -199,16 +263,16 @@ class Evaler:
     def extract_scores(self) -> ScoreDict:
         qsize = self.queue.qsize()
         aggregated_scores = get_default_rollout_scores()
-        for _ in range(qsize):
+        for i in range(qsize):
             try:
                 scores = self.queue.get_nowait()
             except queue_lib.Empty:
-                logging.warning("Kind of odd...")
+                logging.warning(f"Expected {qsize} elements, got {i}. Kind of odd...")
                 break
             for k, v in scores.items():
                 aggregated_scores[k] += v
         for k in list(aggregated_scores):
-            aggregated_scores[k] /= aggregated_scores["num_games"]
+            aggregated_scores[k] /= max(1, aggregated_scores["num_games"])
         del aggregated_scores["queue_size"]
         return aggregated_scores
 

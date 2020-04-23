@@ -12,6 +12,7 @@ MAP = diplomacy.engine.map.Map()
 LOCS = get_sorted_locs(MAP)
 LOC_TYPES = {k.upper(): v for (k, v) in MAP.loc_type.items()}
 POWERS = sorted(MAP.powers)
+POWER2IDX = {v: k for k, v in enumerate(POWERS)}
 SEASONS = ["SPRING", "FALL", "WINTER"]
 MAX_SEQ_LEN = 17  # can't have 18 orders in one phase or you've already won
 N_SCS = 34  # number of supply centers

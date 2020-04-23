@@ -396,6 +396,13 @@ message ExploitTask {
       // Optional. If set, then the reward will be a difference between the
       // score before the action and after the action.
       optional bool differential_reward = 3;
+
+      // Optional. Hacky way to hardcore alliances.
+      // 0 -> no alliances
+      // 1 -> FRA, ENG, GER vs all.
+      // 2 -> FRA, ENG, GER, IT vs all.
+      // 3 -> FRA, ENG, RUS vs all.
+      optional int32 alliance_type = 4;
     }
 
     // Required. How to compute rewards.
