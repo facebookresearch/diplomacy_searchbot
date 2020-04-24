@@ -28,6 +28,7 @@ from fairdiplomacy.selfplay.ckpt_syncer import CkptSyncer
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
+from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
 
 if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
     try:
@@ -44,6 +45,7 @@ class BaseSearchAgent(BaseAgent):
         max_batch_size,
         max_rollout_length,
         rollout_temperature,
+        rollout_top_p=1.0,
         n_server_procs=1,
         n_gpu=1,
         n_rollout_procs=70,
@@ -51,6 +53,7 @@ class BaseSearchAgent(BaseAgent):
         postman_wait_till_full=False,
         use_server_addr=None,
         device=None,
+        mix_square_ratio_scoring=0,
     ):
         super().__init__()
 
@@ -58,8 +61,10 @@ class BaseSearchAgent(BaseAgent):
         self.n_server_procs = n_server_procs
         self.use_predicted_final_scores = use_predicted_final_scores
         self.rollout_temperature = rollout_temperature
+        self.rollout_top_p = rollout_top_p
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
+        self.mix_square_ratio_scoring = mix_square_ratio_scoring
         device = int(device.lstrip("cuda:")) if type(device) == str else device
 
         logging.info("Launching servers")
@@ -115,19 +120,23 @@ class BaseSearchAgent(BaseAgent):
         logging.info("Done warming up pool")
 
     @classmethod
-    def do_model_request(cls, client, x, temperature) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
+    def do_model_request(
+        cls, client, x, temperature: float, top_p: float
+    ) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
         """Synchronous request to model server
 
         Arguments:
         - x: a Tuple of Tensors, where each tensor's dim=0 is the batch dim
         - temperature: model softmax temperature
+        - top_p: probability mass to samples from
 
         Returns:
         - a list (len = batch size) of lists (len=7) of order-tuples
         - [7] float32 array of estimated final scores
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
-        req = (*x, temp_array)
+        top_p_array = torch.zeros(x[0].shape[0], 1).fill_(top_p)
+        req = (*x, temp_array, top_p_array)
         try:
             order_idxs, final_scores = client.evaluate(req)
         except Exception:
@@ -148,7 +157,7 @@ class BaseSearchAgent(BaseAgent):
         )
 
     def get_plausible_orders(
-        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=500
+        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=500, top_p=1.0
     ) -> Dict[str, Set[Tuple[str]]]:
         assert n % batch_size == 0, f"{n}, {batch_size}"
 
@@ -167,33 +176,34 @@ class BaseSearchAgent(BaseAgent):
         x = [encode_inputs(game)] * n
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
             batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
-            batch_orders, _ = self.do_model_request(self.client, batch_inputs, temperature)
+            batch_orders, _ = self.do_model_request(self.client, batch_inputs, temperature, top_p)
             batch_orders = list(zip(*batch_orders))
             for p, power in enumerate(POWERS):
                 counters[power].update(batch_orders[p])
 
-        logging.debug(
+        logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
-                n, temperature, list(map(len, counters)), limit
+                n, temperature, list(map(len, counters.values())), limit
             )
         )
+
         return {
             power: set([orders for orders, _ in counter.most_common(limit)])
             for power, counter in counters.items()
         }
 
     def distribute_rollouts(
-        self, game, set_orders_dicts: List[Dict], N
+        self, game, set_orders_dicts: List[Dict], average_n_rollouts=1
     ) -> List[Tuple[Dict, Dict]]:
-        """Run N x len(set_orders_dicts) rollouts
+        """Run average_n_rollouts x len(set_orders_dicts) rollouts
 
         Arguments:
         - game: fairdiplomacy.Game
         - set_orders_dicts: List[Dict[power, orders]], each dict representing
           the orders to set for the first turn
-        - N: int
+        - average_n_rollouts: int, # of rollouts to run in parallel for each dict
 
-        Returns: List[Tuple[order_dict, final_scores]], where
+        Returns: List[Tuple[order_dict, final_scores]], len=average_n_rollouts * len(set_orders_dicts)
             -> order_dict: Dict[power, orders],
                e.g. {"ITALY": ("A ROM H", "F NAP - ION", "A VEN H"), ...}
             -> final_scores: Dict[power, supply count],
@@ -202,10 +212,6 @@ class BaseSearchAgent(BaseAgent):
         game_json = game.to_saved_game_format()
 
         # divide up the rollouts among the processes
-        procs_per_order = max(1, self.n_rollout_procs // len(set_orders_dicts))
-        logging.info(f"num_orders={len(set_orders_dicts)} , procs_per_order={procs_per_order}")
-        batch_sizes = [len(x) for x in torch.arange(N).chunk(procs_per_order) if len(x) > 0]
-        logging.info(f"procs_per_order={procs_per_order} , batch_sizes={batch_sizes}")
         all_results, all_timings = zip(
             *self.proc_pool.map(
                 call,
@@ -216,24 +222,27 @@ class BaseSearchAgent(BaseAgent):
                         set_orders_dict=d,
                         hostport=self.hostports[i % self.n_server_procs],
                         temperature=self.rollout_temperature,
+                        top_p=self.rollout_top_p,
                         max_rollout_length=self.max_rollout_length,
-                        batch_size=batch_size,
+                        batch_size=average_n_rollouts,
                         use_predicted_final_scores=self.use_predicted_final_scores,
+                        mix_square_ratio_scoring=self.mix_square_ratio_scoring,
                     )
-                    for d in set_orders_dicts
-                    for i, batch_size in enumerate(batch_sizes)
+                    for i, d in enumerate(set_orders_dicts)
                 ],
             )
         )
         logging.info(
-            "Timings[avg.do_rollout, n={}, len={}] {}".format(
-                len(all_timings), self.max_rollout_length, sum(all_timings) / len(all_timings)
+            "Timings[avg.do_rollout, n={}*{}, len={}] {}".format(
+                len(set_orders_dicts),
+                average_n_rollouts,
+                self.max_rollout_length,
+                sum(all_timings) / len(all_timings),
             )
         )
         return [
-            (order_dict, scores)
+            (order_dict, average_score_dicts(list_of_scores_dicts))
             for order_dict, list_of_scores_dicts in all_results
-            for scores in list_of_scores_dicts
         ]
 
     @classmethod
@@ -244,9 +253,11 @@ class BaseSearchAgent(BaseAgent):
         hostport,
         set_orders_dict={},
         temperature,
+        top_p,
         max_rollout_length,
         batch_size=1,
         use_predicted_final_scores,
+        mix_square_ratio_scoring=0,
     ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:
         """Complete game, optionally setting orders for the current turn
 
@@ -257,6 +268,7 @@ class BaseSearchAgent(BaseAgent):
         - hostport: string, "{host}:{port}" of model server
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
+        - top_p: probability mass to samples from for rollout policy
         - max_rollout_length: return SC count after at most # steps
         - batch_size: rollout # of games in parallel
         - use_predicted_final_scores: if True, use model's value head for final SC predictions
@@ -264,7 +276,7 @@ class BaseSearchAgent(BaseAgent):
         Returns a 2-tuple:
         - results, a 2-tuple:
           - set_orders_dict: Dict[power, orders]
-          - list of Dict[power, final_score]
+          - list of Dict[power, final_score], len=batch_size
         - timings: a TimingCtx
         """
         timings = TimingCtx()
@@ -309,7 +321,7 @@ class BaseSearchAgent(BaseAgent):
 
             with timings("model"):
                 batch_orders, final_scores = cls.do_model_request(
-                    client, batch_inputs, temperature
+                    client, batch_inputs, temperature, top_p,
                 )
             with timings("final_scores"):
                 for game in games:
@@ -336,13 +348,36 @@ class BaseSearchAgent(BaseAgent):
             other_powers = POWERS  # no set orders on subsequent turns
 
         with timings("final_scores"):
-            final_scores = [
-                {k: len(v) for k, v in game.get_state()["centers"].items()}
-                if game.is_game_done or not use_predicted_final_scores
-                else dict(zip(POWERS, est_final_scores[game.game_id]))
+            # get GameScores objects for current game state
+            current_game_scores = [
+                {
+                    p: compute_game_scores_from_state(i, game.get_state())
+                    for i, p in enumerate(POWERS)
+                }
                 for game in games
             ]
-            result = (set_orders_dict, final_scores)
+
+            # get estimated or current sum of squares scoring
+            final_game_scores = [
+                (
+                    {p: v.square_score for p, v in current_scores.items()}
+                    if game.is_game_done or not use_predicted_final_scores
+                    else dict(zip(POWERS, est_final_scores[game.game_id]))
+                )
+                for game, current_scores in zip(games, current_game_scores)
+            ]
+
+            # mix in current sum of squares ratio to encourage losing powers to try hard
+            if mix_square_ratio_scoring > 0:
+                for game, final_scores, current_scores in zip(
+                    games, final_game_scores, current_game_scores
+                ):
+                    for p in POWERS:
+                        final_scores[p] = (1 - mix_square_ratio_scoring) * final_scores[p] + (
+                            mix_square_ratio_scoring * current_scores[p].square_ratio
+                        )
+
+            result = (set_orders_dict, final_game_scores)
 
         return result, timings
 
@@ -500,3 +535,7 @@ def call(f):
 
 def unpad_lists(lists, lens):
     return [lst[:length] for lst, length in zip(lists, lens)]
+
+
+def average_score_dicts(score_dicts: List[Dict]) -> Dict:
+    return {p: sum(d.get(p, 0) for d in score_dicts) / len(score_dicts) for p in POWERS}

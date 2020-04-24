@@ -330,13 +330,17 @@ class GetDummyWaitingPowers(_AbstractChannelRequest):
               such that the total number of power names in the entire dictionary does not exceed
               given buffer size.
     """
-    __slots__ = ['buffer_size']
+    __slots__ = ['buffer_size', 'only_game_id', 'only_power']
     params = {
         strings.BUFFER_SIZE: int,
+        "only_game_id": str,
+        "only_power": str,
     }
 
     def __init__(self, **kwargs):
         self.buffer_size = 0
+        self.only_game_id = None
+        self.only_power = None
         super(GetDummyWaitingPowers, self).__init__(**kwargs)
 
 class GetAvailableMaps(_AbstractChannelRequest):

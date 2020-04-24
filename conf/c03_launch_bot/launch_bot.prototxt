@@ -2,7 +2,7 @@ includes {path: "agents/dipnet"; mount: "agent";}
 launch_bot {
   host: "127.0.0.1"
   port: 8432
-  period: 10
+  period: 5
   buffer_size: 128
   reuse_model_servers: 0
 }

@@ -86,6 +86,7 @@ from diplomacy.engine.map import Map
 from diplomacy.utils import common, exceptions, strings, constants
 
 LOGGER = logging.getLogger(__name__)
+POWERS = ["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"]
 
 def is_port_opened(port, hostname='127.0.0.1'):
     """ Checks if the specified port is opened
@@ -248,7 +249,7 @@ class Server:
         self.backup_delay_seconds = constants.DEFAULT_BACKUP_DELAY_SECONDS
         self.ping_seconds = constants.DEFAULT_PING_SECONDS
         self.users = None  # type: Users  # Users and administrators usernames.
-        self.available_maps = {}  # type: Dict[str, Set[str]] # {"map_name" => set("map_power")}
+        self.available_maps = {}  # type: Dict[str, List[str]] # {"map_name" => list("map_power")}
         self.maps_mtime = 0  # Latest maps modification date (used to manage maps cache in server object).
 
         # Server games loaded on memory (stored on disk).
@@ -259,10 +260,10 @@ class Server:
         # Dictionary mapping game ID to list of power names.
         self.games_with_dummy_powers = {}  # type: Dict[str, List[str]]
 
-        # Dictionary mapping a game ID present in games_with_dummy_powers, to
+        # Dictionary mapping a game ID / power tuple present in games_with_dummy_powers, to
         # a couple of associated bot token and time when bot token was associated to this game ID.
         # If there is no bot token associated, couple is (None, None).
-        self.dispatched_dummy_powers = {} # type: dict{str, tuple}
+        self.dispatched_dummy_powers = {} # type: dict{tuple, tuple}
 
         # DAIDE TCP servers listening to a game's dedicated port.
         self.daide_servers = {}             # {port: daide_server}
@@ -303,8 +304,8 @@ class Server:
                     # Either it's a new map file or map file was modified.
                     available_map = Map(map_name)
                     self.available_maps[map_name] = {
-                        'powers': set(available_map.powers),
-                        'supply_centers': set(available_map.scs),
+                        'powers': list(available_map.powers),
+                        'supply_centers': list(available_map.scs),
                         'loc_type': available_map.loc_type.copy(),
                         'loc_abut': available_map.loc_abut.copy(),
                         'aliases': available_map.aliases.copy()
@@ -403,6 +404,7 @@ class Server:
         LOGGER.debug('Processing game %s (status %s).', server_game.game_id, server_game.status)
         previous_phase_data, current_phase_data, kicked_powers = server_game.process()
         self.save_game(server_game)
+        self.backup_now()
 
         if previous_phase_data is None and kicked_powers is None:
             # Game must be unscheduled immediately.
@@ -566,19 +568,21 @@ class Server:
         dummy_power_names = []
         if server_game.is_game_active or server_game.is_game_paused:
             dummy_power_names = server_game.get_dummy_unordered_power_names()
-            if dummy_power_names:
+            for power in dummy_power_names:
                 # Update registry of dummy powers.
                 self.games_with_dummy_powers[server_game.game_id] = dummy_power_names
                 # Every time we update registry of dummy powers,
                 # then we also update bot time in registry of dummy powers associated to bot tokens.
-                bot_token, _ = self.dispatched_dummy_powers.get(server_game.game_id, (None, None))
-                self.dispatched_dummy_powers[server_game.game_id] = (bot_token, common.timestamp_microseconds())
+                key = (server_game.game_id, power)
+                bot_token, _ = self.dispatched_dummy_powers.get(key, (None, None))
+                self.dispatched_dummy_powers[key] = (bot_token, common.timestamp_microseconds())
         if not dummy_power_names:
             # No waiting dummy powers for this game, or game is not playable (canceled, completed, or forming).
             self.games_with_dummy_powers.pop(server_game.game_id, None)
-            self.dispatched_dummy_powers.pop(server_game.game_id, None)
+            for power in POWERS:
+                self.dispatched_dummy_powers.pop((server_game.game_id, power), None)
 
-    def get_dummy_waiting_power_names(self, buffer_size, bot_token):
+    def get_dummy_waiting_power_names(self, buffer_size, bot_token, only_game_id=None, only_power=None):
         """ Return names of dummy powers waiting for orders for current loaded games.
             This query is allowed only for bot tokens.
 
@@ -586,31 +590,37 @@ class Server:
             :param bot_token: bot token
             :return: a dictionary mapping each game ID to a list of power names.
         """
+        LOGGER.info(f"get_dummy {buffer_size} {bot_token[:16] if bot_token else bot_token} {only_game_id} {only_power} {self.games_with_dummy_powers} {self.dispatched_dummy_powers}")
         if self.users.get_name(bot_token) != constants.PRIVATE_BOT_USERNAME:
             raise exceptions.ResponseException('Invalid bot token %s' % bot_token)
         selected_size = 0
         selected_games = {}
         for game_id in sorted(list(self.games_with_dummy_powers.keys())):
-            registered_token, registered_time = self.dispatched_dummy_powers[game_id]
-            if registered_token is not None:
-                time_elapsed_seconds = (common.timestamp_microseconds() - registered_time) / 1000000
-                if time_elapsed_seconds > constants.PRIVATE_BOT_TIMEOUT_SECONDS or registered_token == bot_token:
-                    # This game still has dummy powers but, either time allocated to previous bot token is over,
-                    # or bot dedicated to this game is asking for current dummy powers of this game.
-                    # Forget previous bot token.
-                    registered_token = None
-            if registered_token is None:
-                # This game is not associated to any bot token.
-                # Let current bot token handle it if buffer size is not reached.
-                dummy_power_names = self.games_with_dummy_powers[game_id]
-                nb_powers = len(dummy_power_names)
-                if selected_size + nb_powers > buffer_size:
-                    # Buffer size would be exceeded. We stop to collect games now.
-                    break
-                # Otherwise we collect this game.
-                selected_games[game_id] = dummy_power_names
-                selected_size += nb_powers
-                self.dispatched_dummy_powers[game_id] = (bot_token, common.timestamp_microseconds())
+            if only_game_id and only_game_id != game_id:
+                continue
+            for power in ([only_power] if only_power else POWERS):
+                registered_token, registered_time = self.dispatched_dummy_powers.get((game_id, power), (None, None))
+                LOGGER.info(f"get_dummy {game_id} {power} token={registered_token[:8] if registered_token else registered_token}")
+                if registered_token is not None:
+                    time_elapsed_seconds = (common.timestamp_microseconds() - registered_time) / 1000000
+                    if time_elapsed_seconds > constants.PRIVATE_BOT_TIMEOUT_SECONDS or registered_token == bot_token:
+                        # This game still has dummy powers but, either time allocated to previous bot token is over,
+                        # or bot dedicated to this game is asking for current dummy powers of this game.
+                        # Forget previous bot token.
+                        registered_token = None
+                if registered_token is None and power in self.games_with_dummy_powers[game_id]:
+                    # This game is not associated to any bot token.
+                    # Let current bot token handle it if buffer size is not reached.
+                    if selected_size + 1 > buffer_size:
+                        # Buffer size would be exceeded. We stop to collect games now.
+                        break
+                    # Otherwise we collect this game.
+                    if game_id not in selected_games:
+                        selected_games[game_id] = []
+                    selected_games[game_id].append(power)
+                    selected_size += 1
+                    self.dispatched_dummy_powers[(game_id, power)] = (bot_token, common.timestamp_microseconds())
+        LOGGER.info(f"get_dummy return {selected_games}")
         return selected_games
 
     def has_game_id(self, game_id):
@@ -651,7 +661,7 @@ class Server:
         except ValueError as exc:
             # Error occurred while parsing JSON file: bad JSON file.
             try:
-                os.remove(game_filename)
+                os.rename(game_filename, game_filename + ".deleted")
             finally:
                 # This should be an internal server error.
                 raise exc
@@ -711,13 +721,14 @@ class Server:
         game_filename = os.path.join(self.games_path, '%s.json' % server_game.game_id)
         backup_game_filename = get_backup_filename(game_filename)
         if os.path.isfile(game_filename):
-            os.remove(game_filename)
+            os.rename(game_filename, game_filename + '.deleted')
         if os.path.isfile(backup_game_filename):
-            os.remove(backup_game_filename)
+            os.rename(backup_game_filename, backup_game_filename + ".deleted")
         self.games.pop(server_game.game_id, None)
         self.backup_games.pop(server_game.game_id, None)
         self.games_with_dummy_powers.pop(server_game.game_id, None)
-        self.dispatched_dummy_powers.pop(server_game.game_id, None)
+        for power in POWERS:
+            self.dispatched_dummy_powers.pop((server_game.game_id, power), None)
         # Stop DAIDE server associated to this game.
         self.stop_daide_server(server_game.game_id)
 

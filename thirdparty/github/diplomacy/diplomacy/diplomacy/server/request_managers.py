@@ -26,6 +26,8 @@
 """
 #pylint:disable=too-many-lines
 import logging
+import os
+import subprocess
 
 from tornado import gen
 from tornado.concurrent import Future
@@ -165,6 +167,15 @@ def on_create_game(server, request, connection_handler):
 
     server.save_game(server_game)
 
+    if os.environ.get('DIP_POST_CREATE_HOOK'):
+        script = os.environ.get('DIP_POST_CREATE_HOOK')
+        script = script.replace('__POWER__', power_name)
+        script = script.replace('__GAMEID__', game_id)
+        try:
+            subprocess.run(script, shell=True, timeout=5, check=True)
+        except Exception:
+            LOGGER.exception(f"Caught in failed DIP_POST_CREATE_HOOK: {script}")
+
     return responses.DataGame(data=client_game, request_id=request.request_id)
 
 def on_delete_account(server, request, connection_handler):
@@ -285,7 +296,7 @@ def on_get_dummy_waiting_powers(server, request, connection_handler):
     """
     verify_request(server, request, connection_handler)
     return responses.DataGamesToPowerNames(
-        data=server.get_dummy_waiting_power_names(request.buffer_size, request.token), request_id=request.request_id)
+        data=server.get_dummy_waiting_power_names(request.buffer_size, request.token, request.only_game_id, request.only_power), request_id=request.request_id)
 
 def on_get_games_info(server, request, connection_handler):
     """ Manage request GetGamesInfo.
@@ -651,9 +662,14 @@ def on_leave_game(server, request, connection_handler):
         level.game.set_controlled(level.power_name, None)
         Notifier(server, ignore_addresses=[request.address_in_game]).notify_game_powers_controllers(level.game)
         server.stop_game_if_needed(level.game)
+        server.save_game(level.game)
+        LOGGER.info(f"on_leave_game {level.game.game_id} {level.power_name}, {level.game.count_controlled_powers()} left")
+        if level.game.count_controlled_powers() == 0:
+            LOGGER.info(f"deleting game {level.game.game_id}")
+            server.delete_game(level.game)
     else:
         level.game.remove_special_token(request.game_role, request.token)
-    server.save_game(level.game)
+        server.save_game(level.game)
 
 def on_list_games(server, request, connection_handler):
     """ Manage request ListGames.

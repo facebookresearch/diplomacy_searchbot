@@ -16,6 +16,9 @@ message DipnetAgent {
 
   // Optional. Softmax temperature
   optional float temperature = 2;
+
+  // Optional. Share of probability mass to keep for sampling.
+  optional float top_p = 3 [default = 1.0];
 }
 
 message CFR1PAgent {
@@ -50,6 +53,11 @@ message CFR1PAgent {
   // Temperature used for rollouts
   optional float rollout_temperature = 10;
 
+  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
+  // smallest subset of actions that has probability at least top_p is
+  // considered. All other actions are never sampled.
+  optional float rollout_top_p = 16;
+
   // If true, set postman batch size and use wait_till_full
   optional bool postman_sync_batches = 11;
 
@@ -58,6 +66,12 @@ message CFR1PAgent {
 
   // CUDA device to use, if > 0
   optional int32 device = 13 [ default = -1 ];
+
+  // Optional float 0 - 1 to mix in raw sum of squares ratio
+  optional float mix_square_ratio_scoring = 14;
+
+  // Optional, # of rollouts to run in parallel for each possible action
+  optional uint32 average_n_rollouts = 15;
 }
 
 message BRSearchAgent {

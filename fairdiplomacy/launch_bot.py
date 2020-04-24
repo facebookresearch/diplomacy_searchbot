@@ -17,6 +17,7 @@
 # ==============================================================================
 import diplomacy
 import logging
+import sys
 from copy import deepcopy
 from diplomacy import connect
 from diplomacy.utils import constants, exceptions, strings
@@ -28,6 +29,7 @@ from fairdiplomacy.agents import build_agent_from_cfg
 from concurrent.futures import ThreadPoolExecutor
 
 LOGGER = logging.getLogger("diplomacy_research.scripts.launch_bot")
+LOGGER.setLevel(logging.DEBUG)
 PERIOD_SECONDS = 2
 
 
@@ -82,6 +84,7 @@ class Bot:
         self.game_id = game_id
         self.power = power
 
+        # FIXME: there is only one channel, this should be (game_id, power)
         self.agents = {}  # (channel, power) -> Agent
         self.cfgs_with_server = []
         self.executor = ThreadPoolExecutor(8)
@@ -91,6 +94,7 @@ class Bot:
         """ Main bot code. """
 
         # Connecting to server
+        LOGGER.warning("About to connect")
         connection = yield connect(self.host, self.port)
         LOGGER.info("Connected to %s", connection.url)
         LOGGER.info("Opening a channel.")
@@ -99,9 +103,28 @@ class Bot:
 
         while True:
             try:
+                if self.game_id:
+                    games = yield channel.list_games()
+                    try:
+                        game = [g for g in games if g.game_id == self.game_id][0]
+                        if game.status == "completed":
+                            LOGGER.info(f"Game {self.game_id} completed, exiting...")
+                            sys.exit(0)
+                    except IndexError:
+                        if len(self.agents):
+                            # game not found, but must have existed previously
+                            LOGGER.info(f"Game {self.game_id} not found, exiting...")
+                            sys.exit(0)
+
+                get_dummy_waiting_powers_kwargs = {"buffer_size": self.buffer_size}
+                if self.game_id:
+                    get_dummy_waiting_powers_kwargs["only_game_id"] = self.game_id
+                if self.power:
+                    get_dummy_waiting_powers_kwargs["only_power"] = self.power
                 all_dummy_power_names = yield channel.get_dummy_waiting_powers(
-                    buffer_size=self.buffer_size
+                    **get_dummy_waiting_powers_kwargs
                 )
+                LOGGER.debug(f"all_dummy_power_names={all_dummy_power_names}")
 
                 # Getting orders for the dummy powers
                 if all_dummy_power_names:
@@ -208,6 +231,7 @@ class Bot:
             game_copy = Game()
             phase_history = yield game.get_phase_history()
             game_copy.set_phase_data(phase_history + [game.get_phase_data()])
+            game_copy.to_saved_game_format("game.json")
 
             orders = yield self.executor.submit(agent.get_orders, game_copy, power_name)
             should_draw = False
@@ -281,6 +305,6 @@ def run_with_cfg(cfg):
         except KeyboardInterrupt:
             LOGGER.error("Bot interrupted.")
             break
-        except Exception as exc:  # pylint: disable=broad-except
-            LOGGER.error(exc)
+        except Exception as err:  # pylint: disable=broad-except
+            LOGGER.exception(err)
             LOGGER.info("Restarting bot...")

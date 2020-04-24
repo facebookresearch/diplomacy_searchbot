@@ -20,10 +20,17 @@ GameScores = collections.namedtuple(
 
 
 def compute_phase_scores(power_id: int, phase_json: Dict) -> GameScores:
-    last_phase_centers = phase_json["state"]["centers"]
-    center_counts = [len(last_phase_centers[p]) for p in POWERS]
+    return compute_game_scores_from_state(power_id, phase_json["state"])
+
+
+def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
+    return compute_game_scores_from_state(power_id, game_json["phases"][-1]["state"])
+
+
+def compute_game_scores_from_state(power_id: int, game_state: Dict) -> GameScores:
+    center_counts = [len(game_state["centers"][p]) for p in POWERS]
     center_squares = [x ** 2 for x in center_counts]
-    complete_unroll = phase_json["name"] == "COMPLETED"
+    complete_unroll = game_state["name"] == "COMPLETED"
     is_clear_win = center_counts[power_id] > N_SCS / 2
     is_clear_loss = center_counts[power_id] == 0 or (
         not is_clear_win and any(c > N_SCS / 2 for c in center_counts)
