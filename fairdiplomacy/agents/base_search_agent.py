@@ -45,6 +45,7 @@ class BaseSearchAgent(BaseAgent):
         max_batch_size,
         max_rollout_length,
         rollout_temperature,
+        rollout_top_p=1.0,
         n_server_procs=1,
         n_gpu=1,
         n_rollout_procs=70,
@@ -60,6 +61,7 @@ class BaseSearchAgent(BaseAgent):
         self.n_server_procs = n_server_procs
         self.use_predicted_final_scores = use_predicted_final_scores
         self.rollout_temperature = rollout_temperature
+        self.rollout_top_p = rollout_top_p
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
         self.mix_square_ratio_scoring = mix_square_ratio_scoring
@@ -118,19 +120,23 @@ class BaseSearchAgent(BaseAgent):
         logging.info("Done warming up pool")
 
     @classmethod
-    def do_model_request(cls, client, x, temperature) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
+    def do_model_request(
+        cls, client, x, temperature: float, top_p: float
+    ) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
         """Synchronous request to model server
 
         Arguments:
         - x: a Tuple of Tensors, where each tensor's dim=0 is the batch dim
         - temperature: model softmax temperature
+        - top_p: probability mass to samples from
 
         Returns:
         - a list (len = batch size) of lists (len=7) of order-tuples
         - [7] float32 array of estimated final scores
         """
         temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
-        req = (*x, temp_array)
+        top_p_array = torch.zeros(x[0].shape[0], 1).fill_(top_p)
+        req = (*x, temp_array, top_p_array)
         try:
             order_idxs, final_scores = client.evaluate(req)
         except Exception:
@@ -151,7 +157,7 @@ class BaseSearchAgent(BaseAgent):
         )
 
     def get_plausible_orders(
-        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=500
+        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=500, top_p=1.0
     ) -> Dict[str, Set[Tuple[str]]]:
         assert n % batch_size == 0, f"{n}, {batch_size}"
 
@@ -170,7 +176,7 @@ class BaseSearchAgent(BaseAgent):
         x = [encode_inputs(game)] * n
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
             batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
-            batch_orders, _ = self.do_model_request(self.client, batch_inputs, temperature)
+            batch_orders, _ = self.do_model_request(self.client, batch_inputs, temperature, top_p)
             batch_orders = list(zip(*batch_orders))
             for p, power in enumerate(POWERS):
                 counters[power].update(batch_orders[p])
@@ -216,6 +222,7 @@ class BaseSearchAgent(BaseAgent):
                         set_orders_dict=d,
                         hostport=self.hostports[i % self.n_server_procs],
                         temperature=self.rollout_temperature,
+                        top_p=self.rollout_top_p,
                         max_rollout_length=self.max_rollout_length,
                         batch_size=average_n_rollouts,
                         use_predicted_final_scores=self.use_predicted_final_scores,
@@ -246,6 +253,7 @@ class BaseSearchAgent(BaseAgent):
         hostport,
         set_orders_dict={},
         temperature,
+        top_p,
         max_rollout_length,
         batch_size=1,
         use_predicted_final_scores,
@@ -260,6 +268,7 @@ class BaseSearchAgent(BaseAgent):
         - hostport: string, "{host}:{port}" of model server
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
+        - top_p: probability mass to samples from for rollout policy
         - max_rollout_length: return SC count after at most # steps
         - batch_size: rollout # of games in parallel
         - use_predicted_final_scores: if True, use model's value head for final SC predictions
@@ -312,7 +321,7 @@ class BaseSearchAgent(BaseAgent):
 
             with timings("model"):
                 batch_orders, final_scores = cls.do_model_request(
-                    client, batch_inputs, temperature
+                    client, batch_inputs, temperature, top_p,
                 )
             with timings("final_scores"):
                 for game in games:

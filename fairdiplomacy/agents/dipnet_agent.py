@@ -14,16 +14,18 @@ ORDER_VOCABULARY = get_order_vocabulary()
 
 
 class DipnetAgent(BaseAgent):
-    def __init__(self, model_path, temperature, device="cuda"):
+    def __init__(self, model_path, temperature, top_p=1.0, device="cuda"):
         self.model = load_dipnet_model(model_path, map_location=device, eval=True)
         self.temperature = temperature
         self.device = device
+        self.top_p = top_p
 
-    def get_orders(self, game, power, *, temperature=None, batch_size=1):
+    def get_orders(self, game, power, *, temperature=None, batch_size=1, top_p=None):
         if len(game.get_orderable_locations(power)) == 0:
             return []
 
         temperature = temperature if temperature is not None else self.temperature
+        top_p = top_p if top_p is not None else self.top_p
         inputs = encode_inputs(game)
         inputs = [x.to(self.device) for x in inputs]
 
@@ -33,7 +35,7 @@ class DipnetAgent(BaseAgent):
 
         with torch.no_grad():
             order_idxs, cand_idxs, logits, final_scores = self.model(
-                *inputs, temperature=temperature
+                *inputs, temperature=temperature, top_p=top_p
             )
 
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])

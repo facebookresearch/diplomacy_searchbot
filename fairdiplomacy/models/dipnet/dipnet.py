@@ -1,3 +1,4 @@
+from typing import Union
 import logging
 import math
 import torch
@@ -70,6 +71,7 @@ class DipNet(nn.Module):
         loc_idxs,
         cand_idxs,
         temperature,
+        top_p=1.0,
         teacher_force_orders=None,
         x_power=None,
     ):
@@ -83,6 +85,8 @@ class DipNet(nn.Module):
         - all_cand_idxs: long, [B, S, 469] or [B, 7, S, 469]
         - temperature: softmax temp, lower = more deterministic; must be either
           a float or a tensor of [B, 1]
+        - top_p: probability mass to samples from, lower = more spiky; must
+          be either a float or a tensor of [B, 1]
         - teacher_force_orders: [B, S] long or None, ORDER idxs, NOT candidate idxs, 0-padded
         - x_power: [B, 7] or None
 
@@ -112,6 +116,7 @@ class DipNet(nn.Module):
                 loc_idxs=loc_idxs,
                 cand_idxs=cand_idxs,
                 temperature=temperature,
+                top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
             )
         else:
@@ -123,6 +128,7 @@ class DipNet(nn.Module):
                 loc_idxs=loc_idxs,
                 cand_idxs=cand_idxs,
                 temperature=temperature,
+                top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
                 x_power=x_power,
             )
@@ -138,6 +144,7 @@ class DipNet(nn.Module):
         cand_idxs,
         x_power,
         temperature,
+        top_p,
         teacher_force_orders,
     ):
         assert len(loc_idxs.shape) == 2
@@ -168,6 +175,7 @@ class DipNet(nn.Module):
         cand_idxs,
         temperature,
         teacher_force_orders,
+        top_p,
         log_timings=False,
     ):
         timings = TimingCtx()
@@ -188,6 +196,9 @@ class DipNet(nn.Module):
                 if hasattr(temperature, "repeat_interleave")
                 else temperature
             )
+            top_p = (
+                top_p.repeat_interleave(7, dim=0) if hasattr(top_p, "repeat_interleave") else top_p
+            )
             teacher_force_orders = (
                 teacher_force_orders.view(-1, *teacher_force_orders.shape[2:])
                 if teacher_force_orders is not None
@@ -204,6 +215,7 @@ class DipNet(nn.Module):
                 loc_idxs,
                 cand_idxs,
                 temperature=temperature,
+                top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
                 power_1h=power_1h,
             )
@@ -274,6 +286,7 @@ class LSTMDipNetDecoder(nn.Module):
         all_cand_idxs,
         power_1h,
         temperature=1.0,
+        top_p=1.0,
         teacher_force_orders=None,
     ):
         timings = TimingCtx()
@@ -402,8 +415,18 @@ class LSTMDipNetDecoder(nn.Module):
                 logits = torch.min(logits, cand_mask.float() * 1e9 - 1e8)
                 all_logits.append(logits)
 
+            with timings("dec.logits_temp_top_p"):
+                with torch.no_grad():
+                    filtered_logits = logits.detach().clone()
+                    top_p_min = top_p.min().item() if isinstance(top_p, torch.Tensor) else top_p
+                    if top_p_min < 0.999:
+                        filtered_logits.masked_fill_(
+                            top_p_filtering(filtered_logits, top_p=top_p), -1e9
+                        )
+                    filtered_logits /= temperature
+
             with timings("dec.sample"):
-                sampled_idxs = Categorical(logits=logits / temperature).sample()
+                sampled_idxs = Categorical(logits=filtered_logits).sample()
                 all_sampled_idxs.append(sampled_idxs)
 
             with timings("dec.order_idxs"):
@@ -434,6 +457,44 @@ class LSTMDipNetDecoder(nn.Module):
         logging.debug(f"Timings[dec, {enc.shape[0]}x{step}] {timings}")
 
         return r
+
+
+def top_p_filtering(
+    logits: torch.Tensor, top_p: Union[float, torch.Tensor], min_tokens_to_keep=1,
+) -> torch.Tensor:
+    """Filter a distribution of logits using nucleus (top-p) filtering.
+
+    From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
+
+    Args:
+        logits: tensor of shape [batch_size, vocab]. Logits distribution shape
+        top_p: float or tensor of shape [batch_size, 1]. Keep the top tokens
+            with cumulative probability >= top_p (nucleus filtering). Nucleus
+            filtering is described in Holtzman et al.
+            (http://arxiv.org/abs/1904.09751)
+        min_tokens_to_keep: int, make sure we keep at least
+            min_tokens_to_keep per batch example in the output
+
+    Returns:
+        top_p_mask: boolean tensor of shape [batch_size, vocab] with elements to remove.
+    """
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+    # Remove tokens with cumulative probability above the threshold (token with 0 are kept)
+    sorted_indices_to_remove = cumulative_probs > top_p
+    if min_tokens_to_keep > 1:
+        # Keep at least min_tokens_to_keep (set to min_tokens_to_keep-1 because we add the first one below)
+        sorted_indices_to_remove[..., :min_tokens_to_keep] = 0
+    # Shift the indices to the right to keep also the first token above the threshold
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+
+    # scatter sorted tensors to original indexing
+    indices_to_remove = sorted_indices_to_remove.scatter(
+        1, sorted_indices, sorted_indices_to_remove
+    )
+    return indices_to_remove
 
 
 class DipNetEncoder(nn.Module):

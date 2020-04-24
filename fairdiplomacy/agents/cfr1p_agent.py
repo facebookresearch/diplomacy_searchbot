@@ -359,6 +359,7 @@ if __name__ == "__main__":
         postman_sync_batches=False,
         rollout_temperature=0.5,
         n_rollout_procs=24*7,
+        rollout_top_p=0.9,
         mix_square_ratio_scoring=0.1,
         n_plausible_orders=24,
         average_n_rollouts=3,

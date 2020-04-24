@@ -16,6 +16,9 @@ message DipnetAgent {
 
   // Optional. Softmax temperature
   optional float temperature = 2;
+
+  // Optional. Share of probability mass to keep for sampling.
+  optional float top_p = 3 [default = 1.0];
 }
 
 message CFR1PAgent {
@@ -49,6 +52,11 @@ message CFR1PAgent {
 
   // Temperature used for rollouts
   optional float rollout_temperature = 10;
+
+  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
+  // smallest subset of actions that has probability at least top_p is
+  // considered. All other actions are never sampled.
+  optional float rollout_top_p = 16;
 
   // If true, set postman batch size and use wait_till_full
   optional bool postman_sync_batches = 11;
