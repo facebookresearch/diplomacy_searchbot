@@ -36,7 +36,7 @@ INDEX_HTML = """
 <div class="container">
     <nav class="navbar navbar-light" style="background-color: #e3f2fd;">
             <a href="?" class="navbar-brand mb-0 h1">Diplomacy viz</a>
-            {% if phase %}
+            {% if num_phases %}
             Phase: {{ phase }} / {{ num_phases }}
                 {% if phase > 0 %}<a href="?game={{ game_json_path }}&phase={{ phase - 1 }}">prev</a>{% else %}prev{% endif %}
                 {% if phase < num_phases - 1 %}<a href="?game={{ game_json_path }}&phase={{ phase + 1 }}">next</a>{% endif %}
