@@ -91,6 +91,7 @@ from diplomacy.utils.sorted_dict import SortedDict
 
 LOGGER = logging.getLogger(__name__)
 
+
 class _AbstractRequest(NetworkData):
     """ Abstract request class.
 
@@ -105,7 +106,8 @@ class _AbstractRequest(NetworkData):
         For game request Synchronize, timestamp should be game latest timestamp instead
         (see method NetworkGame.synchronize()).
     """
-    __slots__ = ['request_id', 're_sent']
+
+    __slots__ = ["request_id", "re_sent"]
     header = {
         strings.REQUEST_ID: str,
         strings.NAME: str,
@@ -126,31 +128,32 @@ class _AbstractRequest(NetworkData):
         """ Hack: we just use it to validate level. """
         assert cls.level is None or cls.level in strings.ALL_COMM_LEVELS
 
+
 class _AbstractChannelRequest(_AbstractRequest):
     """ Abstract class representing a channel request.
         Token field is automatically filled by a Channel object before sending request.
     """
-    __slots__ = ['token']
-    header = parsing.update_model(_AbstractRequest.header, {
-        strings.TOKEN: str
-    })
+
+    __slots__ = ["token"]
+    header = parsing.update_model(_AbstractRequest.header, {strings.TOKEN: str})
     level = strings.CHANNEL
 
     def __init__(self, **kwargs):
         self.token = None  # type: str
         super(_AbstractChannelRequest, self).__init__(**kwargs)
 
+
 class _AbstractGameRequest(_AbstractChannelRequest):
     """ Abstract class representing a game request.
         Game ID, game role and phase fields are automatically filled by a NetworkGame object before sending request.
     """
-    __slots__ = ['game_id', 'game_role', 'phase']
 
-    header = parsing.extend_model(_AbstractChannelRequest.header, {
-        strings.GAME_ID: str,
-        strings.GAME_ROLE: str,
-        strings.PHASE: str,  # Game short phase.
-    })
+    __slots__ = ["game_id", "game_role", "phase"]
+
+    header = parsing.extend_model(
+        _AbstractChannelRequest.header,
+        {strings.GAME_ID: str, strings.GAME_ROLE: str, strings.PHASE: str},  # Game short phase.
+    )
     level = strings.GAME
 
     # Game request class flag to indicate if this type of game request depends on game phase.
@@ -168,9 +171,11 @@ class _AbstractGameRequest(_AbstractChannelRequest):
     # See request managers in diplomacy.server.request_managers.
     address_in_game = property(lambda self: (self.game_role, self.token))
 
+
 # ====================
 # Connection requests.
 # ====================
+
 
 class GetDaidePort(_AbstractRequest):
     """ Public request to get DAIDE port opened for a game.
@@ -184,14 +189,14 @@ class GetDaidePort(_AbstractRequest):
 
         :raise diplomacy.utils.exceptions.DaidePortException: if there is no DAIDE port associated to given game ID.
     """
-    __slots__ = ['game_id']
-    params = {
-        strings.GAME_ID: str
-    }
+
+    __slots__ = ["game_id"]
+    params = {strings.GAME_ID: str}
 
     def __init__(self, **kwargs):
         self.game_id = None
         super(GetDaidePort, self).__init__(**kwargs)
+
 
 class SignIn(_AbstractRequest):
     """ Connection request. Log in or sign in to server.
@@ -207,20 +212,20 @@ class SignIn(_AbstractRequest):
         :type username: str
         :type password: str
     """
-    __slots__ = ['username', 'password']
-    params = {
-        strings.USERNAME: str,
-        strings.PASSWORD: str,
-    }
+
+    __slots__ = ["username", "password"]
+    params = {strings.USERNAME: str, strings.PASSWORD: str}
 
     def __init__(self, **kwargs):
         self.username = None
         self.password = None
         super(SignIn, self).__init__(**kwargs)
 
+
 # =================
 # Channel requests.
 # =================
+
 
 class CreateGame(_AbstractChannelRequest):
     """ Channel request to create a game.
@@ -265,8 +270,17 @@ class CreateGame(_AbstractChannelRequest):
             - Client: a :class:`.NetworkGame` object representing a client version of the
               game created and joined. Either a power game (if power name given) or an omniscient game.
     """
-    __slots__ = ['game_id', 'power_name', 'state', 'map_name', 'rules', 'n_controls', 'deadline',
-                 'registration_password']
+
+    __slots__ = [
+        "game_id",
+        "power_name",
+        "state",
+        "map_name",
+        "rules",
+        "n_controls",
+        "deadline",
+        "registration_password",
+    ]
     params = {
         strings.GAME_ID: parsing.OptionalValueType(str),
         strings.N_CONTROLS: parsing.OptionalValueType(int),
@@ -274,20 +288,21 @@ class CreateGame(_AbstractChannelRequest):
         strings.REGISTRATION_PASSWORD: parsing.OptionalValueType(str),
         strings.POWER_NAME: parsing.OptionalValueType(str),
         strings.STATE: parsing.OptionalValueType(dict),
-        strings.MAP_NAME: parsing.DefaultValueType(str, 'standard'),
+        strings.MAP_NAME: parsing.DefaultValueType(str, "standard"),
         strings.RULES: parsing.OptionalValueType(parsing.SequenceType(str, sequence_builder=set)),
     }
 
     def __init__(self, **kwargs):
-        self.game_id = ''
+        self.game_id = ""
         self.n_controls = 0
         self.deadline = 0
-        self.registration_password = ''
-        self.power_name = ''
+        self.registration_password = ""
+        self.power_name = ""
         self.state = {}
-        self.map_name = ''
+        self.map_name = ""
         self.rules = set()
         super(CreateGame, self).__init__(**kwargs)
+
 
 class DeleteAccount(_AbstractChannelRequest):
     """ Channel request to delete an account.
@@ -300,14 +315,14 @@ class DeleteAccount(_AbstractChannelRequest):
         :type username: str, optional
         :return: None
     """
-    __slots__ = ['username']
-    params = {
-        strings.USERNAME: OptionalValueType(str)
-    }
+
+    __slots__ = ["username"]
+    params = {strings.USERNAME: OptionalValueType(str)}
 
     def __init__(self, **kwargs):
         self.username = None
         super(DeleteAccount, self).__init__(**kwargs)
+
 
 class GetDummyWaitingPowers(_AbstractChannelRequest):
     """ Channel request to get games with dummy waiting powers.
@@ -330,11 +345,12 @@ class GetDummyWaitingPowers(_AbstractChannelRequest):
               such that the total number of power names in the entire dictionary does not exceed
               given buffer size.
     """
-    __slots__ = ['buffer_size', 'only_game_id', 'only_power']
+
+    __slots__ = ["buffer_size", "only_game_id", "only_power"]
     params = {
         strings.BUFFER_SIZE: int,
-        "only_game_id": str,
-        "only_power": str,
+        "only_game_id": parsing.OptionalValueType(str),
+        "only_power": parsing.OptionalValueType(str),
     }
 
     def __init__(self, **kwargs):
@@ -342,6 +358,7 @@ class GetDummyWaitingPowers(_AbstractChannelRequest):
         self.only_game_id = None
         self.only_power = None
         super(GetDummyWaitingPowers, self).__init__(**kwargs)
+
 
 class GetAvailableMaps(_AbstractChannelRequest):
     """ Channel request to get maps available on server.
@@ -352,7 +369,9 @@ class GetAvailableMaps(_AbstractChannelRequest):
             - Client: a dictionary associating a map name to a dictionary of information related
               to the map. You can especially check key ``'powers'`` to get the list of map power names.
     """
+
     __slots__ = []
+
 
 class GetPlayablePowers(_AbstractChannelRequest):
     """ Channel request to get the list of playable powers for a game.
@@ -365,14 +384,14 @@ class GetPlayablePowers(_AbstractChannelRequest):
             - Server: :class:`.DataPowerNames`
             - Client: set of playable power names for given game ID.
     """
-    __slots__ = ['game_id']
-    params = {
-        strings.GAME_ID: str
-    }
+
+    __slots__ = ["game_id"]
+    params = {strings.GAME_ID: str}
 
     def __init__(self, **kwargs):
         self.game_id = None
         super(GetPlayablePowers, self).__init__(**kwargs)
+
 
 class JoinGame(_AbstractChannelRequest):
     """ Channel request to join a game.
@@ -402,11 +421,12 @@ class JoinGame(_AbstractChannelRequest):
                 If he does have up to game master privileges, then he can also send requests that
                 require game master privileges.
     """
-    __slots__ = ['game_id', 'power_name', 'registration_password']
+
+    __slots__ = ["game_id", "power_name", "registration_password"]
     params = {
         strings.GAME_ID: str,
         strings.POWER_NAME: parsing.OptionalValueType(str),
-        strings.REGISTRATION_PASSWORD: parsing.OptionalValueType(str)
+        strings.REGISTRATION_PASSWORD: parsing.OptionalValueType(str),
     }
 
     def __init__(self, **kwargs):
@@ -414,6 +434,7 @@ class JoinGame(_AbstractChannelRequest):
         self.power_name = None
         self.registration_password = None
         super(JoinGame, self).__init__(**kwargs)
+
 
 class JoinPowers(_AbstractChannelRequest):
     """ Channel request to join many powers of a game with one request.
@@ -433,11 +454,12 @@ class JoinPowers(_AbstractChannelRequest):
             a :class:`.JoinGame` request), and he will be able to manage all the powers through
             the client game returned by :class:`.JoinGame`.
     """
-    __slots__ = ['game_id', 'power_names', 'registration_password']
+
+    __slots__ = ["game_id", "power_names", "registration_password"]
     params = {
         strings.GAME_ID: str,
         strings.POWER_NAMES: parsing.SequenceType(str, sequence_builder=set),
-        strings.REGISTRATION_PASSWORD: parsing.OptionalValueType(str)
+        strings.REGISTRATION_PASSWORD: parsing.OptionalValueType(str),
     }
 
     def __init__(self, **kwargs):
@@ -445,6 +467,7 @@ class JoinPowers(_AbstractChannelRequest):
         self.power_names = None
         self.registration_password = None
         super(JoinPowers, self).__init__(**kwargs)
+
 
 class ListGames(_AbstractChannelRequest):
     """ Channel request to find games.
@@ -465,7 +488,8 @@ class ListGames(_AbstractChannelRequest):
             - Client: a list of :class:`.DataGameInfo` objects, each containing
               a bunch of information about a game found. If no game found, list will be empty.
     """
-    __slots__ = ['game_id', 'status', 'map_name', 'include_protected', 'for_omniscience']
+
+    __slots__ = ["game_id", "status", "map_name", "include_protected", "for_omniscience"]
     params = {
         strings.STATUS: OptionalValueType(parsing.EnumerationType(strings.ALL_GAME_STATUSES)),
         strings.MAP_NAME: OptionalValueType(str),
@@ -482,6 +506,7 @@ class ListGames(_AbstractChannelRequest):
         self.for_omniscience = None
         super(ListGames, self).__init__(**kwargs)
 
+
 class GetGamesInfo(_AbstractChannelRequest):
     """ Channel request to get information for a given list of game indices.
 
@@ -492,18 +517,20 @@ class GetGamesInfo(_AbstractChannelRequest):
             - Server: :class:`.DataGames`
             - Client: a list of :class:`.DataGameInfo` objects.
     """
-    __slots__ = ['games']
-    params = {
-        strings.GAMES: parsing.SequenceType(str)
-    }
+
+    __slots__ = ["games"]
+    params = {strings.GAMES: parsing.SequenceType(str)}
 
     def __init__(self, **kwargs):
         self.games = []
         super(GetGamesInfo, self).__init__(**kwargs)
 
+
 class Logout(_AbstractChannelRequest):
     """ Channel request to logout. Returns nothing. """
+
     __slots__ = []
+
 
 class UnknownToken(_AbstractChannelRequest):
     """ Channel request to tell server that a channel token is unknown.
@@ -513,7 +540,9 @@ class UnknownToken(_AbstractChannelRequest):
             Client does not even wait for a server response when sending this request,
             which acts more like a "client notification" sent to server.
     """
+
     __slots__ = []
+
 
 class SetGrade(_AbstractChannelRequest):
     """ Channel request to modify the grade of a user.
@@ -531,7 +560,8 @@ class SetGrade(_AbstractChannelRequest):
         :type game_id: str, optional
         :return: None
     """
-    __slots__ = ['grade', 'grade_update', 'username', 'game_id']
+
+    __slots__ = ["grade", "grade_update", "username", "game_id"]
     params = {
         strings.GRADE: parsing.EnumerationType(strings.ALL_GRADES),
         strings.GRADE_UPDATE: parsing.EnumerationType(strings.ALL_GRADE_UPDATES),
@@ -546,9 +576,11 @@ class SetGrade(_AbstractChannelRequest):
         self.game_id = None
         super(SetGrade, self).__init__(**kwargs)
 
+
 # ==============
 # Game requests.
 # ==============
+
 
 class ClearCenters(_AbstractGameRequest):
     """ Game request to clear supply centers. See method :meth:`.Game.clear_centers`.
@@ -557,14 +589,14 @@ class ClearCenters(_AbstractGameRequest):
         :type power_name: str, optional
         :return: None
     """
-    __slots__ = ['power_name']
-    params = {
-        strings.POWER_NAME: parsing.OptionalValueType(str),
-    }
+
+    __slots__ = ["power_name"]
+    params = {strings.POWER_NAME: parsing.OptionalValueType(str)}
 
     def __init__(self, **kwargs):
         self.power_name = None  # type: str
         super(ClearCenters, self).__init__(**kwargs)
+
 
 class ClearOrders(_AbstractGameRequest):
     """ Game request to clear orders.
@@ -573,14 +605,14 @@ class ClearOrders(_AbstractGameRequest):
         :type power_name: str, optional
         :return: None
     """
-    __slots__ = ['power_name']
-    params = {
-        strings.POWER_NAME: parsing.OptionalValueType(str),
-    }
+
+    __slots__ = ["power_name"]
+    params = {strings.POWER_NAME: parsing.OptionalValueType(str)}
 
     def __init__(self, **kwargs):
         self.power_name = None  # type: str
         super(ClearOrders, self).__init__(**kwargs)
+
 
 class ClearUnits(_AbstractGameRequest):
     """ Game request to clear units.
@@ -589,26 +621,30 @@ class ClearUnits(_AbstractGameRequest):
         :type power_name: str, optional
         :return: None
     """
-    __slots__ = ['power_name']
-    params = {
-        strings.POWER_NAME: parsing.OptionalValueType(str),
-    }
+
+    __slots__ = ["power_name"]
+    params = {strings.POWER_NAME: parsing.OptionalValueType(str)}
 
     def __init__(self, **kwargs):
         self.power_name = None  # type: str
         super(ClearUnits, self).__init__(**kwargs)
 
+
 class DeleteGame(_AbstractGameRequest):
     """ Game request to delete a game. Require game master privileges. Returns nothing. """
+
     __slots__ = []
     phase_dependent = False
+
 
 class GetAllPossibleOrders(_AbstractGameRequest):
     """ Game request to get all possible orders.
         Return (server and client) a :class:`.DataPossibleOrders` object
         containing possible orders and orderable locations.
     """
+
     __slots__ = []
+
 
 class GetPhaseHistory(_AbstractGameRequest):
     """ Game request to get a list of game phase data from game history for given phases interval.
@@ -625,17 +661,21 @@ class GetPhaseHistory(_AbstractGameRequest):
             - Client: a list of :class:`.GamePhaseData` objects corresponding to game phases
               found between ``from_phase`` and ``to_phase`` in game history.
     """
-    __slots__ = ['from_phase', 'to_phase']
+
+    __slots__ = ["from_phase", "to_phase"]
     params = {
-        strings.FROM_PHASE: parsing.OptionalValueType(parsing.SequenceOfPrimitivesType([str, int])),
+        strings.FROM_PHASE: parsing.OptionalValueType(
+            parsing.SequenceOfPrimitivesType([str, int])
+        ),
         strings.TO_PHASE: parsing.OptionalValueType(parsing.SequenceOfPrimitivesType([str, int])),
     }
     phase_dependent = False
 
     def __init__(self, **kwargs):
-        self.from_phase = ''
-        self.to_phase = ''
+        self.from_phase = ""
+        self.to_phase = ""
         super(GetPhaseHistory, self).__init__(**kwargs)
+
 
 class LeaveGame(_AbstractGameRequest):
     """ Game request to leave a game (logout from game). If request power name is set
@@ -643,17 +683,23 @@ class LeaveGame(_AbstractGameRequest):
         Otherwise, user will be signed out from its observer (or omniscient) role.
         Returns nothing.
     """
+
     __slots__ = []
+
 
 class ProcessGame(_AbstractGameRequest):
     """ Game request to force a game processing. Require master privileges. Return nothing. """
+
     __slots__ = []
+
 
 class QuerySchedule(_AbstractGameRequest):
     """ Game request to get info about current scheduling for a game in server.
         Returns (server and client) a :class:`.DataGameSchedule` object.
     """
+
     __slots__ = []
+
 
 class SaveGame(_AbstractGameRequest):
     """ Game request to get game exported in JSON format.
@@ -663,7 +709,9 @@ class SaveGame(_AbstractGameRequest):
             - Server: :class:`.DataSavedGame`
             - Client: dict - the JSON dictionary.
     """
+
     __slots__ = []
+
 
 class SendGameMessage(_AbstractGameRequest):
     """ Game message to send a user request.
@@ -677,14 +725,14 @@ class SendGameMessage(_AbstractGameRequest):
             - Server: :class:`.DataTimeStamp`
             - Client: nothing (returned timestamp is just used to update message locally)
     """
-    __slots__ = ['message']
-    params = {
-        strings.MESSAGE: parsing.JsonableClassType(Message)
-    }
+
+    __slots__ = ["message"]
+    params = {strings.MESSAGE: parsing.JsonableClassType(Message)}
 
     def __init__(self, **kwargs):
         self.message = None  # type: Message
         super(SendGameMessage, self).__init__(**kwargs)
+
 
 class SetDummyPowers(_AbstractGameRequest):
     """ Game request to set dummy powers. Require game master privileges.
@@ -697,7 +745,8 @@ class SetDummyPowers(_AbstractGameRequest):
         :type user_name: str, optional
         :return: None
     """
-    __slots__ = ['username', 'power_names']
+
+    __slots__ = ["username", "power_names"]
     params = {
         strings.USERNAME: parsing.OptionalValueType(str),
         strings.POWER_NAMES: parsing.OptionalValueType(parsing.SequenceType(str)),
@@ -707,6 +756,7 @@ class SetDummyPowers(_AbstractGameRequest):
         self.username = None
         self.power_names = None
         super(SetDummyPowers, self).__init__(**kwargs)
+
 
 class SetGameState(_AbstractGameRequest):
     """ Game request to set a game state (for exper users). Require game master privileges.
@@ -721,12 +771,15 @@ class SetGameState(_AbstractGameRequest):
         :type messages: dict
         :return: None
     """
-    __slots__ = ['state', 'orders', 'results', 'messages']
+
+    __slots__ = ["state", "orders", "results", "messages"]
     params = {
         strings.STATE: dict,
         strings.ORDERS: parsing.DictType(str, parsing.SequenceType(str)),
         strings.RESULTS: parsing.DictType(str, parsing.SequenceType(str)),
-        strings.MESSAGES: parsing.DictType(int, parsing.JsonableClassType(Message), SortedDict.builder(int, Message)),
+        strings.MESSAGES: parsing.DictType(
+            int, parsing.JsonableClassType(Message), SortedDict.builder(int, Message)
+        ),
     }
 
     def __init__(self, **kwargs):
@@ -735,6 +788,7 @@ class SetGameState(_AbstractGameRequest):
         self.results = {}
         self.messages = {}  # type: SortedDict
         super(SetGameState, self).__init__(**kwargs)
+
 
 class SetGameStatus(_AbstractGameRequest):
     """ Game request to force game status (only if new status differs from previous one).
@@ -750,14 +804,14 @@ class SetGameStatus(_AbstractGameRequest):
         :type status: str
         :return: None
     """
-    __slots__ = ['status']
-    params = {
-        strings.STATUS: parsing.EnumerationType(strings.ALL_GAME_STATUSES),
-    }
+
+    __slots__ = ["status"]
+    params = {strings.STATUS: parsing.EnumerationType(strings.ALL_GAME_STATUSES)}
 
     def __init__(self, **kwargs):
         self.status = None
         super(SetGameStatus, self).__init__(**kwargs)
+
 
 class SetOrders(_AbstractGameRequest):
     """ Game request to set orders for a power.
@@ -771,11 +825,12 @@ class SetOrders(_AbstractGameRequest):
         :type wait: bool, optional
         :return: None
     """
-    __slots__ = ['power_name', 'orders', 'wait']
+
+    __slots__ = ["power_name", "orders", "wait"]
     params = {
         strings.POWER_NAME: parsing.OptionalValueType(str),  # required only for game master.
         strings.ORDERS: parsing.SequenceType(str),
-        strings.WAIT: parsing.OptionalValueType(bool)
+        strings.WAIT: parsing.OptionalValueType(bool),
     }
 
     def __init__(self, **kwargs):
@@ -783,6 +838,7 @@ class SetOrders(_AbstractGameRequest):
         self.orders = None
         self.wait = None
         super(SetOrders, self).__init__(**kwargs)
+
 
 class SetWaitFlag(_AbstractGameRequest):
     """ Game request to set orders for a power.
@@ -794,16 +850,18 @@ class SetWaitFlag(_AbstractGameRequest):
         :type wait: bool
         :return: None
     """
-    __slots__ = ['power_name', 'wait']
+
+    __slots__ = ["power_name", "wait"]
     params = {
         strings.POWER_NAME: parsing.OptionalValueType(str),  # required only for game master.
-        strings.WAIT: bool
+        strings.WAIT: bool,
     }
 
     def __init__(self, **kwargs):
         self.power_name = None
         self.wait = None
         super(SetWaitFlag, self).__init__(**kwargs)
+
 
 class Synchronize(_AbstractGameRequest):
     """ Game request to force synchronization of client game with server game.
@@ -814,15 +872,15 @@ class Synchronize(_AbstractGameRequest):
         :type timestamp: int
         :return: (server and client) a :class:`.DataGameInfo` object.
     """
-    __slots__ = ['timestamp']
-    params = {
-        strings.TIMESTAMP: int
-    }
+
+    __slots__ = ["timestamp"]
+    params = {strings.TIMESTAMP: int}
     phase_dependent = False
 
     def __init__(self, **kwargs):
         self.timestamp = None  # type: int
         super(Synchronize, self).__init__(**kwargs)
+
 
 class Vote(_AbstractGameRequest):
     """ Game request to vote for draw decision.
@@ -838,16 +896,18 @@ class Vote(_AbstractGameRequest):
         :type vote: str
         :return: None
     """
-    __slots__ = ['power_name', 'vote']
+
+    __slots__ = ["power_name", "vote"]
     params = {
         strings.POWER_NAME: parsing.OptionalValueType(str),
-        strings.VOTE: strings.ALL_VOTE_DECISIONS
+        strings.VOTE: strings.ALL_VOTE_DECISIONS,
     }
 
     def __init__(self, **kwargs):
-        self.power_name = ''
-        self.vote = ''
+        self.power_name = ""
+        self.vote = ""
         super(Vote, self).__init__(**kwargs)
+
 
 def parse_dict(json_request):
     """ Parse a JSON dictionary expected to represent a request.
@@ -863,10 +923,14 @@ def parse_dict(json_request):
         raise exceptions.RequestException()
     expected_class_name = common.snake_case_to_upper_camel_case(name)
     request_class = globals().get(expected_class_name, None)
-    if request_class is None or not inspect.isclass(request_class) or not issubclass(request_class, _AbstractRequest):
-        raise exceptions.RequestException('Unknown request name %s' % expected_class_name)
+    if (
+        request_class is None
+        or not inspect.isclass(request_class)
+        or not issubclass(request_class, _AbstractRequest)
+    ):
+        raise exceptions.RequestException("Unknown request name %s" % expected_class_name)
     try:
         return request_class.from_dict(json_request)
     except exceptions.DiplomacyException as exc:
-        LOGGER.error('%s/%s', type(exc).__name__, exc.message)
-        raise exceptions.RequestException('Wrong request format')
+        LOGGER.error("%s/%s", type(exc).__name__, exc.message)
+        raise exceptions.RequestException("Wrong request format")
