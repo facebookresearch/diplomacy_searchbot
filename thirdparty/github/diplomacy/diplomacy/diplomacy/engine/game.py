@@ -4791,9 +4791,10 @@ class Game(Jsonable):
 
                         # Update influence
                         for influence_power in self.powers.values():
-                            if word[-1] in influence_power.influence:
-                                influence_power.influence.remove(word[-1])
-                        power.influence.append(word[-1])
+                            loc = word[-1][:3]
+                            if loc in influence_power.influence:
+                                influence_power.influence.remove(loc)
+                        power.influence.append(loc)
 
                     if unit not in self.ordered_units[power.name]:
                         self.ordered_units[power.name] += [unit]
