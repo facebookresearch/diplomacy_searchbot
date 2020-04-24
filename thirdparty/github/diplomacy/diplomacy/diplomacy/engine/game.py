@@ -30,7 +30,17 @@ from copy import deepcopy
 
 from diplomacy import settings
 import diplomacy.utils.errors as err
-from diplomacy.utils.order_results import OK, NO_CONVOY, BOUNCE, VOID, CUT, DISLODGED, DISRUPTED, DISBAND, MAYBE
+from diplomacy.utils.order_results import (
+    OK,
+    NO_CONVOY,
+    BOUNCE,
+    VOID,
+    CUT,
+    DISLODGED,
+    DISRUPTED,
+    DISBAND,
+    MAYBE,
+)
 from diplomacy.engine.map import Map
 from diplomacy.engine.message import Message, GLOBAL
 from diplomacy.engine.power import Power
@@ -44,6 +54,7 @@ from diplomacy.utils.game_phase_data import GamePhaseData, MESSAGES_TYPE
 # Constants
 UNDETERMINED, POWER, UNIT, LOCATION, COAST, ORDER, MOVE_SEP, OTHER = 0, 1, 2, 3, 4, 5, 6, 7
 LOGGER = logging.getLogger(__name__)
+
 
 class Game(Jsonable):
     """ Game class.
@@ -217,44 +228,107 @@ class Game(Jsonable):
           - e.g. {('A PAR', True): <FRANCE>, ('A PAR', False): <FRANCE>), ...}
 
     """
+
     # pylint: disable=too-many-instance-attributes
-    __slots__ = ['victory', 'no_rules', 'meta_rules', 'phase', 'note', 'map', 'powers', 'outcome', 'error', 'popped',
-                 'messages', 'order_history', 'orders', 'ordered_units', 'phase_type', 'win', 'combat', 'command',
-                 'result', 'supports', 'dislodged', 'lost', 'convoy_paths', 'convoy_paths_possible',
-                 'convoy_paths_dest', 'zobrist_hash', 'renderer', 'game_id', 'map_name', 'role', 'rules',
-                 'message_history', 'state_history', 'result_history', 'status', 'timestamp_created', 'n_controls',
-                 'deadline', 'registration_password', 'observer_level', 'controlled_powers', '_phase_wrapper_type',
-                 'phase_abbr', '_unit_owner_cache', 'daide_port', 'fixed_state']
+    __slots__ = [
+        "victory",
+        "no_rules",
+        "meta_rules",
+        "phase",
+        "note",
+        "map",
+        "powers",
+        "outcome",
+        "error",
+        "popped",
+        "messages",
+        "order_history",
+        "orders",
+        "ordered_units",
+        "phase_type",
+        "win",
+        "combat",
+        "command",
+        "result",
+        "supports",
+        "dislodged",
+        "lost",
+        "convoy_paths",
+        "convoy_paths_possible",
+        "convoy_paths_dest",
+        "zobrist_hash",
+        "renderer",
+        "game_id",
+        "map_name",
+        "role",
+        "rules",
+        "message_history",
+        "state_history",
+        "result_history",
+        "status",
+        "timestamp_created",
+        "n_controls",
+        "deadline",
+        "registration_password",
+        "observer_level",
+        "controlled_powers",
+        "_phase_wrapper_type",
+        "phase_abbr",
+        "_unit_owner_cache",
+        "daide_port",
+        "fixed_state",
+    ]
     zobrist_tables = {}
     rule_cache = ()
     model = {
         strings.CONTROLLED_POWERS: parsing.OptionalValueType(parsing.SequenceType(str)),
         strings.DAIDE_PORT: parsing.OptionalValueType(int),
         strings.DEADLINE: parsing.DefaultValueType(int, 300),
-        strings.ERROR: parsing.DefaultValueType(parsing.SequenceType(parsing.StringableType(err.Error)), []),
+        strings.ERROR: parsing.DefaultValueType(
+            parsing.SequenceType(parsing.StringableType(err.Error)), []
+        ),
         strings.GAME_ID: parsing.OptionalValueType(str),
-        strings.MAP_NAME: parsing.DefaultValueType(str, 'standard'),
-        strings.MESSAGE_HISTORY: parsing.DefaultValueType(parsing.DictType(str, MESSAGES_TYPE), {}),
+        strings.MAP_NAME: parsing.DefaultValueType(str, "standard"),
+        strings.MESSAGE_HISTORY: parsing.DefaultValueType(
+            parsing.DictType(str, MESSAGES_TYPE), {}
+        ),
         strings.MESSAGES: parsing.DefaultValueType(MESSAGES_TYPE, []),
         strings.META_RULES: parsing.DefaultValueType(parsing.SequenceType(str), []),
         strings.N_CONTROLS: parsing.OptionalValueType(int),
         strings.NO_RULES: parsing.DefaultValueType(parsing.SequenceType(str, set), []),
-        strings.NOTE: parsing.DefaultValueType(str, ''),
+        strings.NOTE: parsing.DefaultValueType(str, ""),
         strings.OBSERVER_LEVEL: parsing.OptionalValueType(
-            parsing.EnumerationType((strings.MASTER_TYPE, strings.OMNISCIENT_TYPE, strings.OBSERVER_TYPE))),
+            parsing.EnumerationType(
+                (strings.MASTER_TYPE, strings.OMNISCIENT_TYPE, strings.OBSERVER_TYPE)
+            )
+        ),
         strings.ORDER_HISTORY: parsing.DefaultValueType(
-            parsing.DictType(str, parsing.DictType(str, parsing.SequenceType(str))), {}),
+            parsing.DictType(str, parsing.DictType(str, parsing.SequenceType(str))), {}
+        ),
         strings.OUTCOME: parsing.DefaultValueType(parsing.SequenceType(str), []),
-        strings.PHASE: parsing.DefaultValueType(str, ''),
-        strings.PHASE_ABBR: parsing.DefaultValueType(str, ''),
-        strings.POWERS: parsing.DefaultValueType(parsing.DictType(str, parsing.JsonableClassType(Power)), {}),
+        strings.PHASE: parsing.DefaultValueType(str, ""),
+        strings.PHASE_ABBR: parsing.DefaultValueType(str, ""),
+        strings.POWERS: parsing.DefaultValueType(
+            parsing.DictType(str, parsing.JsonableClassType(Power)), {}
+        ),
         strings.REGISTRATION_PASSWORD: parsing.OptionalValueType(str),
-        strings.RESULT_HISTORY: parsing.DefaultValueType(parsing.DictType(str, parsing.DictType(
-            str, parsing.SequenceType(parsing.StringableType(common.StringableCode)))), {}),
+        strings.RESULT_HISTORY: parsing.DefaultValueType(
+            parsing.DictType(
+                str,
+                parsing.DictType(
+                    str, parsing.SequenceType(parsing.StringableType(common.StringableCode))
+                ),
+            ),
+            {},
+        ),
         strings.ROLE: parsing.DefaultValueType(str, strings.SERVER_TYPE),
-        strings.RULES: parsing.DefaultValueType(parsing.SequenceType(str, sequence_builder=list), ()),
+        strings.RULES: parsing.DefaultValueType(
+            parsing.SequenceType(str, sequence_builder=list), ()
+        ),
         strings.STATE_HISTORY: parsing.DefaultValueType(parsing.DictType(str, dict), {}),
-        strings.STATUS: parsing.DefaultValueType(parsing.EnumerationType(strings.ALL_GAME_STATUSES), strings.FORMING),
+        strings.STATUS: parsing.DefaultValueType(
+            parsing.EnumerationType(strings.ALL_GAME_STATUSES), strings.FORMING
+        ),
         strings.TIMESTAMP_CREATED: parsing.OptionalValueType(int),
         strings.VICTORY: parsing.DefaultValueType(parsing.SequenceType(int), []),
         strings.WIN: parsing.DefaultValueType(int, 0),
@@ -266,7 +340,7 @@ class Game(Jsonable):
         self.victory = None
         self.no_rules = set()
         self.meta_rules = []
-        self.phase, self.note = '', ''
+        self.phase, self.note = "", ""
         self.map = None  # type: Map
         self.powers = {}
         self.outcome, self.error, self.popped = [], [], []
@@ -283,7 +357,12 @@ class Game(Jsonable):
         self.messages = None  # type: SortedDict
         self.role = None  # type: str
         self.rules = []
-        self.state_history, self.order_history, self.result_history, self.message_history = {}, {}, {}, {}
+        self.state_history, self.order_history, self.result_history, self.message_history = (
+            {},
+            {},
+            {},
+            {},
+        )
         self.status = None  # type: str
         self.timestamp_created = None  # type: int
         self.n_controls = None
@@ -295,7 +374,7 @@ class Game(Jsonable):
         self.fixed_state = None
 
         # Caches
-        self._unit_owner_cache = None               # {(unit, coast_required): owner}
+        self._unit_owner_cache = None  # {(unit, coast_required): owner}
 
         # Remove rules from kwargs (if present), as we want to add them manually using self.add_rule().
         rules = kwargs.pop(strings.RULES, None)
@@ -307,12 +386,14 @@ class Game(Jsonable):
         super(Game, self).__init__(**kwargs)
 
         # Check settings.
-        if self.registration_password is not None and self.registration_password == '':
-            raise exceptions.DiplomacyException('Registration password must be None or non-empty string.')
+        if self.registration_password is not None and self.registration_password == "":
+            raise exceptions.DiplomacyException(
+                "Registration password must be None or non-empty string."
+            )
         if self.n_controls is not None and self.n_controls < 0:
-            raise exceptions.NaturalIntegerException('n_controls must be a natural integer.')
+            raise exceptions.NaturalIntegerException("n_controls must be a natural integer.")
         if self.deadline < 0:
-            raise exceptions.NaturalIntegerException('Deadline must be a natural integer.')
+            raise exceptions.NaturalIntegerException("Deadline must be a natural integer.")
 
         # Check rules.
         if rules is None:
@@ -323,15 +404,15 @@ class Game(Jsonable):
             self.add_rule(rule)
 
         # Check settings about rule NO_DEADLINE.
-        if 'NO_DEADLINE' in self.rules:
+        if "NO_DEADLINE" in self.rules:
             self.deadline = 0
 
         # Check settings about rule SOLITAIRE.
-        if 'SOLITAIRE' in self.rules:
+        if "SOLITAIRE" in self.rules:
             self.n_controls = 0
         elif self.n_controls == 0:
             # If number of allowed players is 0, the game can only be solitaire.
-            self.add_rule('SOLITAIRE')
+            self.add_rule("SOLITAIRE")
 
         # Check timestamp_created.
         if self.timestamp_created is None:
@@ -339,7 +420,7 @@ class Game(Jsonable):
 
         # Check game ID.
         if self.game_id is None:
-            self.game_id = base64.b64encode(os.urandom(12), b'-_').decode('utf-8')
+            self.game_id = base64.b64encode(os.urandom(12), b"-_").decode("utf-8")
 
         # Validating status
         self._validate_status(reinit_powers=(self.timestamp_created is None))
@@ -372,30 +453,38 @@ class Game(Jsonable):
 
         self._phase_wrapper_type = common.str_cmp_class(self.map.compare_phases)
 
-        self.order_history = SortedDict(self._phase_wrapper_type, dict,
-                                        {self._phase_wrapper_type(key): value
-                                         for key, value in self.order_history.items()})
-        self.message_history = SortedDict(self._phase_wrapper_type, SortedDict,
-                                          {self._phase_wrapper_type(key): value
-                                           for key, value in self.message_history.items()})
-        self.state_history = SortedDict(self._phase_wrapper_type, dict,
-                                        {self._phase_wrapper_type(key): value
-                                         for key, value in self.state_history.items()})
-        self.result_history = SortedDict(self._phase_wrapper_type, dict,
-                                         {self._phase_wrapper_type(key): value
-                                          for key, value in self.result_history.items()})
+        self.order_history = SortedDict(
+            self._phase_wrapper_type,
+            dict,
+            {self._phase_wrapper_type(key): value for key, value in self.order_history.items()},
+        )
+        self.message_history = SortedDict(
+            self._phase_wrapper_type,
+            SortedDict,
+            {self._phase_wrapper_type(key): value for key, value in self.message_history.items()},
+        )
+        self.state_history = SortedDict(
+            self._phase_wrapper_type,
+            dict,
+            {self._phase_wrapper_type(key): value for key, value in self.state_history.items()},
+        )
+        self.result_history = SortedDict(
+            self._phase_wrapper_type,
+            dict,
+            {self._phase_wrapper_type(key): value for key, value in self.result_history.items()},
+        )
 
     def __str__(self):
         """ Returns a string representation of the game instance """
         show_map = self.map
         show_result = self.outcome
 
-        text = ''
-        text += 'GAME %s%s%s' % (self.game_id, '\nPHASE ', self.phase)
-        text += '\nMAP %s' % self.map_name if show_map else ''
-        text += '\nRESULT %s' % ' '.join(self.outcome) if show_result else ''
-        text += '\nRULE '.join([''] + [rule for rule in self.rules if rule not in self.meta_rules])
-        text += '\nRULE !'.join([''] + [no_rule for no_rule in self.no_rules])
+        text = ""
+        text += "GAME %s%s%s" % (self.game_id, "\nPHASE ", self.phase)
+        text += "\nMAP %s" % self.map_name if show_map else ""
+        text += "\nRESULT %s" % " ".join(self.outcome) if show_result else ""
+        text += "\nRULE ".join([""] + [rule for rule in self.rules if rule not in self.meta_rules])
+        text += "\nRULE !".join([""] + [no_rule for no_rule in self.no_rules])
         return text
 
     def __deepcopy__(self, memo):
@@ -405,14 +494,14 @@ class Game(Jsonable):
 
         # Deep copying
         for key in self._slots:
-            if key in ['map', 'renderer', 'powers']:
+            if key in ["map", "renderer", "powers"]:
                 continue
             setattr(result, key, deepcopy(getattr(self, key)))
-        setattr(result, 'map', self.map)
-        setattr(result, 'powers', {})
+        setattr(result, "map", self.map)
+        setattr(result, "powers", {})
         for power in self.powers.values():
             result.powers[power.name] = deepcopy(power)
-            setattr(result.powers[power.name], 'game', result)
+            setattr(result.powers[power.name], "game", result)
         return result
 
     # ====================================================================
@@ -425,7 +514,7 @@ class Game(Jsonable):
             Should be used in place of "self.__slots__" to be sure to retrieve all
             attribute names from a derived class (including parent slots).
         """
-        return (name for cls in type(self).__mro__ for name in getattr(cls, '__slots__', ()))
+        return (name for cls in type(self).__mro__ for name in getattr(cls, "__slots__", ()))
 
     @property
     def power(self):
@@ -439,7 +528,7 @@ class Game(Jsonable):
     @property
     def is_game_done(self):
         """ Returns a boolean flag that indicates if the game is done """
-        return self.phase == 'COMPLETED'
+        return self.phase == "COMPLETED"
 
     is_game_forming = property(lambda self: self.status == strings.FORMING)
     is_game_active = property(lambda self: self.status == strings.ACTIVE)
@@ -448,15 +537,15 @@ class Game(Jsonable):
     is_game_completed = property(lambda self: self.status == strings.COMPLETED)
     current_short_phase = property(lambda self: self.map.phase_abbr(self.phase, self.phase))
 
-    civil_disorder = property(lambda self: 'CIVIL_DISORDER' in self.rules)
-    multiple_powers_per_player = property(lambda self: 'MULTIPLE_POWERS_PER_PLAYER' in self.rules)
-    no_observations = property(lambda self: 'NO_OBSERVATIONS' in self.rules)
-    no_press = property(lambda self: 'NO_PRESS' in self.rules)
-    power_choice = property(lambda self: 'POWER_CHOICE' in self.rules)
-    public_press = property(lambda self: 'PUBLIC_PRESS' in self.rules)
-    real_time = property(lambda self: 'REAL_TIME' in self.rules)
-    start_master = property(lambda self: 'START_MASTER' in self.rules)
-    solitaire = property(lambda self: 'SOLITAIRE' in self.rules)
+    civil_disorder = property(lambda self: "CIVIL_DISORDER" in self.rules)
+    multiple_powers_per_player = property(lambda self: "MULTIPLE_POWERS_PER_PLAYER" in self.rules)
+    no_observations = property(lambda self: "NO_OBSERVATIONS" in self.rules)
+    no_press = property(lambda self: "NO_PRESS" in self.rules)
+    power_choice = property(lambda self: "POWER_CHOICE" in self.rules)
+    public_press = property(lambda self: "PUBLIC_PRESS" in self.rules)
+    real_time = property(lambda self: "REAL_TIME" in self.rules)
+    start_master = property(lambda self: "START_MASTER" in self.rules)
+    solitaire = property(lambda self: "SOLITAIRE" in self.rules)
 
     # ==============================================================
     # Application/network methods (mainly used for connected games).
@@ -480,7 +569,7 @@ class Game(Jsonable):
         """
         current_state = (self.get_current_phase(), self.get_hash())
         if self.fixed_state and self.fixed_state != current_state:
-            raise RuntimeError('Game already used in a different context.')
+            raise RuntimeError("Game already used in a different context.")
         self.fixed_state = current_state
         return self
 
@@ -497,7 +586,7 @@ class Game(Jsonable):
         current_state = (self.get_current_phase(), self.get_hash())
         if self.fixed_state and current_state != self.fixed_state:
             if log_error:
-                LOGGER.error('State has changed from: %s to %s', self.fixed_state, current_state)
+                LOGGER.error("State has changed from: %s to %s", self.fixed_state, current_state)
             return False
         return True
 
@@ -546,7 +635,9 @@ class Game(Jsonable):
             Note that an empty orders set is considered as a defined order as long as it was
             explicitly set by the power controller.
         """
-        return all(power.is_eliminated() or power.does_not_wait() for power in self.powers.values())
+        return all(
+            power.is_eliminated() or power.does_not_wait() for power in self.powers.values()
+        )
 
     def has_power(self, power_name):
         """ Return True if this game has given power name. """
@@ -560,7 +651,9 @@ class Game(Jsonable):
 
     def count_controlled_powers(self):
         """ Return the number of controlled map powers. """
-        return sum(1 for power_name in self.get_map_power_names() if self.is_controlled(power_name))
+        return sum(
+            1 for power_name in self.get_map_power_names() if self.is_controlled(power_name)
+        )
 
     def get_controlled_power_names(self, username):
         """ Return the list of power names currently controlled by given user name. """
@@ -577,24 +670,31 @@ class Game(Jsonable):
 
     def get_dummy_power_names(self):
         """ Return sequence of not eliminated dummy power names. """
-        return set(power_name for power_name in self.get_map_power_names()
-                   if self.is_dummy(power_name) and not self.get_power(power_name).is_eliminated())
+        return set(
+            power_name
+            for power_name in self.get_map_power_names()
+            if self.is_dummy(power_name) and not self.get_power(power_name).is_eliminated()
+        )
 
     def get_dummy_unordered_power_names(self):
         """ Return a sequence of playable dummy power names
             without orders but still orderable and with orderable locations.
         """
-        return [power_name for power_name in self.get_map_power_names() if
-                # power must not be controlled by a user
-                self.is_dummy(power_name)
-                # power must be still playable
-                and not self.get_power(power_name).is_eliminated()
-                # power must not have yet orders
-                and not self.get_orders(power_name)
-                # power must have orderable locations
-                and self.get_orderable_locations(power_name)
-                # power must be waiting
-                and self.get_power(power_name).wait]
+        return [
+            power_name
+            for power_name in self.get_map_power_names()
+            if
+            # power must not be controlled by a user
+            self.is_dummy(power_name)
+            # power must be still playable
+            and not self.get_power(power_name).is_eliminated()
+            # power must not have yet orders
+            and not self.get_orders(power_name)
+            # power must have orderable locations
+            and self.get_orderable_locations(power_name)
+            # power must be waiting
+            and self.get_power(power_name).wait
+        ]
 
     def get_controllers(self):
         """ Return a dictionary mapping each power name to its current controller name."""
@@ -623,7 +723,7 @@ class Game(Jsonable):
         """
         timestamp = self.timestamp_created
         if self.state_history:
-            timestamp = max(self.state_history.last_value()['timestamp'], timestamp)
+            timestamp = max(self.state_history.last_value()["timestamp"], timestamp)
         if self.messages:
             timestamp = max(self.messages.last_key(), timestamp)
         return timestamp
@@ -645,23 +745,29 @@ class Game(Jsonable):
 
         # Observer can see global messages and system messages sent to observers.
         if isinstance(game_role, str) and game_role == strings.OBSERVER_TYPE:
-            return {message.time_sent: message
-                    for message in messages.sub(timestamp_from, timestamp_to)
-                    if message.is_global() or message.for_observer()}
+            return {
+                message.time_sent: message
+                for message in messages.sub(timestamp_from, timestamp_to)
+                if message.is_global() or message.for_observer()
+            }
 
         # Omniscient observer can see all messages.
         if isinstance(game_role, str) and game_role == strings.OMNISCIENT_TYPE:
-            return {message.time_sent: message
-                    for message in messages.sub(timestamp_from, timestamp_to)}
+            return {
+                message.time_sent: message
+                for message in messages.sub(timestamp_from, timestamp_to)
+            }
 
         # Power can see global messages and all messages she sent or received.
         if isinstance(game_role, str):
             game_role = [game_role]
         elif not isinstance(game_role, list):
             game_role = list(game_role)
-        return {message.time_sent: message
-                for message in messages.sub(timestamp_from, timestamp_to)
-                if message.is_global() or message.recipient in game_role or message.sender in game_role}
+        return {
+            message.time_sent: message
+            for message in messages.sub(timestamp_from, timestamp_to)
+            if message.is_global() or message.recipient in game_role or message.sender in game_role
+        }
 
     def get_phase_history(self, from_phase=None, to_phase=None, game_role=None):
         """ Return a list of game phase data from game history between given phases (bounds included).
@@ -700,13 +806,22 @@ class Game(Jsonable):
         if game_role:
             messages = [self.filter_messages(msg_dict, game_role) for msg_dict in messages]
         assert len(phases) == len(states) == len(orders) == len(messages) == len(results), (
-            len(phases), len(states), len(orders), len(messages), len(results))
-        return [GamePhaseData(name=str(phases[i]),
-                              state=states[i],
-                              orders=orders[i],
-                              messages=messages[i],
-                              results=results[i])
-                for i in range(len(phases))]
+            len(phases),
+            len(states),
+            len(orders),
+            len(messages),
+            len(results),
+        )
+        return [
+            GamePhaseData(
+                name=str(phases[i]),
+                state=states[i],
+                orders=orders[i],
+                messages=messages[i],
+                results=results[i],
+            )
+            for i in range(len(phases))
+        ]
 
     def get_phase_from_history(self, short_phase_name, game_role=None):
         """ Return a game phase data corresponding to given phase from phase history. """
@@ -714,11 +829,11 @@ class Game(Jsonable):
 
     def phase_history_from_timestamp(self, timestamp):
         """ Return list of game phase data from game history for which state timestamp >= given timestamp. """
-        earliest_phase = ''
+        earliest_phase = ""
         for state in self.state_history.reversed_values():
-            if state['timestamp'] < timestamp:
+            if state["timestamp"] < timestamp:
                 break
-            earliest_phase = state['name']
+            earliest_phase = state["name"]
         return self.get_phase_history(from_phase=earliest_phase) if earliest_phase else []
 
     def extend_phase_history(self, game_phase_data):
@@ -777,16 +892,20 @@ class Game(Jsonable):
 
         # There are no expected results for orders, as there are no orders processed.
 
-        previous_phase_data = GamePhaseData(name=str(previous_phase),
-                                            state=previous_state,
-                                            orders=previous_orders,
-                                            messages=previous_messages,
-                                            results={})
-        current_phase_data = GamePhaseData(name=self.current_short_phase,
-                                           state=self.get_state(),
-                                           orders={},
-                                           messages={},
-                                           results={})
+        previous_phase_data = GamePhaseData(
+            name=str(previous_phase),
+            state=previous_state,
+            orders=previous_orders,
+            messages=previous_messages,
+            results={},
+        )
+        current_phase_data = GamePhaseData(
+            name=self.current_short_phase,
+            state=self.get_state(),
+            orders={},
+            messages={},
+            results={},
+        )
 
         return previous_phase_data, current_phase_data
 
@@ -829,7 +948,9 @@ class Game(Jsonable):
         assert self.is_player_game()
         if not self.has_power(recipient):
             raise exceptions.MapPowerException(recipient)
-        return Message(phase=self.current_short_phase, sender=self.role, recipient=recipient, message=body)
+        return Message(
+            phase=self.current_short_phase, sender=self.role, recipient=recipient, message=body
+        )
 
     def new_global_message(self, body):
         """ Create an undated (without timestamp) global message to be sent from a power via server.
@@ -840,7 +961,9 @@ class Game(Jsonable):
             :rtype: Message
         """
         assert self.is_player_game()
-        return Message(phase=self.current_short_phase, sender=self.role, recipient=GLOBAL, message=body)
+        return Message(
+            phase=self.current_short_phase, sender=self.role, recipient=GLOBAL, message=body
+        )
 
     def add_message(self, message):
         """ Add message to current game data.
@@ -886,8 +1009,11 @@ class Game(Jsonable):
     def count_voted(self):
         """ Return the count of controlled powers who already voted for a draw for current phase. """
         assert self.is_server_game() or self.is_omniscient_game()
-        return sum(1 for power in self.powers.values()
-                   if not power.is_eliminated() and power.vote != strings.NEUTRAL)
+        return sum(
+            1
+            for power in self.powers.values()
+            if not power.is_eliminated() and power.vote != strings.NEUTRAL
+        )
 
     def clear_vote(self):
         """ Clear current vote. """
@@ -920,7 +1046,7 @@ class Game(Jsonable):
             power_name = power_name.upper()
         power = self.get_power(power_name)
         if power_name is not None:
-            return power.units[:] + ['*{}'.format(unit) for unit in power.retreats]
+            return power.units[:] + ["*{}".format(unit) for unit in power.retreats]
         if power_name is None:
             units = {}
             for power in self.powers.values():
@@ -963,14 +1089,22 @@ class Game(Jsonable):
         # Getting orders for a particular power
         # Skipping VOID and WAIVE orders in Adjustment/Retreats phase
         if power_name is not None:
-            if self.get_current_phase()[-1] == 'M':
-                if 'NO_CHECK' in self.rules:
-                    power_orders = [power.orders[order] for order in power.orders if power.orders[order]]
+            if self.get_current_phase()[-1] == "M":
+                if "NO_CHECK" in self.rules:
+                    power_orders = [
+                        power.orders[order] for order in power.orders if power.orders[order]
+                    ]
                 else:
-                    power_orders = ['{} {}'.format(unit, unit_order) for unit, unit_order in power.orders.items()]
+                    power_orders = [
+                        "{} {}".format(unit, unit_order)
+                        for unit, unit_order in power.orders.items()
+                    ]
             else:
-                power_orders = [order for order in power.adjust
-                                if order and order != 'WAIVE' and order.split()[0] != 'VOID']
+                power_orders = [
+                    order
+                    for order in power.adjust
+                    if order and order != "WAIVE" and order.split()[0] != "VOID"
+                ]
             return power_orders
 
         # Recursively calling itself to get all powers
@@ -998,7 +1132,7 @@ class Game(Jsonable):
             current_phase_type = self.get_current_phase()[-1]
 
             # Adjustment
-            if current_phase_type == 'A':
+            if current_phase_type == "A":
                 build_count = len(power.centers) - len(power.units)
 
                 # Building - All unoccupied homes
@@ -1014,7 +1148,7 @@ class Game(Jsonable):
                     orderable_locs = [unit[2:5] for unit in power.units]
 
             # Retreating
-            elif current_phase_type == 'R':
+            elif current_phase_type == "R":
                 orderable_locs = [unit[2:5] for unit in power.retreats]
 
             # Movement
@@ -1025,7 +1159,9 @@ class Game(Jsonable):
             return sorted(orderable_locs)
 
         # All powers
-        return {power.name: self.get_orderable_locations(power.name) for power in self.powers.values()}
+        return {
+            power.name: self.get_orderable_locations(power.name) for power in self.powers.values()
+        }
 
     def get_order_status(self, power_name=None, unit=None, loc=None):
         """ Returns a list or a dict representing the order status ('', 'no convoy', 'bounce', 'void', 'cut',
@@ -1049,7 +1185,7 @@ class Game(Jsonable):
         """
         # Specific location
         if unit or loc:
-            assert bool(unit) != bool(loc), 'Required either a unit or a location, not both.'
+            assert bool(unit) != bool(loc), "Required either a unit or a location, not both."
             result_dict = self.result_history.last_value() if self.result_history else {}
             if unit:
                 # Unit given, return list of order status
@@ -1067,8 +1203,8 @@ class Game(Jsonable):
             order_status = {}
             if self.state_history:
                 state_history = self.state_history.last_value()
-                for ordered_unit in state_history['units'][power_name]:
-                    ordered_unit = ordered_unit.replace('*', '')
+                for ordered_unit in state_history["units"][power_name]:
+                    ordered_unit = ordered_unit.replace("*", "")
                     order_status[ordered_unit] = self.get_order_status(power_name, ordered_unit)
             return order_status
 
@@ -1109,21 +1245,32 @@ class Game(Jsonable):
         if reset and power_name in self.powers:
             self.powers[power_name].clear_units()
 
-        regular_units = [unit for unit in units if unit[0] != '*']
-        dislodged_units = [unit[1:] for unit in units if unit[0] == '*']
+        regular_units = [unit for unit in units if unit[0] != "*"]
+        dislodged_units = [unit[1:] for unit in units if unit[0] == "*"]
         influence = [unit[2:5] for unit in regular_units + dislodged_units]
 
         # Removing units that are already there
         for power in self.powers.values():
             for unit in regular_units:
                 unit_loc = unit[2:5]
-                for unit_to_remove in {p_unit for p_unit in power.units if p_unit[2:5] == unit_loc}:
-                    self.update_hash(power.name, unit_type=unit_to_remove[0], loc=unit_to_remove[2:])
+                for unit_to_remove in {
+                    p_unit for p_unit in power.units if p_unit[2:5] == unit_loc
+                }:
+                    self.update_hash(
+                        power.name, unit_type=unit_to_remove[0], loc=unit_to_remove[2:]
+                    )
                     power.units.remove(unit_to_remove)
             for unit in dislodged_units:
                 unit_loc = unit[2:5]
-                for unit_to_remove in {p_unit for p_unit in power.retreats if p_unit[2:5] == unit_loc}:
-                    self.update_hash(power.name, unit_type=unit_to_remove[0], loc=unit_to_remove[2:], is_dislodged=True)
+                for unit_to_remove in {
+                    p_unit for p_unit in power.retreats if p_unit[2:5] == unit_loc
+                }:
+                    self.update_hash(
+                        power.name,
+                        unit_type=unit_to_remove[0],
+                        loc=unit_to_remove[2:],
+                        is_dislodged=True,
+                    )
                     del power.retreats[unit_to_remove]
             for loc in influence:
                 if loc in power.influence:
@@ -1138,9 +1285,11 @@ class Game(Jsonable):
             if len(word) != 2:
                 continue
             unit_type, unit_loc = word
-            if unit_type in ('A', 'F') \
-                    and unit_loc in [loc.upper() for loc in self.map.locs] \
-                    and self.map.is_valid_unit(unit):
+            if (
+                unit_type in ("A", "F")
+                and unit_loc in [loc.upper() for loc in self.map.locs]
+                and self.map.is_valid_unit(unit)
+            ):
                 if power and unit not in power.units:
                     self.update_hash(power_name, unit_type=unit_type, loc=unit_loc)
                     power.units.append(unit)
@@ -1154,21 +1303,27 @@ class Game(Jsonable):
             if len(word) != 2:
                 continue
             unit_type, unit_loc = word
-            if unit_type in ('A', 'F') and unit_loc in [loc.upper() for loc in self.map.locs]:
+            if unit_type in ("A", "F") and unit_loc in [loc.upper() for loc in self.map.locs]:
                 if power and unit not in power.retreats:
-                    self.update_hash(power_name, unit_type=unit_type, loc=unit_loc, is_dislodged=True)
+                    self.update_hash(
+                        power_name, unit_type=unit_type, loc=unit_loc, is_dislodged=True
+                    )
                     power.retreats[unit] = []
 
         # Set retreats locations for all powers
-        if self.get_current_phase()[-1] == 'R':
+        if self.get_current_phase()[-1] == "R":
             for power in self.powers.values():
                 for unit in power.retreats:
                     word = unit.upper().split()
                     if len(word) != 2:
                         continue
                     unit_type, unit_loc = word
-                    abuts = [abut.upper() for abut in self.map.abut_list(unit_loc, incl_no_coast=True)
-                             if self._abuts(unit_type, unit_loc, '-', abut.upper()) and not self._occupant(abut)]
+                    abuts = [
+                        abut.upper()
+                        for abut in self.map.abut_list(unit_loc, incl_no_coast=True)
+                        if self._abuts(unit_type, unit_loc, "-", abut.upper())
+                        and not self._occupant(abut)
+                    ]
                     power.retreats[unit] = abuts
 
         # Clearing cache
@@ -1230,10 +1385,12 @@ class Game(Jsonable):
         power_name = power_name.upper()
 
         if not self.has_power(power_name):
-            raise exceptions.MapPowerException('Unknown power %s' % power_name)
+            raise exceptions.MapPowerException("Unknown power %s" % power_name)
 
         if self.is_player_game() and self.role != power_name:
-            raise exceptions.GameRoleException('Player game for %s only accepts orders for this power.' % self.role)
+            raise exceptions.GameRoleException(
+                "Player game for %s only accepts orders for this power." % self.role
+            )
 
         power = self.get_power(power_name)
 
@@ -1244,15 +1401,17 @@ class Game(Jsonable):
         orders = [order for order in orders if order]
 
         # Setting orders depending on phase type
-        if self.phase_type == 'R':
+        if self.phase_type == "R":
             self._update_retreat_orders(power, orders, expand=expand, replace=replace)
-        elif self.phase_type == 'A':
+        elif self.phase_type == "A":
             self._update_adjust_orders(power, orders, expand=expand, replace=replace)
         else:
             self._update_orders(power, orders, expand=expand, replace=replace)
-        power.order_is_set = (OrderSettings.ORDER_SET
-                              if self.get_orders(power.name)
-                              else OrderSettings.ORDER_SET_EMPTY)
+        power.order_is_set = (
+            OrderSettings.ORDER_SET
+            if self.get_orders(power.name)
+            else OrderSettings.ORDER_SET_EMPTY
+        )
 
     def set_wait(self, power_name, wait):
         """ Set wait flag for a power.
@@ -1267,7 +1426,7 @@ class Game(Jsonable):
         if not self.has_power(power_name):
             return
 
-        power = self.get_power(power_name.upper())          # type: diplomacy.engine.power.Power
+        power = self.get_power(power_name.upper())  # type: diplomacy.engine.power.Power
         power.wait = wait
 
     def clear_units(self, power_name=None):
@@ -1317,14 +1476,14 @@ class Game(Jsonable):
 
     def set_current_phase(self, new_phase):
         """ Changes the phase to the specified new phase (e.g. 'S1901M') """
-        if new_phase in ('FORMING', 'COMPLETED'):
+        if new_phase in ("FORMING", "COMPLETED"):
             self.phase = new_phase
             self.phase_type = None
         else:
             self.phase = self.map.phase_long(new_phase)
             self.phase_type = self.phase.split()[-1][0]
 
-    def render(self, incl_orders=True, incl_abbrev=False, output_format='svg', output_path=None):
+    def render(self, incl_orders=True, incl_abbrev=False, output_format="svg", output_path=None):
         """ Renders the current game and returns its image representation
 
             :param incl_orders:  Optional. Flag to indicate we also want to render orders.
@@ -1339,10 +1498,12 @@ class Game(Jsonable):
         """
         if not self.renderer:
             self.renderer = Renderer(self)
-        return self.renderer.render(incl_orders=incl_orders,
-                                    incl_abbrev=incl_abbrev,
-                                    output_format=output_format,
-                                    output_path=output_path)
+        return self.renderer.render(
+            incl_orders=incl_orders,
+            incl_abbrev=incl_abbrev,
+            output_format=output_format,
+            output_path=output_path,
+        )
 
     def add_rule(self, rule):
         """ Adds a rule to the current rule list
@@ -1357,9 +1518,9 @@ class Game(Jsonable):
         if rule not in valid_rules or rule in self.no_rules:
             return
 
-        forbidden_rules = self.__class__.rule_cache[0].get(rule, {}).get('!', [])
-        rules_to_add = self.__class__.rule_cache[0].get(rule, {}).get('+', [])
-        rules_to_remove = self.__class__.rule_cache[0].get(rule, {}).get('-', [])
+        forbidden_rules = self.__class__.rule_cache[0].get(rule, {}).get("!", [])
+        rules_to_add = self.__class__.rule_cache[0].get(rule, {}).get("+", [])
+        rules_to_remove = self.__class__.rule_cache[0].get(rule, {}).get("-", [])
 
         # Making sure we don't already have a forbidden rule
         for forbidden in forbidden_rules:
@@ -1401,7 +1562,9 @@ class Game(Jsonable):
         # Create a map, and check for errors
         self.map = Map(self.map_name)
         if self.map_name != self.map.name:
-            raise RuntimeError('Invalid Map loaded. Expected %s - Got %s' % (self.map_name, self.map.name))
+            raise RuntimeError(
+                "Invalid Map loaded. Expected %s - Got %s" % (self.map_name, self.map.name)
+            )
 
         # Adding map rules
         for rule in self.map.rules:
@@ -1413,12 +1576,12 @@ class Game(Jsonable):
         self.error += self.map.error
 
         # Sets the current phase to the long version
-        if self.phase and ' ' not in self.phase and self.phase not in ('FORMING', 'COMPLETED'):
+        if self.phase and " " not in self.phase and self.phase not in ("FORMING", "COMPLETED"):
             self.phase = self.map.phase_long(self.phase)
 
         # Have the Game process all lines in the map file that were in DIRECTIVES clauses (this includes any RULE lines)
         # Do this for all directives given without a variant and for those specific for this Game's variant.
-        if self.phase == 'FORMING':
+        if self.phase == "FORMING":
             return
 
         # Resetting powers
@@ -1436,11 +1599,11 @@ class Game(Jsonable):
         previous_state = self.get_state()
 
         if self.error:
-            if 'IGNORE_ERRORS' not in self.rules:
-                print('The following errors were encountered and were cleared before processing.')
+            if "IGNORE_ERRORS" not in self.rules:
+                print("The following errors were encountered and were cleared before processing.")
                 for error in self.error:
-                    print('-- %s' % error)
-                print('-' * 32)
+                    print("-- %s" % error)
+                print("-" * 32)
             self.error = []
         self._process()
 
@@ -1461,11 +1624,13 @@ class Game(Jsonable):
                     self.set_orders(power_name, [])
                     self.set_wait(power_name, False)
 
-        return GamePhaseData(name=str(previous_phase),
-                             state=previous_state,
-                             orders=previous_orders,
-                             messages=previous_messages,
-                             results=self.result_history[previous_phase])
+        return GamePhaseData(
+            name=str(previous_phase),
+            state=previous_state,
+            orders=previous_orders,
+            messages=previous_messages,
+            results=self.result_history[previous_phase],
+        )
 
     def build_caches(self):
         """ Rebuilds the various caches """
@@ -1487,7 +1652,9 @@ class Game(Jsonable):
             for unit in power.units:
                 self.update_hash(power.name, unit_type=unit[0], loc=unit[2:])
             for dis_unit in power.retreats:
-                self.update_hash(power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True)
+                self.update_hash(
+                    power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True
+                )
             for center in power.centers:
                 self.update_hash(power.name, loc=center, is_center=True)
             for home in power.homes:
@@ -1504,7 +1671,9 @@ class Game(Jsonable):
         # Needs to be a string, otherwise json.dumps overflows
         return str(self.zobrist_hash)
 
-    def update_hash(self, power, unit_type='', loc='', is_dislodged=False, is_center=False, is_home=False):
+    def update_hash(
+        self, power, unit_type="", loc="", is_dislodged=False, is_center=False, is_home=False
+    ):
         """ Updates the zobrist hash for the current game
 
             :param power: The name of the power owning the unit, supply center or home
@@ -1521,40 +1690,44 @@ class Game(Jsonable):
         loc = loc[:3].upper() if is_center or is_home else loc.upper()
         power = power.upper()
 
-        power_ix = zobrist['map_powers'].index(power)
-        loc_ix = zobrist['map_locs'].index(loc)
-        unit_type_ix = ['A', 'F'].index(unit_type) if unit_type in ['A', 'F'] else -1
+        power_ix = zobrist["map_powers"].index(power)
+        loc_ix = zobrist["map_locs"].index(loc)
+        unit_type_ix = ["A", "F"].index(unit_type) if unit_type in ["A", "F"] else -1
 
         # Dislodged
         if is_dislodged:
-            self.zobrist_hash ^= zobrist['dis_unit_type'][unit_type_ix][loc_ix]
-            self.zobrist_hash ^= zobrist['dis_units'][power_ix][loc_ix]
+            self.zobrist_hash ^= zobrist["dis_unit_type"][unit_type_ix][loc_ix]
+            self.zobrist_hash ^= zobrist["dis_units"][power_ix][loc_ix]
 
         # Supply Center
         elif is_center:
-            self.zobrist_hash ^= zobrist['centers'][power_ix][loc_ix]
+            self.zobrist_hash ^= zobrist["centers"][power_ix][loc_ix]
 
         # Home
         elif is_home:
-            self.zobrist_hash ^= zobrist['homes'][power_ix][loc_ix]
+            self.zobrist_hash ^= zobrist["homes"][power_ix][loc_ix]
 
         # Regular unit
         else:
-            self.zobrist_hash ^= zobrist['unit_type'][unit_type_ix][loc_ix]
-            self.zobrist_hash ^= zobrist['units'][power_ix][loc_ix]
+            self.zobrist_hash ^= zobrist["unit_type"][unit_type_ix][loc_ix]
+            self.zobrist_hash ^= zobrist["units"][power_ix][loc_ix]
 
     def get_phase_data(self):
         """ Return a GamePhaseData object representing current game. """
         # Associate each power name to power orders, or None if order ist not set for the power.
         # This is done to make distinction between voluntary empty orders ([]) and unset orders (None).
-        current_orders = {power.name: (self.get_orders(power.name) if power.order_is_set else None)
-                          for power in self.powers.values()}
+        current_orders = {
+            power.name: (self.get_orders(power.name) if power.order_is_set else None)
+            for power in self.powers.values()
+        }
         # Game does not have results for current orders (until orders are processed and game phase is updated).
-        return GamePhaseData(name=self.current_short_phase,
-                             state=self.get_state(),
-                             orders=current_orders,
-                             messages=self.messages.copy(),
-                             results={})
+        return GamePhaseData(
+            name=self.current_short_phase,
+            state=self.get_state(),
+            orders=current_orders,
+            messages=self.messages.copy(),
+            results={},
+        )
 
     def set_phase_data(self, phase_data, clear_history=True):
         """ Set game from phase data.
@@ -1607,37 +1780,41 @@ class Game(Jsonable):
             :return: The internal saved state (dict) of the game
         """
         state = {}
-        state['timestamp'] = common.timestamp_microseconds()
-        state['zobrist_hash'] = self.get_hash()
-        state['note'] = self.note
-        state['name'] = self._phase_abbr()
-        state['units'] = {}
-        state['retreats'] = {}
-        state['centers'] = {}
-        state['homes'] = {}
-        state['influence'] = {}
-        state['civil_disorder'] = {}
-        state['builds'] = {}
+        state["timestamp"] = common.timestamp_microseconds()
+        state["zobrist_hash"] = self.get_hash()
+        state["note"] = self.note
+        state["name"] = self._phase_abbr()
+        state["units"] = {}
+        state["retreats"] = {}
+        state["centers"] = {}
+        state["homes"] = {}
+        state["influence"] = {}
+        state["civil_disorder"] = {}
+        state["builds"] = {}
 
         # Setting powers data: units, centers, homes, influence and civil disorder.
         for power in self.powers.values():
-            state['units'][power.name] = list(power.units) + ['*{}'.format(d) for d in power.retreats]
-            state['retreats'][power.name] = power.retreats.copy()
-            state['centers'][power.name] = list(power.centers)
-            state['homes'][power.name] = list(power.homes)
-            state['influence'][power.name] = list(power.influence)
-            state['civil_disorder'][power.name] = power.civil_disorder
+            state["units"][power.name] = list(power.units) + [
+                "*{}".format(d) for d in power.retreats
+            ]
+            state["retreats"][power.name] = power.retreats.copy()
+            state["centers"][power.name] = list(power.centers)
+            state["homes"][power.name] = list(power.homes)
+            state["influence"][power.name] = list(power.influence)
+            state["civil_disorder"][power.name] = power.civil_disorder
             # Setting build
-            state['builds'][power.name] = {}
-            if self.phase_type != 'A':
-                state['builds'][power.name]['count'] = 0
+            state["builds"][power.name] = {}
+            if self.phase_type != "A":
+                state["builds"][power.name]["count"] = 0
             else:
-                state['builds'][power.name]['count'] = len(power.centers) - len(power.units)
-            state['builds'][power.name]['homes'] = []
-            if state['builds'][power.name].get('count', 0) > 0:
+                state["builds"][power.name]["count"] = len(power.centers) - len(power.units)
+            state["builds"][power.name]["homes"] = []
+            if state["builds"][power.name].get("count", 0) > 0:
                 build_sites = self._build_sites(power)
-                state['builds'][power.name]['count'] = min(len(build_sites), state['builds'][power.name]['count'])
-                state['builds'][power.name]['homes'] = build_sites
+                state["builds"][power.name]["count"] = min(
+                    len(build_sites), state["builds"][power.name]["count"]
+                )
+                state["builds"][power.name]["homes"] = build_sites
 
         # Returning state
         return state
@@ -1652,39 +1829,41 @@ class Game(Jsonable):
         if clear_history:
             self._clear_history()
 
-        if 'map' in state and self.map.name != state['map']:
-            raise RuntimeError('Inconsistent state map (state: %s, game: %s)' % (state['map'], self.map.name))
-        if 'rules' in state:
+        if "map" in state and self.map.name != state["map"]:
+            raise RuntimeError(
+                "Inconsistent state map (state: %s, game: %s)" % (state["map"], self.map.name)
+            )
+        if "rules" in state:
             self.rules = []
-            for rule in state['rules']:
+            for rule in state["rules"]:
                 self.add_rule(rule)
 
-        if 'note' in state:
-            self.note = state['note']
-        if 'name' in state and state['name']:
-            self.set_current_phase(state['name'])
-        if 'units' in state:
-            for power_name, units in state['units'].items():
+        if "note" in state:
+            self.note = state["note"]
+        if "name" in state and state["name"]:
+            self.set_current_phase(state["name"])
+        if "units" in state:
+            for power_name, units in state["units"].items():
                 self.set_units(power_name, units, reset=True)
-        if 'retreats' in state:
+        if "retreats" in state:
             for power in self.powers.values():
                 for unit in power.retreats:
-                    if power.name in state['retreats'] and unit in state['retreats'][power.name]:
-                        power.retreats[unit] = state['retreats'][power.name][unit]
-        if 'centers' in state:
-            for power_name, centers in state['centers'].items():
+                    if power.name in state["retreats"] and unit in state["retreats"][power.name]:
+                        power.retreats[unit] = state["retreats"][power.name][unit]
+        if "centers" in state:
+            for power_name, centers in state["centers"].items():
                 self.set_centers(power_name, centers, reset=True)
         for power in self.powers.values():
-            if 'homes' in state and power.name in state['homes']:
-                power.homes = list(state['homes'][power.name])
+            if "homes" in state and power.name in state["homes"]:
+                power.homes = list(state["homes"][power.name])
             else:
                 power.homes = list(self.map.homes[power.name])
-        if 'influence' in state:
-            for power_name, influence in state['influence'].items():
+        if "influence" in state:
+            for power_name, influence in state["influence"].items():
                 power = self.get_power(power_name)
                 power.influence = deepcopy(influence)
-        if 'civil_disorder' in state:
-            for power_name, civil_disorder in state['civil_disorder'].items():
+        if "civil_disorder" in state:
+            for power_name, civil_disorder in state["civil_disorder"].items():
                 power = self.get_power(power_name)
                 power.civil_disorder = civil_disorder
 
@@ -1701,7 +1880,7 @@ class Game(Jsonable):
         possible_orders = {loc.upper(): set() for loc in self.map.locs}
 
         # Game is completed
-        if self.get_current_phase() == 'COMPLETED':
+        if self.get_current_phase() == "COMPLETED":
             return {loc: list(possible_orders[loc]) for loc in possible_orders}
 
         # Building a dict of (unit, is_dislodged, retreat_list, duplicate) for each power
@@ -1713,22 +1892,26 @@ class Game(Jsonable):
             for unit in power.units:
                 unit_loc = unit[2:]
                 unit_dict[unit_loc] = (unit, False, [], False)
-                if '/' in unit_loc:
+                if "/" in unit_loc:
                     unit_dict[unit_loc[:3]] = (unit, False, [], True)
 
             # Dislodged units
             for unit, retreat_list in power.retreats.items():
                 unit_loc = unit[2:]
-                unit_dict['*' + unit_loc] = (unit, True, retreat_list, False)
+                unit_dict["*" + unit_loc] = (unit, True, retreat_list, False)
 
         # Building a list of build counts and build_sites
-        build_counts = {power_name: len(power.centers) - len(power.units) if self.phase_type == 'A' else 0
-                        for power_name, power in self.powers.items()}
-        build_sites = {power_name: self._build_sites(power) if self.phase_type == 'A' else []
-                       for power_name, power in self.powers.items()}
+        build_counts = {
+            power_name: len(power.centers) - len(power.units) if self.phase_type == "A" else 0
+            for power_name, power in self.powers.items()
+        }
+        build_sites = {
+            power_name: self._build_sites(power) if self.phase_type == "A" else []
+            for power_name, power in self.powers.items()
+        }
 
         # Movement phase
-        if self.phase_type == 'M':
+        if self.phase_type == "M":
 
             # Building a list of units and homes for each power
             power_units = {power_name: power.units[:] for power_name, power in self.powers.items()}
@@ -1736,31 +1919,31 @@ class Game(Jsonable):
             # Hold
             for power_name in self.powers:
                 for unit in power_units[power_name]:
-                    order = unit + ' H'
+                    order = unit + " H"
                     possible_orders[unit[2:]].add(order)
-                    if '/' in unit:
+                    if "/" in unit:
                         possible_orders[unit[2:5]].add(order)
 
             # Move, Support, Convoy
             for power_name in self.powers:
                 for unit in power_units[power_name]:
                     unit_type, unit_loc = unit[0], unit[2:]
-                    unit_on_coast = '/' in unit_loc
+                    unit_on_coast = "/" in unit_loc
                     for dest in self.map.dest_with_coasts[unit_loc]:
 
                         # Move (Regular)
-                        if self._abuts(unit_type, unit_loc, '-', dest):
-                            order = unit + ' - ' + dest
+                        if self._abuts(unit_type, unit_loc, "-", dest):
+                            order = unit + " - " + dest
                             possible_orders[unit_loc].add(order)
                             if unit_on_coast:
                                 possible_orders[unit_loc[:3]].add(order)
 
                         # Support (Hold)
-                        if self._abuts(unit_type, unit_loc, 'S', dest):
+                        if self._abuts(unit_type, unit_loc, "S", dest):
                             if dest in unit_dict:
                                 other_unit, _, _, duplicate = unit_dict[dest]
                                 if not duplicate:
-                                    order = unit + ' S ' + other_unit[0] + ' ' + dest
+                                    order = unit + " S " + other_unit[0] + " " + dest
                                     possible_orders[unit_loc].add(order)
                                     if unit_on_coast:
                                         possible_orders[unit_loc[:3]].add(order)
@@ -1769,10 +1952,14 @@ class Game(Jsonable):
                         # Computing src of move (both from adjacent provinces and possible convoys)
                         # We can't support a unit that needs us to convoy it to its destination
                         abut_srcs = self.map.abut_list(dest, incl_no_coast=True)
-                        convoy_srcs = self._get_convoy_destinations('A', dest, exclude_convoy_locs=[unit_loc])
+                        convoy_srcs = self._get_convoy_destinations(
+                            "A", dest, exclude_convoy_locs=[unit_loc]
+                        )
 
                         # Computing coasts for source
-                        src_with_coasts = [self.map.find_coasts(src) for src in abut_srcs + convoy_srcs]
+                        src_with_coasts = [
+                            self.map.find_coasts(src) for src in abut_srcs + convoy_srcs
+                        ]
                         src_with_coasts = {val for sublist in src_with_coasts for val in sublist}
 
                         for src in src_with_coasts:
@@ -1784,62 +1971,72 @@ class Game(Jsonable):
 
                             # Checking if src unit can move to dest (through adj or convoy), and that we can support it
                             # Only armies can move through convoy
-                            if src[:3] != unit_loc[:3] \
-                                    and self._abuts(unit_type, unit_loc, 'S', dest) \
-                                    and ((src in convoy_srcs and src_unit[0] == 'A')
-                                         or self._abuts(src_unit[0], src, '-', dest)):
+                            if (
+                                src[:3] != unit_loc[:3]
+                                and self._abuts(unit_type, unit_loc, "S", dest)
+                                and (
+                                    (src in convoy_srcs and src_unit[0] == "A")
+                                    or self._abuts(src_unit[0], src, "-", dest)
+                                )
+                            ):
 
                                 # Adding with coast
-                                order = unit + ' S ' + src_unit[0] + ' ' + src + ' - ' + dest
+                                order = unit + " S " + src_unit[0] + " " + src + " - " + dest
                                 possible_orders[unit_loc].add(order)
                                 if unit_on_coast:
                                     possible_orders[unit_loc[:3]].add(order)
 
                                 # Adding without coasts
-                                if '/' in dest:
-                                    order = unit + ' S ' + src_unit[0] + ' ' + src + ' - ' + dest[:3]
+                                if "/" in dest:
+                                    order = (
+                                        unit + " S " + src_unit[0] + " " + src + " - " + dest[:3]
+                                    )
                                     possible_orders[unit_loc].add(order)
                                     if unit_on_coast:
                                         possible_orders[unit_loc[:3]].add(order)
 
                     # Move Via Convoy
                     for dest in self._get_convoy_destinations(unit_type, unit_loc):
-                        order = unit + ' - ' + dest + ' VIA'
+                        order = unit + " - " + dest + " VIA"
                         possible_orders[unit_loc].add(order)
 
                     # Convoy
-                    if unit_type == 'F':
-                        convoy_srcs = self._get_convoy_destinations(unit_type, unit_loc, unit_is_convoyer=True)
+                    if unit_type == "F":
+                        convoy_srcs = self._get_convoy_destinations(
+                            unit_type, unit_loc, unit_is_convoyer=True
+                        )
                         for src in convoy_srcs:
 
                             # Making sure there is an army at the source location
                             if src not in unit_dict:
                                 continue
                             src_unit, _, _, _ = unit_dict[src]
-                            if src_unit[0] != 'A':
+                            if src_unit[0] != "A":
                                 continue
 
                             # Checking where the src unit can actually go
-                            convoy_dests = self._get_convoy_destinations('A', src, unit_is_convoyer=False)
+                            convoy_dests = self._get_convoy_destinations(
+                                "A", src, unit_is_convoyer=False
+                            )
 
                             # Adding them as possible moves
                             for dest in convoy_dests:
-                                if self._has_convoy_path('A', src, dest, convoying_loc=unit_loc):
-                                    order = unit + ' C A ' + src + ' - ' + dest
+                                if self._has_convoy_path("A", src, dest, convoying_loc=unit_loc):
+                                    order = unit + " C A " + src + " - " + dest
                                     possible_orders[unit_loc].add(order)
 
         # Retreat phase
-        if self.phase_type == 'R':
+        if self.phase_type == "R":
 
             # Finding all dislodged units
             for unit_loc, (unit, is_dislodged, retreat_list, duplicate) in unit_dict.items():
                 if not is_dislodged or duplicate:
                     continue
-                unit_loc = unit_loc[1:]                 # Removing the leading *
-                unit_on_coast = '/' in unit_loc
+                unit_loc = unit_loc[1:]  # Removing the leading *
+                unit_on_coast = "/" in unit_loc
 
                 # Disband
-                order = unit + ' D'
+                order = unit + " D"
                 possible_orders[unit_loc].add(order)
                 if unit_on_coast:
                     possible_orders[unit_loc[:3]].add(order)
@@ -1847,13 +2044,13 @@ class Game(Jsonable):
                 # Retreat
                 for dest in retreat_list:
                     if dest[:3] not in unit_dict:
-                        order = unit + ' R ' + dest
+                        order = unit + " R " + dest
                         possible_orders[unit_loc].add(order)
                         if unit_on_coast:
                             possible_orders[unit_loc[:3]].add(order)
 
         # Adjustment phase
-        if self.phase_type == 'A':
+        if self.phase_type == "A":
 
             # Building a list of units for each power
             power_units = {power_name: power.units[:] for power_name, power in self.powers.items()}
@@ -1865,8 +2062,8 @@ class Game(Jsonable):
                 # Disband
                 if power_build_count < 0:
                     for unit in power_units[power_name]:
-                        unit_on_coast = '/' in unit
-                        order = unit + ' D'
+                        unit_on_coast = "/" in unit
+                        order = unit + " D"
                         possible_orders[unit[2:]].add(order)
                         if unit_on_coast:
                             possible_orders[unit[2:5]].add(order)
@@ -1875,19 +2072,19 @@ class Game(Jsonable):
                 if power_build_count > 0:
                     for site in power_build_sites:
                         for loc in self.map.find_coasts(site):
-                            unit_on_coast = '/' in loc
-                            if self.map.is_valid_unit('A ' + loc):
-                                possible_orders[loc].add('A ' + loc + ' B')
-                            if self.map.is_valid_unit('F ' + loc):
-                                possible_orders[loc].add('F ' + loc + ' B')
+                            unit_on_coast = "/" in loc
+                            if self.map.is_valid_unit("A " + loc):
+                                possible_orders[loc].add("A " + loc + " B")
+                            if self.map.is_valid_unit("F " + loc):
+                                possible_orders[loc].add("F " + loc + " B")
                                 if unit_on_coast:
-                                    possible_orders[loc[:3]].add('F ' + loc + ' B')
+                                    possible_orders[loc[:3]].add("F " + loc + " B")
 
                 # Waive
                 if power_build_count > 0:
                     for site in power_build_sites:
                         for loc in self.map.find_coasts(site):
-                            possible_orders[loc].add('WAIVE')
+                            possible_orders[loc].add("WAIVE")
 
         # Returning
         return {loc: list(possible_orders[loc]) for loc in possible_orders}
@@ -1907,7 +2104,7 @@ class Game(Jsonable):
         convoying_locs = []
         for power in self.powers.values():
             for unit in power.units:
-                if unit[0] == 'F' and self.map.area_type(unit[2:]) in ['WATER', 'PORT']:
+                if unit[0] == "F" and self.map.area_type(unit[2:]) in ["WATER", "PORT"]:
                     convoying_locs += [unit[2:]]
         convoying_locs = set(convoying_locs)
 
@@ -1936,10 +2133,10 @@ class Game(Jsonable):
 
         # Army can convoy through water, all units can convoy through port
         area_type = self.map.area_type(loc)
-        area_type_cond = ((area_type == 'WATER') == army or area_type == 'PORT')
+        area_type_cond = (area_type == "WATER") == army or area_type == "PORT"
 
         # Making sure there is a valid unit on thru location to perform convoy
-        unit_type_cond = self._unit_owner('F %s' % loc, coast_required=0)
+        unit_type_cond = self._unit_owner("F %s" % loc, coast_required=0)
         return area_type_cond and unit_type_cond
 
     def _is_moving_via_convoy(self, unit):
@@ -1949,7 +2146,7 @@ class Game(Jsonable):
             :return: A boolean (True, False) to indicate if the unit is moving via convoy
         """
         # Not moving or no paths
-        if unit not in self.command or self.command[unit][0] != '-':
+        if unit not in self.command or self.command[unit][0] != "-":
             return False
         if unit not in self.convoy_paths or not self.convoy_paths[unit]:
             return False
@@ -1966,13 +2163,15 @@ class Game(Jsonable):
             :param convoying_loc: Optional. If set, the convoying location must be in one of the paths
             :return: A boolean flag to indicate if the convoy is possible (if all units cooperate)
         """
-        if unit != 'A':
+        if unit != "A":
             return False
 
         # Checking in table if there is a valid path and optionally if the convoying loc is in the path
         self._build_list_possible_convoys()
         active_paths = self.convoy_paths_dest.get(start, {}).get(end, [])
-        return active_paths and (convoying_loc is None or [1 for path in active_paths if convoying_loc in path])
+        return active_paths and (
+            convoying_loc is None or [1 for path in active_paths if convoying_loc in path]
+        )
 
     def _get_convoying_units_for_path(self, unit, start, end):
         """ Returns a list of units who have submitted orders to convoy 'unit' from 'start' to 'end'
@@ -1983,14 +2182,16 @@ class Game(Jsonable):
             :return: A list of convoying units (e.g. ['F NAO', 'F MAO']) having current orders to convoy path
         """
         convoying_units = []
-        army = unit != 'F'
-        expected_order = 'C %s %s - %s' % (unit, start[:3], end[:3])
+        army = unit != "F"
+        expected_order = "C %s %s - %s" % (unit, start[:3], end[:3])
         for unit_loc, unit_order in list(self.command.items()):
             if unit_order == expected_order and self._is_convoyer(army, unit_loc[2:]):
                 convoying_units += [unit_loc]
         return convoying_units
 
-    def _get_convoy_destinations(self, unit, start, unit_is_convoyer=False, exclude_convoy_locs=None):
+    def _get_convoy_destinations(
+        self, unit, start, unit_is_convoyer=False, exclude_convoy_locs=None
+    ):
         """ Returns a list of possible convoy destinations for a unit
 
             :param unit: The unit BEING convoyed (e.g. 'A' or 'F')
@@ -2000,9 +2201,9 @@ class Game(Jsonable):
             :param exclude_convoy_locs: Optional. A list of convoying location that needs to be excluded from all paths.
             :return: A list of convoying destinations (e.g. ['PAR', 'MAR']) that can be reached from start
         """
-        if unit == 'A' and unit_is_convoyer:
+        if unit == "A" and unit_is_convoyer:
             return []
-        if unit == 'F' and not unit_is_convoyer:
+        if unit == "F" and not unit_is_convoyer:
             return []
 
         # Building cache
@@ -2025,8 +2226,10 @@ class Game(Jsonable):
         # If we are convoying, we need to loop through the possible convoy paths
         valid_dests = set([])
         for _, fleets, dests in self.convoy_paths_possible:
-            if start in fleets and (exclude_convoy_locs is None
-                                    or not [1 for excluded_loc in exclude_convoy_locs if excluded_loc in fleets]):
+            if start in fleets and (
+                exclude_convoy_locs is None
+                or not [1 for excluded_loc in exclude_convoy_locs if excluded_loc in fleets]
+            ):
                 valid_dests |= dests
         return list(valid_dests)
 
@@ -2041,14 +2244,18 @@ class Game(Jsonable):
             :param convoying_units: The list of units who can convoy the unit
             :return: A list of paths from start to end using convoying_units
         """
-        if unit_type != 'A' or not convoying_units:
+        if unit_type != "A" or not convoying_units:
             return []
 
         # Building cache and finding possible paths with convoying units
         # Adding start and end location to every path
         self._build_list_possible_convoys()
         fleets = {loc[2:] for loc in convoying_units}
-        paths = [path for path in self.convoy_paths_dest.get(start, {}).get(end, set([])) if path.issubset(fleets)]
+        paths = [
+            path
+            for path in self.convoy_paths_dest.get(start, {}).get(end, set([]))
+            if path.issubset(fleets)
+        ]
         paths = [[start] + list(path) + [end] for path in paths]
         paths.sort(key=len)
 
@@ -2061,18 +2268,19 @@ class Game(Jsonable):
             return paths
 
         # Assuming intent if end is not reachable from start (i.e. a convoy is required)
-        if not self._abuts(unit_type, start, 'S', end):
+        if not self._abuts(unit_type, start, "S", end):
             return paths
 
         # Otherwise, detecting if we intended to convoy
-        unit_owner = self._unit_owner('%s %s' % (unit_type, start), coast_required=0)
+        unit_owner = self._unit_owner("%s %s" % (unit_type, start), coast_required=0)
         for convoyer in convoying_units:
             convoy_owner = self._unit_owner(convoyer, coast_required=1)
 
             # We have intent if one of the power's fleet issued a convoyed order
             # and there was a path using that fleet to move from start to end
-            if unit_owner == convoy_owner and \
-                    self._has_convoy_path(unit_type, start, end, convoying_loc=convoyer[2:]):
+            if unit_owner == convoy_owner and self._has_convoy_path(
+                unit_type, start, end, convoying_loc=convoyer[2:]
+            ):
                 return paths
 
         # We could not detect intent
@@ -2114,7 +2322,7 @@ class Game(Jsonable):
                     continue
 
                 # Calculating distance for armies over LAND/WATER/COAST and for Fleet over WATER/COAST
-                if unit_type == 'A' or self._abuts(unit_type, current, '-', loc):
+                if unit_type == "A" or self._abuts(unit_type, current, "-", loc):
                     loc_distance = to_check[loc] if loc in to_check else 99999
                     to_check[loc] = min(distance + 1, loc_distance)
 
@@ -2162,14 +2370,14 @@ class Game(Jsonable):
             return None
 
         # Support / Convoy - 'S A/F XXX - YYY'
-        if order_type in ('S', 'C') and word[1:]:
-            if word[1] in ('A', 'F'):
+        if order_type in ("S", "C") and word[1:]:
+            if word[1] in ("A", "F"):
                 alter, other = word[1:3]
             else:
-                alter, other = '?', word[1]
+                alter, other = "?", word[1]
 
             # Checks if A/F XXX is a valid unit for loc (source)
-            other = alter + ' ' + other
+            other = alter + " " + other
             if not self.map.is_valid_unit(other, no_coast_ok=1):
                 if report:
                     self.error.append(err.GAME_ORDER_INCLUDES_INVALID_UNIT % other)
@@ -2177,8 +2385,8 @@ class Game(Jsonable):
 
             # S [A/F] XXX - YYY
             # Checks if A/F YYY is a valid unit for loc (dest)
-            if len(word) == 5 - (alter == '?'):
-                other = alter + ' ' + word[-1]
+            if len(word) == 5 - (alter == "?"):
+                other = alter + " " + word[-1]
                 if not self.map.is_valid_unit(other, no_coast_ok=1):
                     if report:
                         self.error.append(err.GAME_ORDER_INCLUDES_INVALID_DEST % other)
@@ -2196,44 +2404,57 @@ class Game(Jsonable):
             return None
 
         # Validate that anything in a SHUT location is only ordered to HOLD
-        if self.map.area_type(unit_loc) == 'SHUT' and order_type != 'H':
+        if self.map.area_type(unit_loc) == "SHUT" and order_type != "H":
             if report:
                 self.error.append(err.GAME_UNIT_MAY_ONLY_HOLD % unit)
             return None
 
         # Validate support and convoy orders
         # Triggers error if Army trying to convoys
-        if order_type == 'C' and (unit_type != 'F' or (self.map.area_type(unit_loc) not in ('WATER', 'PORT'))):
+        if order_type == "C" and (
+            unit_type != "F" or (self.map.area_type(unit_loc) not in ("WATER", "PORT"))
+        ):
             if report:
                 self.error.append(err.GAME_CONVOY_IMPROPER_UNIT % (unit, order))
             return None
 
         # -------------------------------------------------------------
         # SUPPORT OR CONVOY ORDER
-        if order_type in ('C', 'S'):
+        if order_type in ("C", "S"):
 
             # Add the unit type (or '?') if not specified.
             # Note that the unit type is NOT added to the actual order -- just used during checking.
-            order_text = 'CONVOY' if order_type == 'C' else 'SUPPORT'
-            if len(word) > 1 and word[1] not in ('A', 'F'):
+            order_text = "CONVOY" if order_type == "C" else "SUPPORT"
+            if len(word) > 1 and word[1] not in ("A", "F"):
                 terrain = self.map.area_type(word[1])
-                if order_type == 'C':
-                    word[1:1] = ['AF'[unit_type == 'A']]  # Convoying the opposite unit type A-F and F-A
-                elif terrain == 'WATER':
-                    word[1:1] = ['F']
-                elif terrain == 'LAND':
-                    word[1:1] = ['A']
+                if order_type == "C":
+                    word[1:1] = [
+                        "AF"[unit_type == "A"]
+                    ]  # Convoying the opposite unit type A-F and F-A
+                elif terrain == "WATER":
+                    word[1:1] = ["F"]
+                elif terrain == "LAND":
+                    word[1:1] = ["A"]
                 elif terrain:  # Other terrain, trying to determine if XXX exist
-                    its_unit_type = [unit_type for unit_type in 'AF' if self._unit_owner(unit_type + ' ' + word[1])]
+                    its_unit_type = [
+                        unit_type
+                        for unit_type in "AF"
+                        if self._unit_owner(unit_type + " " + word[1])
+                    ]
                     if its_unit_type:
                         word[1:1] = its_unit_type
                     else:
                         if report:
-                            self.error.append(err.GAME_INVALID_ORDER_NON_EXISTENT_UNIT % (order_text, unit, order))
+                            self.error.append(
+                                err.GAME_INVALID_ORDER_NON_EXISTENT_UNIT
+                                % (order_text, unit, order)
+                            )
                         return None
                 else:
                     if report:
-                        self.error.append(err.GAME_INVALID_ORDER_RECIPIENT % (order_text, unit, order))
+                        self.error.append(
+                            err.GAME_INVALID_ORDER_RECIPIENT % (order_text, unit, order)
+                        )
                     return None
 
             # Make sure we have enough to work with
@@ -2244,10 +2465,12 @@ class Game(Jsonable):
                 return None
 
             # Check that the recipient of the support or convoy exists
-            rcvr, dest = ' '.join(word[1:3]), word[2]
+            rcvr, dest = " ".join(word[1:3]), word[2]
             if not self._unit_owner(rcvr, 0):
                 if report:
-                    self.error.append(err.GAME_ORDER_RECIPIENT_DOES_NOT_EXIST % (order_text, unit, order))
+                    self.error.append(
+                        err.GAME_ORDER_RECIPIENT_DOES_NOT_EXIST % (order_text, unit, order)
+                    )
                 return None
 
             # Check that the recipient is not the same unit as the supporter
@@ -2257,15 +2480,17 @@ class Game(Jsonable):
                 return None
 
             # Only units on coasts can be convoyed, or invalid units convoying
-            if order_type == 'C' \
-                    and (word[1] != 'AF'[unit_type == 'A'] or self.map.area_type(dest) not in ('COAST', 'PORT')):
+            if order_type == "C" and (
+                word[1] != "AF"[unit_type == "A"]
+                or self.map.area_type(dest) not in ("COAST", "PORT")
+            ):
                 if report:
                     self.error.append(err.GAME_UNIT_CANT_BE_CONVOYED % (unit, order))
                 return None
 
             # Handle orders of the form C U xxx - xxx and S U xxx - xxx
             if len(word) == 5:
-                if word[3] != '-':
+                if word[3] != "-":
                     if report:
                         self.error.append(err.GAME_BAD_ORDER_SYNTAX % (order_text, unit, order))
                     return None
@@ -2273,42 +2498,48 @@ class Game(Jsonable):
 
                 # Coast is specified in the move, but ignored in the support and convoy order
                 # DATC 6.B.4
-                if '/' in dest:
-                    dest = dest[:dest.find('/')]
+                if "/" in dest:
+                    dest = dest[: dest.find("/")]
 
                 # Making sure the dest is COAST,PORT and that the convoyed order can land there
-                if order_type == 'C':
-                    if not (self.map.area_type(dest) in ('COAST', 'PORT')
-                            and self.map.is_valid_unit(word[1] + ' ' + dest, unit[0] < 'F')):
+                if order_type == "C":
+                    if not (
+                        self.map.area_type(dest) in ("COAST", "PORT")
+                        and self.map.is_valid_unit(word[1] + " " + dest, unit[0] < "F")
+                    ):
                         if report:
                             self.error.append(err.GAME_BAD_CONVOY_DESTINATION % (unit, order))
                         return None
 
                 # Checking that support can reach destination...
-                elif (not self._abuts(word[1], word[2], order_type, dest)
-                      and (rcvr[0] == 'F'
-                           or not self._has_convoy_path(word[1], word[2][:3], dest))):
+                elif not self._abuts(word[1], word[2], order_type, dest) and (
+                    rcvr[0] == "F" or not self._has_convoy_path(word[1], word[2][:3], dest)
+                ):
                     if report:
-                        self.error.append(err.GAME_SUPPORTED_UNIT_CANT_REACH_DESTINATION % (unit, order))
+                        self.error.append(
+                            err.GAME_SUPPORTED_UNIT_CANT_REACH_DESTINATION % (unit, order)
+                        )
                     return None
 
             # Make sure that a convoy order was formatted as above
-            elif order_type == 'C':
+            elif order_type == "C":
                 if report:
                     self.error.append(err.GAME_IMPROPER_CONVOY_ORDER % (unit, order))
                 return None
 
             # Make sure a support order was either as above or as S U xxx or as S U xxx H
-            elif len(word) != 3 and (len(word) != 4 or word[-1] != 'H'):
+            elif len(word) != 3 and (len(word) != 4 or word[-1] != "H"):
                 if report:
                     self.error.append(err.GAME_IMPROPER_SUPPORT_ORDER % (unit, order))
                 return None
 
             # Make sure the support destination can be reached...
-            if order_type == 'S':
+            if order_type == "S":
                 if not self._abuts(unit_type, unit_loc, order_type, dest):
                     if report:
-                        self.error.append(err.GAME_UNIT_CANT_PROVIDE_SUPPORT_TO_DEST % (unit, order))
+                        self.error.append(
+                            err.GAME_UNIT_CANT_PROVIDE_SUPPORT_TO_DEST % (unit, order)
+                        )
                     return None
 
             # ... or that the fleet can perform the described convoy
@@ -2319,27 +2550,31 @@ class Game(Jsonable):
 
         # -------------------------------------------------------------
         # MOVE order
-        elif order_type == '-':
+        elif order_type == "-":
             # Expected format '- xxx' or '- xxx VIA'
-            if (len(word) & 1 and word[-1] != 'VIA') or (len(word[:-1]) & 1 and word[-1] == 'VIA'):
+            if (len(word) & 1 and word[-1] != "VIA") or (len(word[:-1]) & 1 and word[-1] == "VIA"):
                 if report:
                     self.error.append(err.GAME_BAD_MOVE_ORDER % (unit, order))
                 return None
 
             # Only a convoying army can give a path
-            if len(word) > 2 and unit_type != 'A' and self.map.area_type(unit_loc) not in ('COAST', 'PORT'):
+            if (
+                len(word) > 2
+                and unit_type != "A"
+                and self.map.area_type(unit_loc) not in ("COAST", "PORT")
+            ):
                 if report:
                     self.error.append(err.GAME_UNIT_CANT_CONVOY % (unit, order))
                 return None
 
             # Step through "- xxx" in the order and ensure the unit can get there
             src = unit_loc
-            offset = 1 if word[-1] == 'VIA' else 0
+            offset = 1 if word[-1] == "VIA" else 0
             to_loc = word[-1 - offset]
 
             # Making sure that the syntax is '- xxx'
             # The old syntax 'A XXX - YYY - ZZZ' is deprecated
-            if len(word) - offset > 2 or word[0] != '-':
+            if len(word) - offset > 2 or word[0] != "-":
                 if report:
                     self.error.append(err.GAME_BAD_MOVE_ORDER % (unit, order))
                 return None
@@ -2351,16 +2586,16 @@ class Game(Jsonable):
                 return None
 
             # Move only possible through convoy
-            if not self._abuts(unit_type, src, order_type, to_loc) or word[-1] == 'VIA':
+            if not self._abuts(unit_type, src, order_type, to_loc) or word[-1] == "VIA":
 
                 # Checking that destination is a COAST or PORT ...
-                if self.map.area_type(to_loc) not in ('COAST', 'PORT'):
+                if self.map.area_type(to_loc) not in ("COAST", "PORT"):
                     if report:
                         self.error.append(err.GAME_CONVOYING_UNIT_MUST_REACH_COST % (unit, order))
                     return None
 
                 # Making sure that army is not having a specific coast as destination ...
-                if unit_type == 'A' and '/' in to_loc:
+                if unit_type == "A" and "/" in to_loc:
                     if report:
                         self.error.append(err.GAME_ARMY_CANT_CONVOY_TO_COAST % (unit, order))
                     return None
@@ -2368,12 +2603,14 @@ class Game(Jsonable):
                 # Make sure there is at least a possible path
                 if not self._has_convoy_path(unit_type, unit_loc, to_loc):
                     if report:
-                        self.error.append(err.GAME_UNIT_CANT_MOVE_VIA_CONVOY_INTO_DEST % (unit, order))
+                        self.error.append(
+                            err.GAME_UNIT_CANT_MOVE_VIA_CONVOY_INTO_DEST % (unit, order)
+                        )
                     return None
 
         # -------------------------------------------------------------
         # HOLD order
-        elif order_type == 'H':
+        elif order_type == "H":
             if len(word) != 1:
                 if report:
                     self.error.append(err.GAME_INVALID_HOLD_ORDER % (unit, order))
@@ -2397,16 +2634,16 @@ class Game(Jsonable):
         if not word:
             return word
 
-        result = self.map.compact(' '.join(word))
+        result = self.map.compact(" ".join(word))
         result = self.map.vet(self.map.rearrange(result), 1)
 
         # If multiple move seps '-' are present, skipping locs after each move separator except the last one
         count_move_seps = 0
-        total_move_seps = len([1 for x in word if x == '-'])
+        total_move_seps = len([1 for x in word if x == "-"])
         add_via_flag = total_move_seps >= 2
 
         # Removing errors (Negative values)
-        final, order = [], ''
+        final, order = [], ""
         for result_ix, (token, token_type) in enumerate(result):
             if token_type < 1:
                 if token_type == -1 * POWER:
@@ -2418,7 +2655,7 @@ class Game(Jsonable):
                 elif token_type == -1 * LOCATION:
                     self.error.append(err.GAME_UNKNOWN_LOCATION % token)
                 elif token_type == -1 * COAST:
-                    token_without_coast = token.split('/')[0]
+                    token_without_coast = token.split("/")[0]
                     if token_without_coast in self.map.aliases.values():
                         self.error.append(err.GAME_UNKNOWN_COAST % token)
                         result[result_ix] = token_without_coast, -1 * LOCATION
@@ -2439,7 +2676,7 @@ class Game(Jsonable):
             # Remove the "H" from any order having the form "u xxx S xxx H"
             # Otherwise storing order
             elif token_type == ORDER:
-                if order == 'S' and token == 'H':
+                if order == "S" and token == "H":
                     continue
                 order += token
 
@@ -2452,24 +2689,24 @@ class Game(Jsonable):
                 count_move_seps += 1
                 if count_move_seps >= 2:
                     continue
-                result[result_ix] = '-', token_type
-                order += '-'
+                result[result_ix] = "-", token_type
+                order += "-"
 
             elif token_type == OTHER:
-                order = ''
+                order = ""
 
             # Spot ambiguous place names and coasts in support and convoy orders
-            if 'NO_CHECK' in self.rules:
+            if "NO_CHECK" in self.rules:
                 if token_type == LOCATION and token in self.map.unclear:
                     self.error.append(err.GAME_AMBIGUOUS_PLACE_NAME % token)
-                if token_type == COAST and token.split('/')[0] in self.map.unclear:
+                if token_type == COAST and token.split("/")[0] in self.map.unclear:
                     self.error.append(err.GAME_AMBIGUOUS_PLACE_NAME % token)
 
             final += [token]
 
         # If we detected multiple move separated - Adding a final VIA flag
-        if add_via_flag and final[-1] != 'VIA':
-            final += ['VIA']
+        if add_via_flag and final[-1] != "VIA":
+            final += ["VIA"]
 
         # Default any fleet move's coastal destination, then we're done
         return self.map.default_coast(final)
@@ -2488,34 +2725,43 @@ class Game(Jsonable):
 
         unit_type = word[0]
         loc = word[1]
-        loc_without_coast = loc[:loc.find('/')] if '/' in loc else loc
+        loc_without_coast = loc[: loc.find("/")] if "/" in loc else loc
 
         # For armies: Removing coast if specified
-        if unit_type == 'A':
-            if '/' in loc:
+        if unit_type == "A":
+            if "/" in loc:
                 word[1] = loc_without_coast
-            if len(word) == 4 and '/' in word[3]:
-                word[3] = word[3][:word[3].find('/')]
+            if len(word) == 4 and "/" in word[3]:
+                word[3] = word[3][: word[3].find("/")]
 
         # For fleets: If there is a unit in the country, but not on the specified coast, we need to correct the coast
-        elif self._unit_owner('%s %s' % (unit_type, loc), coast_required=1) is None \
-                and self._unit_owner('%s %s' % (unit_type, loc_without_coast), coast_required=0) is not None:
+        elif (
+            self._unit_owner("%s %s" % (unit_type, loc), coast_required=1) is None
+            and self._unit_owner("%s %s" % (unit_type, loc_without_coast), coast_required=0)
+            is not None
+        ):
 
             # Finding the correct coast
             for loc in [l for l in self.map.locs if l[:3] == loc_without_coast]:
-                if self._unit_owner('%s %s' % (word[0], loc), coast_required=1) is not None:
+                if self._unit_owner("%s %s" % (word[0], loc), coast_required=1) is not None:
                     word[1] = loc
                     break
 
         # Removing cost if unit is supporting an army moving to coast
         # F WES S A MAR - SPA/SC -> F WES S A MAR - SPA
-        if len(word) == 7 and '/' in word[-1] and word[2] == 'S' and word[3] == 'A':
+        if len(word) == 7 and "/" in word[-1] and word[2] == "S" and word[3] == "A":
             dest = word[-1]
-            word[-1] = dest[:dest.find('/')]
+            word[-1] = dest[: dest.find("/")]
 
         # Adjusting the coast if a fleet is supporting a move to the wrong coast
         # F WES S F GAS - SPA/SC -> F WES S F GAS - SPA/NC
-        if len(word) == 7 and word[0] == 'F' and word[2] == 'S' and word[3] == 'F' and '/' in word[-1]:
+        if (
+            len(word) == 7
+            and word[0] == "F"
+            and word[2] == "S"
+            and word[3] == "F"
+            and "/" in word[-1]
+        ):
             word = word[:3] + self.map.default_coast(word[3:6] + [word[6][:3]])
 
         # Returning with coasts fixed
@@ -2532,18 +2778,21 @@ class Game(Jsonable):
         word, dependent, had_type = [], 1, 0
         for token in item:
             if not dependent:
-                dependent = token in 'CS'
-            elif token in 'AF':
+                dependent = token in "CS"
+            elif token in "AF":
                 had_type = 1
-            elif token in ('RETREAT', 'DISBAND', 'BUILD', 'REMOVE'):
+            elif token in ("RETREAT", "DISBAND", "BUILD", "REMOVE"):
                 pass
             else:
                 try:
                     # We have a location
                     # Try to find an active or retreating unit at current location
-                    unit = [unit for power in self.powers.values()
-                            for unit in (power.units, power.retreats.keys())[self.phase_type == 'R']
-                            if unit[2:].startswith(token)][0]
+                    unit = [
+                        unit
+                        for power in self.powers.values()
+                        for unit in (power.units, power.retreats.keys())[self.phase_type == "R"]
+                        if unit[2:].startswith(token)
+                    ][0]
 
                     # If A/F is missing, add it
                     if not had_type:
@@ -2575,13 +2824,13 @@ class Game(Jsonable):
         # Add coasts to support and (portage) convoy orders for fleets moving to a specific coast
         for unit, order in orders.items():
             # Only rewriting 'S F XXX - YYY' and 'C F XXX - YYY'
-            if order[:3] not in ('S F', 'C F'):
+            if order[:3] not in ("S F", "C F"):
                 continue
             word = order.split()
 
             # rcvr is the unit receiving the support or convoy (e.g. F XXX in S F XXX - BER)
             # Making sure rcvr has also submitted orders (e.g. F XXX - YYY)
-            rcvr = ' '.join(word[1:3])
+            rcvr = " ".join(word[1:3])
             try:
                 rcvr = [x for x in orders if x.startswith(rcvr)][0]
             except IndexError:
@@ -2589,15 +2838,15 @@ class Game(Jsonable):
                 continue
 
             # Updating order to include rcvr full starting position (with coasts)
-            orders[unit] = ' '.join([order[0], rcvr] + word[3:]).strip()
+            orders[unit] = " ".join([order[0], rcvr] + word[3:]).strip()
 
             # Checking if coast is specified in destination position
-            if '-' in order:
+            if "-" in order:
                 # his -> '- dest/coast'
                 # updating order if coast is specified in his dest, but not ours
-                his = ' '.join(orders.get(rcvr, '').split()[-2:])
-                if his[0] == '-' and his.split('/')[0] == ' '.join(word[3:]):
-                    orders[unit] = order[:2] + rcvr + ' ' + his
+                his = " ".join(orders.get(rcvr, "").split()[-2:])
+                if his[0] == "-" and his.split("/")[0] == " ".join(word[3:]):
+                    orders[unit] = order[:2] + rcvr + " " + his
 
             # Updating game.orders object
             self.orders[unit] = orders[unit]
@@ -2619,25 +2868,25 @@ class Game(Jsonable):
             self.phase = self.map.phase
         apart = self.phase.split()
         if len(apart) == 3:
-            if '%s %s' % (apart[0], apart[2]) not in self.map.seq:
+            if "%s %s" % (apart[0], apart[2]) not in self.map.seq:
                 self.error += [err.GAME_BAD_PHASE_NOT_IN_FLOW]
             self.phase_type = apart[2][0]
         else:
-            self.phase_type = '-'
+            self.phase_type = "-"
 
         # Validate the BEGIN phase (if one was given)
-        if self.phase == 'FORMING':
+        if self.phase == "FORMING":
             apart = self.map.phase.split()
             try:
                 int(apart[1])
                 del apart[1]
-                if ' '.join(apart) not in self.map.seq:
+                if " ".join(apart) not in self.map.seq:
                     raise Exception()
             except ValueError:
                 self.error += [err.GAME_BAD_BEGIN_PHASE]
 
         # Set victory condition
-        if self.phase not in ('FORMING', 'COMPLETED'):
+        if self.phase not in ("FORMING", "COMPLETED"):
             try:
                 year = abs(int(self.phase.split()[1]) - self.map.first_year)
                 win = self.victory[:]
@@ -2673,40 +2922,40 @@ class Game(Jsonable):
         """
         if self.__class__.rule_cache:
             return self.__class__.rule_cache
-        group = variant = ''
+        group = variant = ""
         data, forced, denied = {}, {}, {}
-        file_path = os.path.join(settings.PACKAGE_DIR, 'README_RULES.txt')
+        file_path = os.path.join(settings.PACKAGE_DIR, "README_RULES.txt")
 
         if not os.path.exists(file_path):
             self.error.append(err.GAME_UNABLE_TO_FIND_RULES)
             return data, forced, denied
 
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(file_path, "r", encoding="utf-8") as file:
             for line in file:
                 word = line.strip().split()
 
                 # Rules are in the format <!-- RULE NAME !RULE_1 +RULE_2 -->
                 # Where ! indicates a denied rule, and + indicates a forced rule
-                if word[:2] == ['<!--', 'RULE'] and word[-1][-1] == '>':
+                if word[:2] == ["<!--", "RULE"] and word[-1][-1] == ">":
 
                     # <!-- RULE GROUP 6 Secrecy -->
                     # group would be '6 Secrecy'
-                    if word[2] == 'GROUP':
-                        group = ' '.join(word[3:-1])
+                    if word[2] == "GROUP":
+                        group = " ".join(word[3:-1])
 
                     # <!-- RULE VARIANT standard -->
-                    elif word[2] == 'VARIANT':
+                    elif word[2] == "VARIANT":
                         variant = word[3]
-                        forced[variant] = [x[1:] for x in word[4:-1] if x[0] == '+']
-                        denied[variant] = [x[1:] for x in word[4:-1] if x[0] == '!']
+                        forced[variant] = [x[1:] for x in word[4:-1] if x[0] == "+"]
+                        denied[variant] = [x[1:] for x in word[4:-1] if x[0] == "!"]
 
                     # <!-- RULE NAME !RULE_1 +RULE_2 -->
-                    elif word[2] != 'END':
+                    elif word[2] != "END":
                         rule = word[2]
                         if rule not in data:
-                            data[rule] = {'group': group, 'variant': variant}
+                            data[rule] = {"group": group, "variant": variant}
                         for control in word[3:-1]:
-                            if control[0] in '-=+!':
+                            if control[0] in "-=+!":
                                 data[rule].setdefault(control[0], []).append(control[1:])
 
         self.__class__.rule_cache = (data, forced, denied)
@@ -2719,25 +2968,41 @@ class Game(Jsonable):
 
         # Finding powers and locations
         map_powers = sorted([power_name for power_name in self.map.powers])
-        map_locs = sorted([loc.upper() for loc in self.map.locs if self.map.area_type(loc) != 'SHUT'])
+        map_locs = sorted(
+            [loc.upper() for loc in self.map.locs if self.map.area_type(loc) != "SHUT"]
+        )
         nb_powers = len(map_powers)
         nb_locs = len(map_locs)
-        sorted_concat_scs = '-'.join(sorted([scs.upper() for scs in self.map.scs]))
+        sorted_concat_scs = "-".join(sorted([scs.upper() for scs in self.map.scs]))
 
         # Generating a standardized seed
         # Map derivations (e.g. 'standard_age_of_empires') should have the same initial seed as their parent
         random_state = random.getstate()
-        map_seed = (12345 + nb_locs + sum([ord(x) * 7 ** ix for ix, x in enumerate(sorted_concat_scs)])) % 2 ** 32
+        map_seed = (
+            12345 + nb_locs + sum([ord(x) * 7 ** ix for ix, x in enumerate(sorted_concat_scs)])
+        ) % 2 ** 32
         random.seed(map_seed)
         self.__class__.zobrist_tables[self.map_name] = {
-            'unit_type': [[random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(2)],
-            'units': [[random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)],
-            'dis_unit_type': [[random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(2)],
-            'dis_units': [[random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)],
-            'centers': [[random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)],
-            'homes': [[random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)],
-            'map_powers': map_powers,
-            'map_locs': map_locs
+            "unit_type": [
+                [random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(2)
+            ],
+            "units": [
+                [random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)
+            ],
+            "dis_unit_type": [
+                [random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(2)
+            ],
+            "dis_units": [
+                [random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)
+            ],
+            "centers": [
+                [random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)
+            ],
+            "homes": [
+                [random.randint(1, sys.maxsize) for _ in range(nb_locs)] for _ in range(nb_powers)
+            ],
+            "map_powers": map_powers,
+            "map_locs": map_locs,
         }
         random.setstate(random_state)
 
@@ -2750,7 +3015,7 @@ class Game(Jsonable):
             :return: Nothing
         """
         self._move_to_start_phase()
-        self.note = ''
+        self.note = ""
         self.win = self.victory[0]
 
         # Create dummy power objects for non-loaded powers.
@@ -2770,18 +3035,18 @@ class Game(Jsonable):
         # Convert all raw movement phase "ORDER"s in a NO_CHECK game to standard orders before calling
         # Game.process(). All "INVALID" and "REORDER" orders are left raw -- the Game.move_results() method
         # knows how to detect and report them
-        if 'NO_CHECK' in self.rules and self.phase_type == 'M':
+        if "NO_CHECK" in self.rules and self.phase_type == "M":
             for power in self.powers.values():
                 orders, power.orders, civil_disorder = power.orders, {}, power.civil_disorder
                 for status, order in orders.items():
-                    if status[:5] != 'ORDER':
+                    if status[:5] != "ORDER":
                         power.orders[status] = order
                     elif order:
                         self._add_order(power, order.split())
                 power.civil_disorder = civil_disorder
 
         # Processing the game
-        if self.phase_type == 'M':
+        if self.phase_type == "M":
             self._determine_orders()
             self._add_coasts()
 
@@ -2804,7 +3069,7 @@ class Game(Jsonable):
         for _ in self.map.seq:
 
             # If game is not yet started, or completed can't advance
-            if self.phase in (None, 'FORMING', 'COMPLETED'):
+            if self.phase in (None, "FORMING", "COMPLETED"):
                 break
 
             # Finding next phase and setting variables
@@ -2867,18 +3132,18 @@ class Game(Jsonable):
         """
         # pylint: disable=too-many-return-statements
         # Beginning / End of game - Can't skip
-        if self.phase in (None, 'FORMING', 'COMPLETED'):
+        if self.phase in (None, "FORMING", "COMPLETED"):
             return 0
 
         # When changing phases, clearing all caches
         self.clear_cache()
 
         # Movement phase - Always need to process
-        if self.phase_type == 'M':
+        if self.phase_type == "M":
             return 0
 
         # Retreats phase
-        if self.phase_type == 'R':
+        if self.phase_type == "R":
             # We need to process if there are retreats
             if [1 for x in self.powers.values() if x.retreats]:
                 return 0
@@ -2886,33 +3151,35 @@ class Game(Jsonable):
             # Otherwise, clearing flags and skipping phase
             for power in self.powers.values():
                 for dis_unit in power.retreats:
-                    self.update_hash(power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True)
+                    self.update_hash(
+                        power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True
+                    )
                 power.retreats, power.adjust, power.civil_disorder = {}, [], 0
             self.result = {}
-            if 'DONT_SKIP_PHASES' in self.rules:
+            if "DONT_SKIP_PHASES" in self.rules:
                 return 0
             return 1
 
         # Adjustments phase
-        if self.phase_type == 'A':
+        if self.phase_type == "A":
             # Capturing supply centers
             self._capture_centers()
 
             # If completed, can't skip
-            if self.phase == 'COMPLETED':
+            if self.phase == "COMPLETED":
                 return 0
 
             # If we have units to remove or to build, we need to process
             for power in self.powers.values():
                 units, centers = len(power.units), len(power.centers)
                 if [x for x in power.centers if x in power.homes]:
-                    centers += (0 + min(0, len([0 for x in power.units if x[2:5] in power.homes])))
+                    centers += 0 + min(0, len([0 for x in power.units if x[2:5] in power.homes]))
                 if units > centers or (units < centers and self._build_limit(power)):
                     return 0
 
             # Otherwise, skipping
             self.result = {}
-            if 'DONT_SKIP_PHASES' in self.rules:
+            if "DONT_SKIP_PHASES" in self.rules:
                 return 0
             return 1
 
@@ -2936,12 +3203,16 @@ class Game(Jsonable):
 
         # Can build on any of his centers
         # -- BUILD_ANY: Powers may build new units at any owned supply center, not simply at their home supply centers.
-        if 'BUILD_ANY' in self.rules:
+        if "BUILD_ANY" in self.rules:
             homes = power.centers
 
         # Updating homes to only include homes if they are unoccupied,
-        homes = [h for h in homes if h in power.centers and h not in
-                 [u[2:5] for p in self.powers.values() for u in p.units]]
+        homes = [
+            h
+            for h in homes
+            if h in power.centers
+            and h not in [u[2:5] for p in self.powers.values() for u in p.units]
+        ]
         return homes
 
     def _build_limit(self, power, sites=None):
@@ -2990,14 +3261,18 @@ class Game(Jsonable):
             centers = this_year[power]
 
             # 1) you must have enough centers to win
-            if (centers >= self.win
-
-                    # 2) and you must grow or, if "HOLD_WIN", must have had a win
-                    and (centers > last_year[power], last_year[power] >= self.win)['HOLD_WIN' in self.rules]
-
-                    # 3) and you must be alone in the lead (not required in case of SHARED_VICTORY)
-                    and ('SHARED_VICTORY' in self.rules
-                         or (centers, year_centers.count(centers)) == (max(year_centers), 1))):
+            if (
+                centers >= self.win
+                # 2) and you must grow or, if "HOLD_WIN", must have had a win
+                and (centers > last_year[power], last_year[power] >= self.win)[
+                    "HOLD_WIN" in self.rules
+                ]
+                # 3) and you must be alone in the lead (not required in case of SHARED_VICTORY)
+                and (
+                    "SHARED_VICTORY" in self.rules
+                    or (centers, year_centers.count(centers)) == (max(year_centers), 1)
+                )
+            ):
                 victors += [power]
 
         # We have a winner!
@@ -3048,7 +3323,9 @@ class Game(Jsonable):
 
                     # 1) If center is unowned, or 2) owned by someone else and that we have a unit on it
                     # Proceed with transfer, and record lost
-                    if (not power or owner is not power) and center in [x[2:5] for x in owner.units]:
+                    if (not power or owner is not power) and center in [
+                        x[2:5] for x in owner.units
+                    ]:
                         self._transfer_center(power, owner, center)
                         if not power:
                             unowned.remove(center)
@@ -3082,12 +3359,14 @@ class Game(Jsonable):
         """
         # Setting outcome, and end date. Clearing orders and saving.
         self.outcome = [self._phase_abbr()] + victors
-        self.note = 'Victory by: ' + ', '.join([vic[:3] for vic in victors])
-        self.phase = 'COMPLETED'
+        self.note = "Victory by: " + ", ".join([vic[:3] for vic in victors])
+        self.phase = "COMPLETED"
         self.set_status(strings.COMPLETED)
         for power in self.powers.values():
             for dis_unit in power.retreats:
-                self.update_hash(power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True)
+                self.update_hash(
+                    power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True
+                )
             power.retreats, power.adjust, power.civil_disorder = {}, [], 0
 
     def _phase_abbr(self, phase=None):
@@ -3131,13 +3410,13 @@ class Game(Jsonable):
             if word and len(word[-1]) == 1 and not word[-1].isalpha():
                 word = word[:-1]
             if len(word) < 2:
-                return self.error.append(err.STD_GAME_BAD_ORDER % ' '.join(word))
+                return self.error.append(err.STD_GAME_BAD_ORDER % " ".join(word))
 
         # Checking if we can order unit
-        unit, order = ' '.join(word[:2]), ' '.join(word[2:])
+        unit, order = " ".join(word[:2]), " ".join(word[2:])
         owner = self._unit_owner(unit)
         if not owner or owner is not power:
-            self.error += [err.STD_GAME_UNORDERABLE_UNIT % ' '.join(word)]
+            self.error += [err.STD_GAME_UNORDERABLE_UNIT % " ".join(word)]
 
         # Validating order
         elif order:
@@ -3148,23 +3427,23 @@ class Game(Jsonable):
             if valid is not None:
                 power.civil_disorder = 0
                 if valid == -1:
-                    order += ' ?'
-                if unit not in power.orders or (replace and 'NO_CHECK' not in self.rules):
+                    order += " ?"
+                if unit not in power.orders or (replace and "NO_CHECK" not in self.rules):
                     power.orders[unit] = order
-                elif 'NO_CHECK' in self.rules:
+                elif "NO_CHECK" in self.rules:
                     count = len(power.orders)
-                    if power.orders[unit] not in ('H', order):
-                        power.orders['REORDER %d' % count] = power.orders[unit]
+                    if power.orders[unit] not in ("H", order):
+                        power.orders["REORDER %d" % count] = power.orders[unit]
                         count += 1
-                        power.orders[unit] = 'H'
-                    power.orders['REORDER %d' % count] = ' '.join(word)
+                        power.orders[unit] = "H"
+                    power.orders["REORDER %d" % count] = " ".join(word)
                 else:
                     self.error += [err.STD_GAME_UNIT_REORDERED % unit]
 
             # Invalid order in NO_CHECK game
-            elif 'NO_CHECK' in self.rules:
+            elif "NO_CHECK" in self.rules:
                 count = len(power.orders)
-                power.orders['INVALID %d' % count] = ' '.join(raw_word)
+                power.orders["INVALID %d" % count] = " ".join(raw_word)
 
         # Returning nothing
         return None
@@ -3200,9 +3479,9 @@ class Game(Jsonable):
                 powers += [who]
 
             # Adds orders
-            if 'NO_CHECK' in self.rules:
+            if "NO_CHECK" in self.rules:
                 data = self._expand_order(word)
-                if len(data) < 3 and (len(data) == 1 or data[1] != 'H'):
+                if len(data) < 3 and (len(data) == 1 or data[1] != "H"):
                     self.error.append(err.STD_GAME_BAD_ORDER % line.upper())
                     continue
 
@@ -3211,10 +3490,10 @@ class Game(Jsonable):
                     for order in who.orders:
                         order_parts = who.orders[order].split()
                         if len(order_parts) >= 2 and order_parts[1][:3] == word[1][:3]:
-                            who.orders[order] = ''
+                            who.orders[order] = ""
 
                 # Adding new order
-                who.orders['ORDER %d' % (len(who.orders) + 1)] = ' '.join(word)
+                who.orders["ORDER %d" % (len(who.orders) + 1)] = " ".join(word)
             else:
                 self._add_order(who, word, expand=expand, replace=replace)
             if who.orders and who not in has_orders:
@@ -3267,57 +3546,65 @@ class Game(Jsonable):
                 word = self._add_unit_types(word)
 
                 # Add 'R' as order type for Retreat, 'D' for Disband
-                if word[0] == 'R' and len(word) > 3:
+                if word[0] == "R" and len(word) > 3:
                     del word[0]
-                if word[0] in 'RD':
+                if word[0] in "RD":
                     word = word[1:] + word[:1]
 
             # Checking if unit can retreat
-            unit = ' '.join(word[:2])
+            unit = " ".join(word[:2])
             try:
-                unit = [r_unit for r_unit in power.retreats if r_unit == unit or r_unit.startswith(unit + '/')][0]
+                unit = [
+                    r_unit
+                    for r_unit in power.retreats
+                    if r_unit == unit or r_unit.startswith(unit + "/")
+                ][0]
             except IndexError:
-                adjust += ['VOID ' + order]
+                adjust += ["VOID " + order]
                 self.error.append(err.GAME_UNIT_NOT_IN_RETREAT % unit)
                 continue
 
             # Checking if unit already retreated
             if unit in retreated:
-                adjust += ['VOID ' + order]
+                adjust += ["VOID " + order]
                 self.error.append(err.GAME_TWO_ORDERS_FOR_RETREATING_UNIT % unit)
                 continue
             word[1] = unit[2:]
 
             # Adding Disband for retreats with no destination
-            if len(word) == 3 and word[2] in 'RD':
-                word[2] = 'D'
+            if len(word) == 3 and word[2] in "RD":
+                word[2] = "D"
 
             # Checking if retreat destination is valid
-            elif len(word) == 4 and word[2] in 'R-':
-                word[2] = 'R'
-                if word[3] not in power.retreats[unit]\
-                        or self._unit_owner('A {}'.format(word[3][:3]), coast_required=0) \
-                        or self._unit_owner('F {}'.format(word[3][:3]), coast_required=0):
-                    self.error.append(err.GAME_INVALID_RETREAT_DEST % ' '.join(word))
-                    adjust += ['VOID ' + order]
+            elif len(word) == 4 and word[2] in "R-":
+                word[2] = "R"
+                if (
+                    word[3] not in power.retreats[unit]
+                    or self._unit_owner("A {}".format(word[3][:3]), coast_required=0)
+                    or self._unit_owner("F {}".format(word[3][:3]), coast_required=0)
+                ):
+                    self.error.append(err.GAME_INVALID_RETREAT_DEST % " ".join(word))
+                    adjust += ["VOID " + order]
                     continue
 
             # Invalid retreat order - Voiding
             else:
-                self.error.append(err.GAME_BAD_RETREAT_ORDER % ' '.join(word))
-                adjust += ['VOID ' + order]
+                self.error.append(err.GAME_BAD_RETREAT_ORDER % " ".join(word))
+                adjust += ["VOID " + order]
                 continue
 
             # Adding retreat order and marking unit as retreated
             retreated += [unit]
-            adjust += [' '.join(word)]
+            adjust += [" ".join(word)]
 
         # Replacing previous orders
         if replace:
             for order in adjust:
                 word = order.split()
-                if len(word) >= 2 and word[0] != 'VOID':
-                    power.adjust = [adj_order for adj_order in power.adjust if adj_order.split()[1] != word[1]]
+                if len(word) >= 2 and word[0] != "VOID":
+                    power.adjust = [
+                        adj_order for adj_order in power.adjust if adj_order.split()[1] != word[1]
+                    ]
 
         # Otherwise, marking re-orders as invalid
         else:
@@ -3325,7 +3612,7 @@ class Game(Jsonable):
             for order in adjust[:]:
                 word = order.split()
                 if len(word) >= 2 and word[1] in ordered_locs:
-                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % ' '.join(word[:2])]
+                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % " ".join(word[:2])]
                     adjust.remove(order)
 
         # Finalizing orders
@@ -3375,7 +3662,7 @@ class Game(Jsonable):
         # Calculating if the power can build or remove units
         adjust, places = [], []
         need, sites = len(power.centers) - len(power.units), []
-        order_type = 'D' if need < 0 else 'B'
+        order_type = "D" if need < 0 else "B"
 
         # If we can build, calculating list of possible build locations
         if need > 0:
@@ -3386,12 +3673,12 @@ class Game(Jsonable):
         for order in orders:
             order = order.strip()
 
-            if order == 'WAIVE':
+            if order == "WAIVE":
                 # Check WAIVE order immediately and continue to next loop step.
                 if need >= 0:
                     adjust += [order]
                 else:
-                    adjust += ['VOID ' + order]
+                    adjust += ["VOID " + order]
                     self.error += [err.GAME_NO_WAIVE_WITH_DISBAND]
                 continue
 
@@ -3402,24 +3689,24 @@ class Game(Jsonable):
             # Checking if unit can Build/Disband, otherwise voiding order
             if word[-1] == order_type:
                 pass
-            elif word[-1] in 'BD':
-                adjust += ['VOID ' + order]
+            elif word[-1] in "BD":
+                adjust += ["VOID " + order]
                 self.error += [err.GAME_ORDER_NOT_ALLOWED % order]
                 continue
 
             # Adding unit type
-            if word[-1] == 'D' and expand:
+            if word[-1] == "D" and expand:
                 word = self._add_unit_types(word)
 
             # Checking for 'Disband'
-            order = ' '.join(word)
-            if word[-1] == 'D':
+            order = " ".join(word)
+            if word[-1] == "D":
                 if len(word) == 3:
-                    unit = ' '.join(word[:2])
+                    unit = " ".join(word[:2])
 
                     # Invalid unit, voiding order
                     if unit not in power.units:
-                        adjust += ['VOID ' + order]
+                        adjust += ["VOID " + order]
                         self.error += [err.GAME_NO_SUCH_UNIT % unit]
 
                     # Order to remove unit
@@ -3428,10 +3715,10 @@ class Game(Jsonable):
 
                     # Invalid order, voiding
                     else:
-                        adjust += ['VOID ' + order]
+                        adjust += ["VOID " + order]
                         self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % unit]
                 else:
-                    adjust += ['VOID ' + order]
+                    adjust += ["VOID " + order]
                     self.error += [err.GAME_BAD_ADJUSTMENT_ORDER % order]
 
             # Checking for BUILD
@@ -3440,17 +3727,17 @@ class Game(Jsonable):
 
                 # Invalid build site
                 if site not in sites:
-                    adjust += ['VOID ' + order]
+                    adjust += ["VOID " + order]
                     self.error += [err.GAME_INVALID_BUILD_SITE % order]
 
                 # Site already used
                 elif site in places:
-                    adjust += ['VOID ' + order]
+                    adjust += ["VOID " + order]
                     self.error += [err.GAME_MULT_BUILDS_IN_SITE % order]
 
                 # Unit can't be built there
-                elif not self.map.is_valid_unit(' '.join(word[:2])):
-                    adjust += ['VOID ' + order]
+                elif not self.map.is_valid_unit(" ".join(word[:2])):
+                    adjust += ["VOID " + order]
                     self.error += [err.GAME_INVALID_BUILD_ORDER % order]
 
                 # Valid build sites
@@ -3460,7 +3747,7 @@ class Game(Jsonable):
 
             # Otherwise, unknown order - Voiding
             else:
-                adjust += ['VOID ' + order]
+                adjust += ["VOID " + order]
                 self.error += [err.GAME_BAD_ADJUSTMENT_ORDER % order]
 
         # NB: We skip WAIVE orders when checking for replacements.
@@ -3470,17 +3757,22 @@ class Game(Jsonable):
         if replace:
             for order in adjust:
                 word = order.split()
-                if len(word) >= 2 and word[0] != 'VOID':
-                    power.adjust = [adj_order for adj_order in power.adjust
-                                    if adj_order == 'WAIVE' or adj_order.split()[1] != word[1]]
+                if len(word) >= 2 and word[0] != "VOID":
+                    power.adjust = [
+                        adj_order
+                        for adj_order in power.adjust
+                        if adj_order == "WAIVE" or adj_order.split()[1] != word[1]
+                    ]
 
         # Otherwise, marking re-orders as invalid
         else:
-            ordered_locs = [adj_order.split()[1] for adj_order in power.adjust if adj_order != 'WAIVE']
+            ordered_locs = [
+                adj_order.split()[1] for adj_order in power.adjust if adj_order != "WAIVE"
+            ]
             for order in adjust[:]:
                 word = order.split()
                 if len(word) >= 2 and word[1] in ordered_locs:
-                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % ' '.join(word[:2])]
+                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % " ".join(word[:2])]
                     adjust.remove(order)
 
         # Finalizing orders
@@ -3493,14 +3785,14 @@ class Game(Jsonable):
 
         # Removing extra waive orders
         while 0 < need < len(power.adjust):
-            if 'WAIVE' in power.adjust:
-                power.adjust.remove('WAIVE')
+            if "WAIVE" in power.adjust:
+                power.adjust.remove("WAIVE")
             else:
                 break
 
         # Adding missing waive orders
-        if 'WAIVE' in power.adjust or power.is_dummy():
-            power.adjust.extend(['WAIVE'] * (need - len(power.adjust)))
+        if "WAIVE" in power.adjust or power.is_dummy():
+            power.adjust.extend(["WAIVE"] * (need - len(power.adjust)))
 
     def _update_adjust_orders(self, power, orders, expand=True, replace=True):
         """ Updates order for Adjustment phase
@@ -3532,12 +3824,12 @@ class Game(Jsonable):
 
         # In NO_CHECK games, ensure that orders to other player's units are reported as invalid
         # if no proxy was given
-        if 'NO_CHECK' in self.rules:
+        if "NO_CHECK" in self.rules:
             for power in self.powers.values():
                 for unit, order in power.orders.items():
-                    if unit[0] not in 'RI' and power is not self._unit_owner(unit):
-                        order = unit + ' ' + order
-                        power.orders['INVALID %d' % len(power.orders)] = order
+                    if unit[0] not in "RI" and power is not self._unit_owner(unit):
+                        order = unit + " " + order
+                        power.orders["INVALID %d" % len(power.orders)] = order
 
     def _default_orders(self, power):
         """ Issues default orders for a power (HOLD)
@@ -3553,7 +3845,7 @@ class Game(Jsonable):
         if not [x for x in power.units if self.orders.get(x)]:
             power.civil_disorder = 1
         for unit in power.units:
-            self.orders.setdefault(unit, 'H')
+            self.orders.setdefault(unit, "H")
 
     # ====================================================================
     #   Private Interface - ADJUDICATION Methods
@@ -3579,10 +3871,10 @@ class Game(Jsonable):
         self._unit_owner_cache = {}
         for owner in self.powers.values():
             for unit in owner.units:
-                self._unit_owner_cache[(unit, True)] = owner                    # (unit, coast_required): owner
+                self._unit_owner_cache[(unit, True)] = owner  # (unit, coast_required): owner
                 self._unit_owner_cache[(unit, False)] = owner
-                if '/' in unit:
-                    self._unit_owner_cache[(unit.split('/')[0], False)] = owner
+                if "/" in unit:
+                    self._unit_owner_cache[(unit.split("/")[0], False)] = owner
 
     def _unit_owner(self, unit, coast_required=1):
         """ Finds the power who owns a unit
@@ -3631,21 +3923,20 @@ class Game(Jsonable):
             word = order.split()
 
             # Strength of a non-move or failed move is 1 + support
-            if word[0] != '-' or self.result[unit]:
+            if word[0] != "-" or self.result[unit]:
                 place, strength = unit[2:5], 1
 
             # Strength of move depends on * and ~ in adjacency list
             else:
-                offset = 1 if word[-1] == 'VIA' else 0
+                offset = 1 if word[-1] == "VIA" else 0
                 place = word[-1 - offset][:3]
                 strength = 1
 
             # Adds the list of supporting units
             # Only adding the support that DOES NOT count toward dislodgment
-            self.combat \
-                .setdefault(place, {}) \
-                .setdefault(strength + self.supports[unit][0], []) \
-                .append([unit, self.supports[unit][1]])
+            self.combat.setdefault(place, {}).setdefault(
+                strength + self.supports[unit][0], []
+            ).append([unit, self.supports[unit][1]])
 
     def _detect_paradox(self, starting_node, paradox_action, paradox_last_words):
         """ Paradox detection algorithm. Start at starting node and move chain to see if node if performing
@@ -3661,15 +3952,17 @@ class Game(Jsonable):
         current_unit = self._occupant(current_node)
         while current_unit is not None and current_unit not in visited_units:
             visited_units += [current_unit]
-            current_order = self.command.get(current_unit, 'H')
+            current_order = self.command.get(current_unit, "H")
 
             # Action and last words detected
-            if (current_order[0] == paradox_action
-                    and current_order.split()[-1 * len(paradox_last_words):] == paradox_last_words):
+            if (
+                current_order[0] == paradox_action
+                and current_order.split()[-1 * len(paradox_last_words) :] == paradox_last_words
+            ):
                 return True
 
             # Continuing chain only if order is Support or Convoy
-            if current_order.split()[0] not in 'SC':
+            if current_order.split()[0] not in "SC":
                 break
             current_node = current_order.split()[-1]
             current_unit = self._occupant(current_node)
@@ -3690,17 +3983,17 @@ class Game(Jsonable):
         for unit, word in may_convoy.items():
 
             # Removing '-'
-            word = [w for w in word if w != '-']
+            word = [w for w in word if w != "-"]
 
             # Checking order of unit at dest
-            offset = 1 if self.command.get(unit, []).split()[-1] == 'VIA' else 0
-            convoy_dest = self.command.get(unit, 'H').split()[-1 - offset]
+            offset = 1 if self.command.get(unit, []).split()[-1] == "VIA" else 0
+            convoy_dest = self.command.get(unit, "H").split()[-1 - offset]
             unit_at_dest = self._occupant(convoy_dest)
-            order_unit_at_dest = self.command.get(unit_at_dest, 'H')
+            order_unit_at_dest = self.command.get(unit_at_dest, "H")
 
             # Looping over all areas where convoys will take place (including destination)
             for place in word:
-                area, convoyer = place[:3], 'AF'[unit[0] == 'A'] + ' ' + place
+                area, convoyer = place[:3], "AF"[unit[0] == "A"] + " " + place
                 strongest = self.combat[area][max(self.combat[area])]
 
                 # Checking if the convoy is under attack
@@ -3713,7 +4006,7 @@ class Game(Jsonable):
                 # Paradox Detection #1
                 # [1st and 2nd order] Checking that we are not attacking a chain, with the last unit supporting
                 # the convoy
-                paradox = self._detect_paradox(convoy_dest, 'S', ['S', 'F', area])
+                paradox = self._detect_paradox(convoy_dest, "S", ["S", "F", area])
 
                 # Checking if the convoy can withstand the attack and there is not active paradox
                 if convoyer in [x[0] for x in strongest] and not paradox:
@@ -3722,7 +4015,10 @@ class Game(Jsonable):
                 # For a beleaguered garrison, checking if the destination is attacking / supporting an attack
                 # against convoy
                 if len(strongest) >= 2 and not paradox:
-                    if order_unit_at_dest.split()[0] not in '-S' or order_unit_at_dest.split()[-1][:3] != area:
+                    if (
+                        order_unit_at_dest.split()[0] not in "-S"
+                        or order_unit_at_dest.split()[-1][:3] != area
+                    ):
                         continue
 
                 # Removing paths using place
@@ -3733,16 +4029,20 @@ class Game(Jsonable):
 
                 # Paradox Detection #2 - Can convoyed unit use land route to cut support necessary to attack convoy
                 paradox = False
-                if self._abuts(unit[0], unit[2:], '-', convoy_dest):
-                    paradox = self._detect_paradox(convoy_dest, 'S', ['-', area])
+                if self._abuts(unit[0], unit[2:], "-", convoy_dest):
+                    paradox = self._detect_paradox(convoy_dest, "S", ["-", area])
 
                 # Setting the result if there is no convoy paths left, and
                 #   1) there is no land route (or there is a paradox through the land route)
                 #   or 2) the unit specified 'VIA' and doesn't want to try the land route (4.A.3)
-                if not self.convoy_paths[unit] and (paradox
-                                                    or not self._abuts(unit[0], unit[2:], '-', convoy_dest)
-                                                    or (self._abuts(unit[0], unit[2:], '-', convoy_dest)
-                                                        and self.command[unit].split()[-1] == 'VIA')):
+                if not self.convoy_paths[unit] and (
+                    paradox
+                    or not self._abuts(unit[0], unit[2:], "-", convoy_dest)
+                    or (
+                        self._abuts(unit[0], unit[2:], "-", convoy_dest)
+                        and self.command[unit].split()[-1] == "VIA"
+                    )
+                ):
                     self.result[unit] = [result]
 
                 # Setting the result for a would-be dislodged fleet
@@ -3757,10 +4057,7 @@ class Game(Jsonable):
             :return: 1
         """
         self.result[unit] += [BOUNCE]
-        self.combat \
-            .setdefault(unit[2:5], {}) \
-            .setdefault(1, []) \
-            .append([unit, []])
+        self.combat.setdefault(unit[2:5], {}).setdefault(1, []).append([unit, []])
         return 1
 
     def _bounce(self):
@@ -3775,19 +4072,21 @@ class Game(Jsonable):
             # STEP 6. MARK (non-convoyed) PLACE-SWAP BOUNCERS
             for unit, order in self.command.items():
                 word = order.split()
-                if self.result[unit] or word[0] != '-' or self._is_moving_via_convoy(unit):
+                if self.result[unit] or word[0] != "-" or self._is_moving_via_convoy(unit):
                     continue
-                crawl_ok, site = False, '- ' + unit[2:]
+                crawl_ok, site = False, "- " + unit[2:]
                 swap = self._occupant(word[1], any_coast=not crawl_ok)
                 if self._is_moving_via_convoy(swap):
                     continue
-                if not (crawl_ok and swap and swap[0] == unit[0] == 'F'):
-                    site = site.split('/')[0]
-                if not (self.command.get(swap, '').find(site) or self.result[swap]):
+                if not (crawl_ok and swap and swap[0] == unit[0] == "F"):
+                    site = site.split("/")[0]
+                if not (self.command.get(swap, "").find(site) or self.result[swap]):
                     my_strength = self.supports[unit][0] - len(self.supports[unit][1])
                     his_strength = self.supports[swap][0] - len(self.supports[swap][1])
-                    our_strength = (self._unit_owner(unit) is self._unit_owner(swap)
-                                    or self.supports[unit][0] == self.supports[swap][0])
+                    our_strength = (
+                        self._unit_owner(unit) is self._unit_owner(swap)
+                        or self.supports[unit][0] == self.supports[swap][0]
+                    )
                     if our_strength or my_strength <= his_strength:
                         self._boing(unit)
                     if our_strength or his_strength <= my_strength:
@@ -3809,7 +4108,7 @@ class Game(Jsonable):
                 for key in strength:
                     if key != strength[-1] or len(conflicts[key]) != 1:
                         for unit, no_help in conflicts[key]:
-                            if not self.result[unit] and self.command[unit][0] == '-':
+                            if not self.result[unit] and self.command[unit][0] == "-":
                                 bounced = self._boing(unit)
             if bounced:
                 continue
@@ -3821,15 +4120,16 @@ class Game(Jsonable):
                 if len(conflicts[strength[-1]]) != 1:
                     continue
                 strongest = conflicts[strength[-1]][0][0]
-                if self.command[strongest][0] != '-' or self.result[strongest]:
+                if self.command[strongest][0] != "-" or self.result[strongest]:
                     continue
                 no_help = len(conflicts[strength[-1]][0][1])
                 guy = self._occupant(place)
                 if guy:
                     owner = self._unit_owner(guy)
-                    if ((self.command[guy][0] != '-' or self.result[guy])
-                            and (owner is self._unit_owner(strongest)
-                                 or (len(strength) > 1 and strength[-1] - no_help <= strength[-2]))):
+                    if (self.command[guy][0] != "-" or self.result[guy]) and (
+                        owner is self._unit_owner(strongest)
+                        or (len(strength) > 1 and strength[-1] - no_help <= strength[-2])
+                    ):
                         bounced = self._boing(strongest)
                         for supporting_unit in conflicts[strength[-1]][0][1]:
                             if VOID not in self.result[supporting_unit]:
@@ -3846,34 +4146,35 @@ class Game(Jsonable):
         """
         order = self.command[unit]
         word = order.split()
-        if word[0] != '-' or (direct and self._is_moving_via_convoy(unit)):
+        if word[0] != "-" or (direct and self._is_moving_via_convoy(unit)):
             return
-        dest = word[-1] if word[-1] != 'VIA' else word[-2]
+        dest = word[-1] if word[-1] != "VIA" else word[-2]
         other_unit = self._occupant(dest, any_coast=1)
-        coord = self.command.get(other_unit, 'no unit at dest').split()
-        support_target = 'F ' + coord[-1][:3]
+        coord = self.command.get(other_unit, "no unit at dest").split()
+        support_target = "F " + coord[-1][:3]
 
         # pylint: disable=too-many-boolean-expressions
-        if (coord[0] == 'S'
-                and CUT not in self.result[other_unit]
-                and VOID not in self.result[other_unit]
-
-                # EXCEPTION A: CANNOT CUT SUPPORT YOU YOURSELF ARE GIVING
-                and (self._unit_owner(unit) is not self._unit_owner(other_unit))
-
-                # EXCEPTION B: CANNOT CUT SUPPORT FOR A MOVE AGAINST YOUR LOCATION
-                and coord[-1][:3] != unit[2:5]
-
-                # EXCEPTION C: OR (IF CONVOYED) FOR OR AGAINST ANY CONVOYING FLEET
-                and (not self._is_moving_via_convoy(unit)
-                     or self.command.get(support_target, 'H')[0] != 'C'
-                     or VOID in self.result.get(support_target, [])
-                     # EXCEPTION TO EXCEPTION C: IF THERE IS A ALTERNATIVE CONVOY ROUTE
-                     or [1 for path in self.convoy_paths[unit] if support_target[2:] not in path])):
+        if (
+            coord[0] == "S"
+            and CUT not in self.result[other_unit]
+            and VOID not in self.result[other_unit]
+            # EXCEPTION A: CANNOT CUT SUPPORT YOU YOURSELF ARE GIVING
+            and (self._unit_owner(unit) is not self._unit_owner(other_unit))
+            # EXCEPTION B: CANNOT CUT SUPPORT FOR A MOVE AGAINST YOUR LOCATION
+            and coord[-1][:3] != unit[2:5]
+            # EXCEPTION C: OR (IF CONVOYED) FOR OR AGAINST ANY CONVOYING FLEET
+            and (
+                not self._is_moving_via_convoy(unit)
+                or self.command.get(support_target, "H")[0] != "C"
+                or VOID in self.result.get(support_target, [])
+                # EXCEPTION TO EXCEPTION C: IF THERE IS A ALTERNATIVE CONVOY ROUTE
+                or [1 for path in self.convoy_paths[unit] if support_target[2:] not in path]
+            )
+        ):
 
             # Okay, the support is cut.
             self.result[other_unit] += [CUT]
-            affected = ' '.join(coord[1:3])  # Unit being supported
+            affected = " ".join(coord[1:3])  # Unit being supported
             self.supports[affected][0] -= 1
             if other_unit in self.supports[affected][1]:
                 self.supports[affected][1].remove(other_unit)
@@ -3885,7 +4186,9 @@ class Game(Jsonable):
             :param site: The site being attacked (e.g. 'MAR')
             :return: Nothing
         """
-        sups = [strength for strength, attack_unit in self.combat[site].items() if unit in attack_unit][0]
+        sups = [
+            strength for strength, attack_unit in self.combat[site].items() if unit in attack_unit
+        ][0]
         self.combat[site][sups].remove(unit)
         if not self.combat[site][sups]:
             del self.combat[site][sups]
@@ -3933,12 +4236,14 @@ class Game(Jsonable):
         for power in self.powers.values():
             self.ordered_units[power.name] = [unit for unit in power.units if unit in self.orders]
             for unit in power.units:
-                self.command[unit] = self.orders.get(unit, 'H')
-            if 'NO_CHECK' in self.rules:
-                for order in [order for key, order in power.orders.items() if key.startswith('INVALID')]:
-                    unit = ' '.join(order.split()[:2])
+                self.command[unit] = self.orders.get(unit, "H")
+            if "NO_CHECK" in self.rules:
+                for order in [
+                    order for key, order in power.orders.items() if key.startswith("INVALID")
+                ]:
+                    unit = " ".join(order.split()[:2])
                     self.ordered_units[power.name] += [unit]
-                    self.command[unit] = 'H'
+                    self.command[unit] = "H"
                     self.result[unit] = [VOID]
             self._default_orders(power)
 
@@ -3950,27 +4255,26 @@ class Game(Jsonable):
         # STEP 1A. CANCEL ALL INVALID ORDERS GIVEN TO UNITS ATTEMPTING TO MOVE BY CONVOY
         for unit, order in list(self.command.items()):
             word = order.split()
-            if word[0] != '-':
+            if word[0] != "-":
                 continue
 
-            offset = 1 if word[-1] == 'VIA' else 0
+            offset = 1 if word[-1] == "VIA" else 0
+
             def flatten(nested_list):
                 """ Flattens a sublist """
                 return [list_item for sublist in nested_list for list_item in sublist]
 
-            has_via_convoy_flag = 1 if word[-1] == 'VIA' else 0
+            has_via_convoy_flag = 1 if word[-1] == "VIA" else 0
             convoying_units = self._get_convoying_units_for_path(unit[0], unit[2:], word[1])
-            possible_paths = self._get_convoy_paths(unit[0],
-                                                    unit[2:],
-                                                    word[1],
-                                                    has_via_convoy_flag,
-                                                    convoying_units)
+            possible_paths = self._get_convoy_paths(
+                unit[0], unit[2:], word[1], has_via_convoy_flag, convoying_units
+            )
 
             # No convoy path - Removing VIA and checking if adjacent
             if not possible_paths:
                 if has_via_convoy_flag:
-                    self.command[unit] = ' '.join(word[:-1])
-                if not self._abuts(unit[0], unit[2:], 'S', word[1]):
+                    self.command[unit] = " ".join(word[:-1])
+                if not self._abuts(unit[0], unit[2:], "S", word[1]):
                     self.result[unit] += [NO_CONVOY]
 
             # There is a convoy path, remembering the convoyers
@@ -3978,7 +4282,10 @@ class Game(Jsonable):
                 self.convoy_paths[unit] = possible_paths
                 may_convoy.setdefault(unit, [])
                 for convoyer in convoying_units:
-                    if convoyer[2:] in flatten(possible_paths) and convoyer[2:] not in may_convoy[unit]:
+                    if (
+                        convoyer[2:] in flatten(possible_paths)
+                        and convoyer[2:] not in may_convoy[unit]
+                    ):
                         may_convoy[unit] += [convoyer[2:]]
 
             # Marking all convoys that are not in any path
@@ -3993,47 +4300,47 @@ class Game(Jsonable):
         # -----------------------------------------------------------
         # STEP 1B. CANCEL ALL INVALID CONVOY ORDERS
         for unit, order in self.command.items():
-            if order[0] != 'C':
+            if order[0] != "C":
                 continue
             # word = ['C', 'PAR', 'MAR'] -> ['C', 'A', 'PAR', 'MAR']
-            word, mover_type = order.split(), 'AF'[unit[0] == 'A']
+            word, mover_type = order.split(), "AF"[unit[0] == "A"]
             if word[1] != mover_type:
                 word[1:1] = [mover_type]
-            mover = '%s %s' % (mover_type, word[2])
+            mover = "%s %s" % (mover_type, word[2])
             if self._unit_owner(mover):
                 convoyer = may_convoy.get(mover, [])
-                offset = 1 if self.command.get(mover, '').split()[-1] == 'VIA' else 0
-                mover_dest = self.command.get(mover, '').split()[-1 - offset]
+                offset = 1 if self.command.get(mover, "").split()[-1] == "VIA" else 0
+                mover_dest = self.command.get(mover, "").split()[-1 - offset]
                 if unit[2:] not in convoyer or word[-1] != mover_dest:
                     self.result[unit] += [VOID]
             else:
-                self.command[unit] = 'H'
+                self.command[unit] = "H"
 
         # -----------------------------------------------------------
         # STEP 2. CANCEL INCONSISTENT SUPPORT ORDERS AND COUNT OTHERS
         for unit, order in self.command.items():
-            if order[0] != 'S':
+            if order[0] != "S":
                 continue
             word, signal = order.split(), 0
 
             # Remove any trailing "H" from a support-in-place order.
-            if word[-1] == 'H':
+            if word[-1] == "H":
                 del word[-1]
-                self.command[unit] = ' '.join(word)
+                self.command[unit] = " ".join(word)
 
             # Stick the proper unit type (A or F) into the order;
             # All supports will have it from here on
-            where = 1 + (word[1] in 'AF')
+            where = 1 + (word[1] in "AF")
             guy = self._occupant(word[where])
 
             # See if there is a unit to receive the support
             if not guy:
-                self.command[unit] = 'H'
+                self.command[unit] = "H"
                 if not signal:
                     self.result[unit] += [VOID]
                 continue
-            word[1:where + 1] = guy.split()
-            self.command[unit] = ' '.join(word)
+            word[1 : where + 1] = guy.split()
+            self.command[unit] = " ".join(word)
 
             # See if the unit's order matches the supported order
             if signal:
@@ -4041,18 +4348,18 @@ class Game(Jsonable):
             coord = self.command[guy].split()
 
             # 1) Void if support is for hold and guy is moving
-            if len(word) < 5 and coord[0] == '-':
+            if len(word) < 5 and coord[0] == "-":
                 self.result[unit] += [VOID]
                 continue
 
             # 2) Void if support is for move and guy isn't going where support is given
-            offset = 1 if coord[-1] == 'VIA' else 0
-            if len(word) > 4 and (coord[0], coord[-1 - offset]) != ('-', word[4]):
+            offset = 1 if coord[-1] == "VIA" else 0
+            if len(word) > 4 and (coord[0], coord[-1 - offset]) != ("-", word[4]):
                 self.result[unit] += [VOID]
                 continue
 
             # 3) Void if support is giving for army moving via convoy, but move over convoy failed
-            if NO_CONVOY in self.result[guy] and guy[0] == 'A':
+            if NO_CONVOY in self.result[guy] and guy[0] == "A":
                 self.result[unit] += [VOID]
                 continue
 
@@ -4061,7 +4368,7 @@ class Game(Jsonable):
 
             # If the unit is owned by the owner of the piece being attacked, add the unit to those
             # whose supports are not counted toward dislodgment.
-            if coord[0] != '-':
+            if coord[0] != "-":
                 continue
             owner = self._unit_owner(unit)
             other = self._unit_owner(self._occupant(coord[-1], any_coast=1))
@@ -4098,9 +4405,9 @@ class Game(Jsonable):
             for unit in may_convoy:
                 if NO_CONVOY in self.result[unit]:
                     for sup, help_unit in self.command.items():
-                        if not (help_unit.find('S %s' % unit) or self.result[sup]):
+                        if not (help_unit.find("S %s" % unit) or self.result[sup]):
                             self.result[sup] = [NO_CONVOY]
-                        if not (help_unit.find('C %s' % unit) or self.result[sup]):
+                        if not (help_unit.find("C %s" % unit) or self.result[sup]):
                             self.result[sup] = [NO_CONVOY]
                     self.supports[unit] = [0, []]
                 elif MAYBE in self.result[unit] and unit not in cutters:
@@ -4122,12 +4429,12 @@ class Game(Jsonable):
             # STEP 9. MARK SUPPORTS CUT BY DISLODGES
             cut = 0
             for unit, order in self.command.items():
-                if order[0] != '-' or self.result[unit]:
+                if order[0] != "-" or self.result[unit]:
                     continue
                 attack_order = order.split()
-                offset = 1 if attack_order[-1] == 'VIA' else 0
+                offset = 1 if attack_order[-1] == "VIA" else 0
                 victim = self._occupant(attack_order[-1 - offset], any_coast=1)
-                if victim and self.command[victim][0] == 'S' and not self.result[victim]:
+                if victim and self.command[victim][0] == "S" and not self.result[victim]:
                     word = self.command[victim].split()
                     supported, sup_site = self._occupant(word[2]), word[-1][:3]
 
@@ -4157,18 +4464,22 @@ class Game(Jsonable):
         # -----------------------------------------------------------
         # STEP 10. MARK DISLODGEMENTS AND UNBOUNCE ALL MOVES THAT LEAD TO DISLODGING UNITS
         for unit, order in self.command.items():
-            if order[0] != '-' or self.result[unit]:
+            if order[0] != "-" or self.result[unit]:
                 continue
             site = unit[2:5]
-            offset = 1 if order.split()[-1] == 'VIA' else 0
+            offset = 1 if order.split()[-1] == "VIA" else 0
             loser = self._occupant(order.split()[-1 - offset], any_coast=1)
-            if loser and (self.command[loser][0] != '-' or self.result[loser]):
-                self.result[loser] = [res for res in self.result[loser] if res != DISRUPTED] + [DISLODGED]
+            if loser and (self.command[loser][0] != "-" or self.result[loser]):
+                self.result[loser] = [res for res in self.result[loser] if res != DISRUPTED] + [
+                    DISLODGED
+                ]
                 self.dislodged[loser] = site
 
                 # Check for a dislodged swapper (attacker and dislodged units must not be convoyed.)
                 # If found, remove the swapper from the combat list of the attacker's space
-                head_to_head_battle = not self._is_moving_via_convoy(unit) and not self._is_moving_via_convoy(loser)
+                head_to_head_battle = not self._is_moving_via_convoy(
+                    unit
+                ) and not self._is_moving_via_convoy(loser)
                 if self.command[loser][2:5] == site and head_to_head_battle:
                     for sups, items in self.combat.get(site, {}).items():
                         item = [x for x in items if x[0] == loser]
@@ -4198,7 +4509,9 @@ class Game(Jsonable):
         for power in self.powers.values():
             for unit in [u for u in power.units if u in self.dislodged]:
                 if unit not in power.retreats:
-                    self.update_hash(power.name, unit_type=unit[0], loc=unit[2:], is_dislodged=True)
+                    self.update_hash(
+                        power.name, unit_type=unit[0], loc=unit[2:], is_dislodged=True
+                    )
                 power.retreats.setdefault(unit, [])
                 attacker_site, site = self.dislodged[unit], unit[2:]
                 attacker = self._occupant(attacker_site)
@@ -4209,12 +4522,17 @@ class Game(Jsonable):
                 for abut in self.map.loc_abut[pushee]:
                     abut = abut.upper()
                     where = abut[:3]
-                    if ((self._abuts(unit[0], site, '-', abut) or self._abuts(unit[0], site, '-', where))
-                            and (not self.combat.get(where)
-                                 and where != attacker_site or self._is_moving_via_convoy(attacker))):
+                    if (
+                        self._abuts(unit[0], site, "-", abut)
+                        or self._abuts(unit[0], site, "-", where)
+                    ) and (
+                        not self.combat.get(where)
+                        and where != attacker_site
+                        or self._is_moving_via_convoy(attacker)
+                    ):
 
                         # Armies cannot retreat to specific coasts
-                        if unit[0] == 'F':
+                        if unit[0] == "F":
                             power.retreats[unit] += [abut]
                         elif where not in power.retreats[unit]:
                             power.retreats[unit] += [where]
@@ -4240,8 +4558,8 @@ class Game(Jsonable):
         # Now (finally) actually move the units that succeeded in moving
         for power in self.powers.values():
             for unit in power.units[:]:
-                if self.command[unit][0] == '-' and not self.result[unit]:
-                    offset = 1 if self.command[unit].split()[-1] == 'VIA' else 0
+                if self.command[unit][0] == "-" and not self.result[unit]:
+                    offset = 1 if self.command[unit].split()[-1] == "VIA" else 0
 
                     # Removing
                     self.update_hash(power.name, unit_type=unit[0], loc=unit[2:])
@@ -4262,7 +4580,9 @@ class Game(Jsonable):
         if destroyed:
             for unit, power in destroyed.items():
                 if unit in power.retreats:
-                    self.update_hash(power.name, unit_type=unit[0], loc=unit[2:], is_dislodged=True)
+                    self.update_hash(
+                        power.name, unit_type=unit[0], loc=unit[2:], is_dislodged=True
+                    )
                     del power.retreats[unit]
 
         # All finished
@@ -4281,7 +4601,7 @@ class Game(Jsonable):
         disbanded_units = set()
 
         # Adjustments
-        if self.phase_type == 'A':
+        if self.phase_type == "A":
             self.result = {}
 
             # Emptying the results for the Adjustments Phase
@@ -4290,9 +4610,9 @@ class Game(Jsonable):
                 for order in power.adjust[:]:
 
                     # Void order - Marking it as such in results
-                    if order.split()[0] == 'VOID':
+                    if order.split()[0] == "VOID":
                         word = order.split()[1:]
-                        unit = ' '.join(word[:2])
+                        unit = " ".join(word[:2])
                         self.result.setdefault(unit, []).append(VOID)
                         power.adjust.remove(order)
                         if unit not in self.ordered_units[power.name]:
@@ -4301,7 +4621,7 @@ class Game(Jsonable):
                     # Valid order - Marking as unprocessed
                     else:
                         word = order.split()
-                        unit = ' '.join(word[:2])
+                        unit = " ".join(word[:2])
                         self.result.setdefault(unit, [])
                         if unit not in self.ordered_units[power.name]:
                             self.ordered_units[power.name] += [unit]
@@ -4314,15 +4634,15 @@ class Game(Jsonable):
                 for order in power.adjust[:]:
                     if diff == 0:
                         word = order.split()
-                        unit = ' '.join(word[:2])
+                        unit = " ".join(word[:2])
                         self.result.setdefault(unit, []).append(VOID)
                         power.adjust.remove(order)
 
                     # Looking for builds
                     elif diff < 0:
                         word = order.split()
-                        unit = ' '.join(word[:2])
-                        if word[-1] == 'B':
+                        unit = " ".join(word[:2])
+                        if word[-1] == "B":
                             diff += 1
                         else:
                             self.result.setdefault(unit, []).append(VOID)
@@ -4331,8 +4651,8 @@ class Game(Jsonable):
                     # Looking for removes
                     else:
                         word = order.split()
-                        unit = ' '.join(word[:2])
-                        if word[-1] == 'D':
+                        unit = " ".join(word[:2])
+                        if word[-1] == "D":
                             diff -= 1
                             disbanded_units.add(unit)
                         else:
@@ -4354,7 +4674,7 @@ class Game(Jsonable):
                         if unit in disbanded_units:
                             continue
                         distance = self._get_distance_to_home(unit[0], unit[2:], power.homes)
-                        if unit[0] == 'F':
+                        if unit[0] == "F":
                             fleets[unit] = -1 * distance
                         else:
                             armies[unit] = -1 * distance
@@ -4371,21 +4691,21 @@ class Game(Jsonable):
                             goner_distance, goner = armies.smallest()
                         if goner is None:
                             break
-                        if goner[0] == 'F':
+                        if goner[0] == "F":
                             del fleets[goner]
                         else:
                             del armies[goner]
-                        power.adjust += ['%s D' % goner]
+                        power.adjust += ["%s D" % goner]
                         self.result.setdefault(goner, [])
 
                 # Need to build units
                 else:
                     sites = self._build_sites(power)
                     need = min(self._build_limit(power, sites), -diff)
-                    power.adjust += ['WAIVE'] * need
+                    power.adjust += ["WAIVE"] * need
 
         # Retreats phase
-        elif self.phase_type == 'R':
+        elif self.phase_type == "R":
             self.result = {}
 
             # Emptying the results for the Retreats Phase
@@ -4397,9 +4717,9 @@ class Game(Jsonable):
             # Emptying void orders - And marking them as such
             for power in self.powers.values():
                 for order in power.adjust[:]:
-                    if order.split()[0] == 'VOID':
+                    if order.split()[0] == "VOID":
                         word = order.split()[1:]
-                        unit = ' '.join(word[:2])
+                        unit = " ".join(word[:2])
                         self.result[unit] = [VOID]
                         if unit not in self.ordered_units[power.name]:
                             self.ordered_units[power.name] += [unit]
@@ -4409,14 +4729,14 @@ class Game(Jsonable):
             for power in self.powers.values():
                 if power.retreats and not power.adjust:
                     power.civil_disorder = 1
-                    power.adjust = ['%s D' % r_unit for r_unit in power.retreats]
+                    power.adjust = ["%s D" % r_unit for r_unit in power.retreats]
 
         # Determine multiple retreats to the same location.
         for power in self.powers.values():
             for order in power.adjust or []:
                 word = order.split()
                 if len(word) == 4:
-                    conflicts.setdefault(word[3][:3], []).append(' '.join(word[:2]))
+                    conflicts.setdefault(word[3][:3], []).append(" ".join(word[:2]))
 
         # Determine retreat conflict (*bounce, destroyed*)
         # When finished, "self.popped" will be a list of all retreaters who didn't make it.
@@ -4435,13 +4755,13 @@ class Game(Jsonable):
             # For each order
             for order in power.adjust or []:
                 word = order.split()
-                unit = ' '.join(word[:2])
+                unit = " ".join(word[:2])
 
                 # Build
-                if word[-1] == 'B' and len(word) > 2:
+                if word[-1] == "B" and len(word) > 2:
                     if diff < 0:
                         self.update_hash(power.name, unit_type=unit[0], loc=unit[2:])
-                        power.units += [' '.join(word[:2])]
+                        power.units += [" ".join(word[:2])]
                         diff += 1
                         self.result[unit] += [OK]
                     else:
@@ -4450,10 +4770,10 @@ class Game(Jsonable):
                         self.ordered_units[power.name] += [unit]
 
                 # Disband
-                elif word[-1] == 'D' and self.phase_type == 'A':
-                    if diff > 0 and ' '.join(word[:2]) in power.units:
+                elif word[-1] == "D" and self.phase_type == "A":
+                    if diff > 0 and " ".join(word[:2]) in power.units:
                         self.update_hash(power.name, unit_type=unit[0], loc=unit[2:])
-                        power.units.remove(' '.join(word[:2]))
+                        power.units.remove(" ".join(word[:2]))
                         diff -= 1
                         self.result[unit] += [OK]
                     else:
@@ -4465,7 +4785,7 @@ class Game(Jsonable):
                 elif len(word) == 4:
                     if unit not in self.popped:
                         self.update_hash(power.name, unit_type=word[0], loc=word[-1])
-                        power.units += [word[0] + ' ' + word[-1]]
+                        power.units += [word[0] + " " + word[-1]]
                         if unit in self.dislodged:
                             del self.dislodged[unit]
 
@@ -4479,7 +4799,9 @@ class Game(Jsonable):
                         self.ordered_units[power.name] += [unit]
 
             for dis_unit in power.retreats:
-                self.update_hash(power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True)
+                self.update_hash(
+                    power.name, unit_type=dis_unit[0], loc=dis_unit[2:], is_dislodged=True
+                )
             power.adjust, power.retreats, power.civil_disorder = [], {}, 0
 
         # Disbanding
@@ -4502,9 +4824,9 @@ class Game(Jsonable):
 
         # This method knows how to process movement, retreat, and adjustment phases.
         # For others, implement resolve_phase()
-        if this_phase == 'M':
+        if this_phase == "M":
             self._move_results()
-        elif this_phase in 'RA':
+        elif this_phase in "RA":
             self._other_results()
         self._advance_phase()
 
