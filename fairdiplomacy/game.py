@@ -3,7 +3,7 @@ import diplomacy
 
 class Game(diplomacy.Game):
     def __init__(self, **kwargs):
-        if 'rules' not in kwargs:
+        if "rules" not in kwargs:
             kwargs["rules"] = [
                 "NO_DEADLINE",
                 "CD_DUMMIES",
@@ -30,16 +30,31 @@ class Game(diplomacy.Game):
             diplomacy.utils.strings.RULES: saved_game.get("rules", []),
         }
 
-        # Building game
         game = Game(game_id=game_id, **kwargs)
-        phase_history = []
 
-        # Restoring every phase
-        for phase_dct in saved_game.get("phases", []):
-            phase_history.append(
-                diplomacy.utils.game_phase_data.GamePhaseData.from_dict(phase_dct)
-            )
-        game.set_phase_data(phase_history, clear_history=True)
+        if "phases" in saved_game:
+            phase_history = []
+            for phase_dct in saved_game.get("phases", []):
+                phase_history.append(
+                    diplomacy.utils.game_phase_data.GamePhaseData.from_dict(phase_dct)
+                )
+            game.set_phase_data(phase_history, clear_history=True)
+            return game
 
-        # Returning game
-        return game
+        elif "order_history" in saved_game:
+            for phase, phase_orders in sorted(
+                saved_game["order_history"].items(), key=lambda kv: sort_phase_key(kv[0])
+            ):
+                assert phase == game._phase_abbr()
+                for power, orders in phase_orders.items():
+                    game.set_orders(power, orders)
+                game.process()
+            return game
+
+
+def sort_phase_key(phase):
+    return (
+        int(phase[1:5]),
+        {"S": 0, "F": 1, "W": 2}[phase[0]],
+        {"M": 0, "R": 1, "A": 2}[phase[5]],
+    )
