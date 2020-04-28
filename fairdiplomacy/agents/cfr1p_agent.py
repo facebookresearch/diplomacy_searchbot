@@ -198,7 +198,7 @@ class CFR1PAgent(BaseSearchAgent):
             )
             timings.clear()
 
-            if self.cache_rollout_results and (rollout_i + 1) % 10 == 0:
+            if self.cache_rollout_results and (cfr_iter + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
 
         # return best order: sample from average policy
@@ -358,7 +358,7 @@ class RolloutResultsCache:
 
 def num_orderable_units(game_state, power):
     if game_state["name"][-1] == "A":
-        return abs(game_state["builds"][power][count])
+        return abs(game_state["builds"][power]["count"])
     if len(game_state["retreats"][power]) > 0:
         return len(game_state["retreats"][power])
     else:
