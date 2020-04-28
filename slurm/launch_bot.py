@@ -28,9 +28,10 @@ srun --output {exp_dir}/out.log --error {exp_dir}/out.log -- \
         agent.cfr1p.mix_square_ratio_scoring=0.1 \
         agent.cfr1p.postman_sync_batches=False \
         agent.cfr1p.n_plausible_orders=24 \
-        agent.cfr1p.n_rollout_procs=64 \
-        agent.cfr1p.rollout_temperature=0.5 \
+        agent.cfr1p.max_actions_units_ratio=2.5 \
         agent.cfr1p.average_n_rollouts=3 \
+        agent.cfr1p.rollout_temperature=0.5 \
+        agent.cfr1p.n_rollout_procs=168 \
         agent.cfr1p.rollout_top_p=0.95 \
         game_id={game_id} \
         power={power}
