@@ -1,4 +1,5 @@
 import logging
+from math import ceil
 import numpy as np
 import time
 import torch
@@ -23,13 +24,14 @@ class CFR1PAgent(BaseSearchAgent):
         n_rollouts,
         cache_rollout_results=False,
         enable_compute_nash_conv=False,
-        n_plausible_orders=8,
+        n_plausible_orders,
         postman_sync_batches=False,
         use_optimistic_cfr=True,
         use_final_iter=True,
         max_batch_size=700,
         average_n_rollouts=1,
         n_rollout_procs,
+        max_actions_units_ratio=None,
         **kwargs,
     ):
         super().__init__(
@@ -55,6 +57,11 @@ class CFR1PAgent(BaseSearchAgent):
         self.use_final_iter = use_final_iter
         self.plausible_orders_req_size = max_batch_size
         self.average_n_rollouts = average_n_rollouts
+        self.max_actions_units_ratio = (
+            max_actions_units_ratio
+            if max_actions_units_ratio is not None and max_actions_units_ratio > 0
+            else 1e6
+        )
 
     def get_orders(self, game, power) -> List[str]:
         # CFR data structures
@@ -63,7 +70,8 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
-        phase = game.get_state()["name"]
+        game_state = game.get_state()
+        phase = game_state["name"]
 
         if self.cache_rollout_results:
             rollout_results_cache = RolloutResultsCache()
@@ -71,9 +79,14 @@ class CFR1PAgent(BaseSearchAgent):
         if self.postman_sync_batches:
             self.client.set_batch_size(torch.LongTensor([self.plausible_orders_req_size]))
 
+        # Determine the set of plausible actions to consider for each power
+        power_n_units = [num_orderable_units(game_state, p) for p in POWERS]
         power_plausible_orders = self.get_plausible_orders(
             game,
-            limit=self.n_plausible_orders,
+            limit=[
+                min(self.n_plausible_orders, ceil(u * self.max_actions_units_ratio))
+                for u in power_n_units
+            ],
             n=self.plausible_orders_req_size,
             batch_size=self.plausible_orders_req_size,
         )
@@ -343,6 +356,15 @@ class RolloutResultsCache:
         )
 
 
+def num_orderable_units(game_state, power):
+    if game_state["name"][-1] == "A":
+        return abs(game_state["builds"][power][count])
+    if len(game_state["retreats"][power]) > 0:
+        return len(game_state["retreats"][power])
+    else:
+        return len(game_state["units"][power])
+
+
 if __name__ == "__main__":
     from fairdiplomacy.game import Game
     import os
@@ -358,7 +380,7 @@ if __name__ == "__main__":
         model_path="/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth",
         postman_sync_batches=False,
         rollout_temperature=0.5,
-        n_rollout_procs=24*7,
+        n_rollout_procs=24 * 7,
         rollout_top_p=0.9,
         mix_square_ratio_scoring=0.1,
         n_plausible_orders=24,

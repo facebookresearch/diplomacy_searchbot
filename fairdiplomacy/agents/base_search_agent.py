@@ -5,7 +5,7 @@ import signal
 import time
 from collections import Counter
 from functools import partial
-from typing import List, Tuple, Set, Dict
+from typing import List, Tuple, Set, Dict, Union, Sequence
 
 import diplomacy
 import numpy as np
@@ -157,9 +157,21 @@ class BaseSearchAgent(BaseAgent):
         )
 
     def get_plausible_orders(
-        self, game, *, n=1000, temperature=0.5, limit=8, batch_size=500, top_p=1.0
+        self,
+        game,
+        *,
+        n=1000,
+        temperature=0.5,
+        limit: Union[int, Sequence[int]],  # limit, or list of limits per power
+        batch_size=500,
+        top_p=1.0,
     ) -> Dict[str, Set[Tuple[str]]]:
         assert n % batch_size == 0, f"{n}, {batch_size}"
+
+        # limits is a list of 7 limits
+        limits = [limit] * 7 if type(limit) == int else limit
+        assert len(limits) == 7
+        del limit
 
         # trivial return case: all powers have at most `limit` actions
         orderable_locs = game.get_orderable_locations()
@@ -168,7 +180,7 @@ class BaseSearchAgent(BaseAgent):
             pow_orders = {
                 p: all_orders[orderable_locs[p][0]] if orderable_locs[p] else [] for p in POWERS
             }
-            if max((map(len, pow_orders.values()))) <= limit:
+            if all(len(pow_orders[p]) <= limit for p, limit in zip(POWERS, limits)):
                 return {p: set((x,) for x in orders) for p, orders in pow_orders.items()}
 
         # non-trivial return case: query model
@@ -183,13 +195,13 @@ class BaseSearchAgent(BaseAgent):
 
         logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
-                n, temperature, list(map(len, counters.values())), limit
+                n, temperature, list(map(len, counters.values())), limits
             )
         )
 
         return {
             power: set([orders for orders, _ in counter.most_common(limit)])
-            for power, counter in counters.items()
+            for (power, counter), limit in zip(counters.items(), limits)
         }
 
     def distribute_rollouts(
@@ -321,7 +333,7 @@ class BaseSearchAgent(BaseAgent):
 
             with timings("model"):
                 batch_orders, final_scores = cls.do_model_request(
-                    client, batch_inputs, temperature, top_p,
+                    client, batch_inputs, temperature, top_p
                 )
             with timings("final_scores"):
                 for game in games:

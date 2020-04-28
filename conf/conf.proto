@@ -53,11 +53,6 @@ message CFR1PAgent {
   // Temperature used for rollouts
   optional float rollout_temperature = 10;
 
-  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
-  // smallest subset of actions that has probability at least top_p is
-  // considered. All other actions are never sampled.
-  optional float rollout_top_p = 16;
-
   // If true, set postman batch size and use wait_till_full
   optional bool postman_sync_batches = 11;
 
@@ -72,6 +67,15 @@ message CFR1PAgent {
 
   // Optional, # of rollouts to run in parallel for each possible action
   optional uint32 average_n_rollouts = 15;
+
+  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
+  // smallest subset of actions that has probability at least top_p is
+  // considered. All other actions are never sampled.
+  optional float rollout_top_p = 16;
+
+  // Optional, limit number of actions to consider as a ratio of # units
+  // # plausible actions = min(ceil(max_actions_units_ratio * #units), n_plausible_orders)
+  optional float max_actions_units_ratio = 17 [ default = -1 ];
 }
 
 message BRSearchAgent {
