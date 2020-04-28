@@ -9,7 +9,8 @@ POWERS = ["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"
 
 BASE_EXP_DIR = "/home/jsgray/exp"
 REPO = "/home/jsgray/code/fairdiplomacy"
-MODEL_PATH = "/home/jsgray/cfr2_cfr_data_400.pth"
+# MODEL_PATH = "/home/jsgray/cfr2_cfr_data_400.pth"
+MODEL_PATH = "/home/jsgray/sl_candidx_B2.5k_vclip1e-7.pth"
 HOST = "10.100.34.208"
 
 SBATCH_SCRIPT = """#!/bin/bash
@@ -27,9 +28,10 @@ srun --output {exp_dir}/out.log --error {exp_dir}/out.log -- \
         agent.cfr1p.mix_square_ratio_scoring=0.1 \
         agent.cfr1p.postman_sync_batches=False \
         agent.cfr1p.n_plausible_orders=24 \
-        agent.cfr1p.n_rollout_procs=168 \
+        agent.cfr1p.n_rollout_procs=64 \
         agent.cfr1p.rollout_temperature=0.5 \
         agent.cfr1p.average_n_rollouts=3 \
+        agent.cfr1p.rollout_top_p=0.95 \
         game_id={game_id} \
         power={power}
 """
