@@ -843,14 +843,14 @@ class Game(Jsonable):
             :type game_phase_data: GamePhaseData
         """
         phase = self._phase_wrapper_type(game_phase_data.name)
-        assert phase not in self.state_history
-        assert phase not in self.message_history
-        assert phase not in self.order_history
-        assert phase not in self.result_history
-        self.state_history.put(phase, game_phase_data.state)
-        self.message_history.put(phase, game_phase_data.messages)
-        self.order_history.put(phase, game_phase_data.orders)
-        self.result_history.put(phase, game_phase_data.results)
+        if phase not in self.state_history:
+            self.state_history.put(phase, game_phase_data.state)
+        if phase not in self.message_history:
+            self.message_history.put(phase, game_phase_data.messages)
+        if phase not in self.order_history:
+            self.order_history.put(phase, game_phase_data.orders)
+        if phase not in self.result_history:
+            self.result_history.put(phase, game_phase_data.results)
 
     def set_status(self, status):
         """ Set game status with given status (should be in diplomacy.utils.strings.ALL_GAME_STATUSES). """
