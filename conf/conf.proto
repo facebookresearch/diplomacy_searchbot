@@ -79,6 +79,9 @@ message CFR1PAgent {
 
   // Optional: separate model path to compute the value function
   optional string value_model_path = 18;
+
+  // Optional, if True, sample from final iter instead of average iter
+  optional bool use_final_iter = 19 [ default = true ];
 }
 
 message BRSearchAgent {
@@ -269,8 +272,8 @@ message TrainTask {
   // Learn adjacency matrix.
   optional bool learnable_A = 16;
 
-  // If dataset orders are missing for an orderable loc, fill in H or D.
-  optional bool fill_missing_orders = 17;
+  // Obsolete.
+  optional bool fill_missing_orders = 17 [ default = false ];
 
   // Learn attention alignment matrix.
   optional bool learnable_alignments = 18;
@@ -477,6 +480,31 @@ message ExploitTask {
   optional Launcher launcher = 1000;
 }
 
+message BuildDbCacheTask {
+
+  // Required. Glob pattern to game.json files
+  optional string glob = 1;
+
+  // Required. Path to save db cache
+  optional string out_path = 2;
+
+  // Minimal score (num SC) of the at the end of the game needed to include the
+  // power into the training set.
+  optional uint32 only_with_min_final_score = 3 [default = 7];
+
+  // Optional. If specified, use this agent's orders instead of the orders in
+  // the game.json
+  optional Agent cf_agent = 4;
+
+  // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
+  // times, saving each as a separate row in the db.
+  optional uint32 n_cf_agent_samples = 5 [ default = 1 ];
+
+  // Optional, # of parallel encoding processes. Default = #cpu
+  optional int32 n_parallel_jobs = 6 [ default = -1 ];
+
+}
+
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -501,6 +529,7 @@ message MetaCfg {
     TrainTask train = 102;
     LaunchBotTask launch_bot = 103;
     ExploitTask exploit = 104;
+    BuildDbCacheTask build_db_cache = 105;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

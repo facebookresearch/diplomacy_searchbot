@@ -55,7 +55,15 @@ def launch_bot(cfg):
 def exploit(cfg):
     # Do not load RL stuff by default.
     import fairdiplomacy.selfplay.exploit
+
     fairdiplomacy.selfplay.exploit.task(cfg)
+
+
+@_register
+def build_db_cache(cfg):
+    from fairdiplomacy.data.build_db_cache import build_db_cache_from_cfg
+
+    build_db_cache_from_cfg(cfg)
 
 
 @heyhi.save_result_in_cwd

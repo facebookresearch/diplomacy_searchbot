@@ -1,7 +1,6 @@
 import logging
 from math import ceil
 import numpy as np
-import time
 import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
@@ -9,6 +8,7 @@ from typing import List, Tuple, Dict
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.utils.timing_ctx import TimingCtx
+from fairdiplomacy.utils.sampling import sample_p_dict
 
 
 Action = Tuple[str]  # a set of orders
@@ -63,7 +63,20 @@ class CFR1PAgent(BaseSearchAgent):
             else 1e6
         )
 
+        logging.info(f"Initialized CFR1P Agent: {self.__dict__}")
+
     def get_orders(self, game, power) -> List[str]:
+        prob_distributions = self.get_all_power_prob_distributions(
+            game, early_exit_for_power=power
+        )
+        logging.info(f"Final strategy: {prob_distributions[power]}")
+        return list(sample_p_dict(prob_distributions[power]))
+
+    def get_all_power_prob_distributions(
+        self, game, early_exit_for_power=None
+    ) -> Dict[str, Dict[Tuple[str], float]]:
+        """Return dict {power: {action: prob}}"""
+
         # CFR data structures
         self.sigma: Dict[Tuple[Power, Action], float] = {}
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
@@ -98,8 +111,12 @@ class CFR1PAgent(BaseSearchAgent):
                 torch.LongTensor([sum(map(len, power_plausible_orders.values()))])
             )
 
-        if len(power_plausible_orders[power]) == 1:
-            return list(list(power_plausible_orders[power]).pop())
+        if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 1:
+            return {
+                early_exit_for_power: {
+                    tuple(list(power_plausible_orders[early_exit_for_power]).pop()): 1.0
+                }
+            }
 
         timings = TimingCtx()
         for cfr_iter in range(self.n_rollouts):
@@ -201,13 +218,17 @@ class CFR1PAgent(BaseSearchAgent):
             if self.cache_rollout_results and (cfr_iter + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
 
-        # return best order: sample from average policy
-        if self.use_final_iter:
-            ps = self.strategy(power, power_plausible_orders[power])
-        else:
-            ps = self.avg_strategy(power, power_plausible_orders[power])
-        idx = np.random.choice(range(len(ps)), p=ps)
-        return list(power_plausible_orders[power][idx])
+        # return prob. distributions for each power
+        ret = {}
+        for p in POWERS:
+            if self.use_final_iter:
+                ps = self.strategy(p, power_plausible_orders[p])
+            else:
+                ps = self.avg_strategy(p, power_plausible_orders[p])
+
+            ret[p] = dict(zip(power_plausible_orders[p], ps))
+
+        return ret
 
     def strategy(self, power, actions) -> List[float]:
         try:
@@ -358,16 +379,15 @@ class RolloutResultsCache:
 
 def num_orderable_units(game_state, power):
     if game_state["name"][-1] == "A":
-        return abs(game_state["builds"][power]["count"])
-    if len(game_state["retreats"][power]) > 0:
-        return len(game_state["retreats"][power])
+        return abs(game_state["builds"].get(power, {"count": 0})["count"])
+    if game_state["name"][-1] == "R":
+        return len(game_state["retreats"].get(power, []))
     else:
-        return len(game_state["units"][power])
+        return len(game_state["units"].get(power, []))
 
 
 if __name__ == "__main__":
     from fairdiplomacy.game import Game
-    import os
 
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
@@ -386,4 +406,4 @@ if __name__ == "__main__":
         n_plausible_orders=24,
         average_n_rollouts=3,
     )
-    print(agent.get_orders(Game(), "AUSTRIA"))
+    print(agent.get_orders(Game(), "AUSTRIA", n_samples=3))

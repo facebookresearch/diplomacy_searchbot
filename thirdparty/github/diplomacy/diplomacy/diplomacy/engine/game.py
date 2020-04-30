@@ -1129,6 +1129,9 @@ class Game(Jsonable):
 
         # Single power
         if power_name is not None:
+            if power is None:
+                return []
+
             current_phase_type = self.get_current_phase()[-1]
 
             # Adjustment
@@ -3612,7 +3615,7 @@ class Game(Jsonable):
             for order in adjust[:]:
                 word = order.split()
                 if len(word) >= 2 and word[1] in ordered_locs:
-                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % " ".join(word[:2])]
+                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % " ".join(word)]
                     adjust.remove(order)
 
         # Finalizing orders
@@ -3716,7 +3719,7 @@ class Game(Jsonable):
                     # Invalid order, voiding
                     else:
                         adjust += ["VOID " + order]
-                        self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % unit]
+                        self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % order]
                 else:
                     adjust += ["VOID " + order]
                     self.error += [err.GAME_BAD_ADJUSTMENT_ORDER % order]
@@ -3772,7 +3775,7 @@ class Game(Jsonable):
             for order in adjust[:]:
                 word = order.split()
                 if len(word) >= 2 and word[1] in ordered_locs:
-                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % " ".join(word[:2])]
+                    self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % " ".join(word)]
                     adjust.remove(order)
 
         # Finalizing orders

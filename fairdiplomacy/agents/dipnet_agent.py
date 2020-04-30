@@ -2,7 +2,7 @@ import diplomacy
 import torch
 from typing import List
 
-from fairdiplomacy.game import Game
+from fairdiplomacy.game import Game, sort_phase_key
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import get_valid_orders_impl
 from fairdiplomacy.models.consts import SEASONS, POWERS
@@ -96,12 +96,16 @@ def encode_state(game):
     x_in_adj_phase: shape=(1,), dtype=bool
     """
     state = game.get_state()
+    current_phase_sort_key = sort_phase_key(state["name"])
 
     x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
 
     try:
         last_move_phase = [
-            phase for phase in game.get_phase_history() if str(phase.name).endswith("M")
+            phase
+            for phase in game.get_phase_history()
+            if str(phase.name).endswith("M")
+            and sort_phase_key(phase.name) < current_phase_sort_key
         ][-1]
         x_prev_orders = torch.from_numpy(prev_orders_to_np(last_move_phase)).unsqueeze(0)
     except IndexError:

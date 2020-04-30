@@ -1,5 +1,7 @@
 import diplomacy
 
+POWERS = ["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"]
+
 
 class Game(diplomacy.Game):
     def __init__(self, **kwargs):
@@ -50,6 +52,23 @@ class Game(diplomacy.Game):
                     game.set_orders(power, orders)
                 game.process()
             return game
+
+    @classmethod
+    def clone_from(cls, other, up_to_phase=None):
+        kwargs = {
+            "game_id": other.game_id,
+            diplomacy.utils.strings.MAP_NAME: getattr(other, "map_name", "standard"),
+            diplomacy.utils.strings.RULES: getattr(other, "rules", []),
+        }
+        game = Game(**kwargs)
+
+        clone_phases = other.get_phase_history()
+        if up_to_phase is not None:
+            up_to_phase_key = sort_phase_key(up_to_phase)
+            clone_phases = [p for p in clone_phases if sort_phase_key(p.name) <= up_to_phase_key]
+        game.set_phase_data(clone_phases)
+
+        return game
 
 
 def sort_phase_key(phase):

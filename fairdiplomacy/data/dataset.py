@@ -1,10 +1,12 @@
 import diplomacy
 import joblib
+import json
 import logging
 import torch
 from itertools import combinations, product
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Tuple
 
+from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.order_vocabulary import (
@@ -13,6 +15,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     EOS_IDX,
 )
 from fairdiplomacy.utils.tensorlist import TensorList
+from fairdiplomacy.utils.sampling import sample_p_dict
 
 
 ORDER_VOCABULARY = get_order_vocabulary()
@@ -25,18 +28,24 @@ class Dataset(torch.utils.data.Dataset):
         self,
         game_json_paths: List[str],
         debug_only_opening_phase=False,
-        fill_missing_orders=False,
         only_with_min_final_score=7,
         n_jobs=20,
+        cf_agent=None,
+        n_cf_agent_samples=1,
     ):
         self.game_json_paths = game_json_paths
+        self.n_cf_agent_samples = n_cf_agent_samples
         assert not debug_only_opening_phase, "FIXME"
+        assert (cf_agent is None and n_cf_agent_samples == 1) or (
+            cf_agent is not None and n_cf_agent_samples > 0
+        )
 
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(encode_game)(
                 p,
-                fill_missing_orders=fill_missing_orders,
                 only_with_min_final_score=only_with_min_final_score,
+                cf_agent=cf_agent,
+                n_cf_agent_samples=n_cf_agent_samples,
             )
             for p in game_json_paths
         )
@@ -84,7 +93,10 @@ class Dataset(torch.utils.data.Dataset):
             idx = torch.tensor([idx], dtype=torch.long)
 
         assert isinstance(idx, torch.Tensor) and idx.dtype == torch.long
-        assert idx.max() < self.num_elements
+        assert idx.max() < len(self)
+
+        sample_idxs = idx % self.n_cf_agent_samples
+        idx //= self.n_cf_agent_samples
 
         x_idx = self.x_idxs[idx]
         power_idx = self.power_idxs[idx]
@@ -109,6 +121,9 @@ class Dataset(torch.utils.data.Dataset):
         for f in [2, 7, 8]:
             fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
 
+        # for y_actions, select out the correct sample
+        fields[8] = fields[8][sample_idxs]
+
         # cast fields
         for i in range(len(fields) - 4):
             fields[i] = fields[i].to(torch.float32)
@@ -118,25 +133,25 @@ class Dataset(torch.utils.data.Dataset):
         return fields
 
     def __len__(self):
-        return self.num_elements
+        return self.num_elements * self.n_cf_agent_samples
 
 
 def encode_game(
-    game: Union[str, diplomacy.Game], only_with_min_final_score=7, fill_missing_orders=False
+    game: Union[str, diplomacy.Game],
+    only_with_min_final_score=7,
+    *,
+    cf_agent=None,
+    n_cf_agent_samples=1,
 ):
     """
     Arguments:
     - game: diplomacy.Game object
-    - phase_idx: int, the index of the phase to encode
     - only_with_min_final_score: if specified, only encode for powers who
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
-    - fill_missing_orders: if True, missing orders for orderable locs will be
-      explicitly set as H or D (depending on the phase). If False, powers with
-      missing orders will be marked invalid.
 
     Return: tuple of tensors
-    L is game length, P is # of powers above min_final_score
+    L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
     [0] board_state: shape=(L, 81, 35)
     [1] prev_orders: shape=(L, 81, 40)
     [2] power: shape=(L, 7, 7)
@@ -145,17 +160,25 @@ def encode_game(
     [5] final_scores: shape=(L, 7)
     [6] possible_actions: TensorList shape=(L x 7, 17 x 469)
     [7] loc_idxs: shape=(L, 7, 81), int8
-    [8] actions: shape=(L, 7, 17) int order idxs
+    [8] actions: shape=(L, 7, N, 17) int order idxs, N=n_cf_agent_samples
     [9] valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
     """
 
     if isinstance(game, str):
-        logging.debug(f"Encoding {game}")
-        game = diplomacy.utils.export.load_saved_games_from_disk(game)[0]
+        with open(game) as f:
+            j = json.load(f)
+        game = Game.from_saved_game_format(j)
 
     num_phases = len(game.state_history)
+    logging.info(f"Encoding {game.game_id} with {num_phases} phases")
     phase_encodings = [
-        encode_phase(game, phase_idx, only_with_min_final_score, fill_missing_orders)
+        encode_phase(
+            game,
+            phase_idx,
+            only_with_min_final_score=only_with_min_final_score,
+            cf_agent=cf_agent,
+            n_cf_agent_samples=n_cf_agent_samples,
+        )
         for phase_idx in range(num_phases)
     ]
 
@@ -165,7 +188,12 @@ def encode_game(
 
 
 def encode_phase(
-    game, phase_idx: int, only_with_min_final_score: Optional[int], fill_missing_orders=False
+    game,
+    phase_idx: int,
+    *,
+    only_with_min_final_score: Optional[int],
+    cf_agent=None,
+    n_cf_agent_samples=1,
 ):
     """
     Arguments:
@@ -174,9 +202,6 @@ def encode_phase(
     - only_with_min_final_score: if specified, only encode for powers who
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
-    - fill_missing_orders: if True, missing orders for orderable locs will be
-      explicitly set as H or D (depending on the phase). If False, powers with
-      missing orders will be marked invalid.
 
     Return: tuple of tensors
     - board_state: shape=(81, 35)
@@ -187,7 +212,7 @@ def encode_phase(
     - final_scores: shape=(7,) int8
     - possible_actions: Tensorlist shape=(7 x 17, 469)
     - loc_idxs: shape=(7, 81), int8
-    - actions: shape=(7, 17) int order idxs
+    - actions: shape=(7, N, 17) int order idxs, N=n_cf_agent_samples
     - valid_power_idxs: shape=(7,) bool mask of valid powers at this phase
     """
     phase_name = str(list(game.state_history.keys())[phase_idx])
@@ -228,8 +253,7 @@ def encode_phase(
         y_final_scores[:, power_i] = len(final_centers.get(power, []))
 
     # encode possible actions
-    tmp_game = diplomacy.Game(map_name=game.map_name)
-    tmp_game.set_state(phase_state)
+    tmp_game = Game.clone_from(game, up_to_phase=phase_name)
     all_possible_orders = tmp_game.get_all_possible_orders()
     all_orderable_locations = tmp_game.get_orderable_locations()
     x_possible_actions, x_loc_idxs = [
@@ -246,68 +270,33 @@ def encode_phase(
 
     # encode actions
     valid_power_idxs = torch.ones(len(POWERS), dtype=torch.bool)
-    y_actions = torch.empty(len(POWERS), MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
+    y_actions_lst = []
+    power_orders_samples = (
+        {power: [game.order_history[phase_name].get(power, [])]}
+        if cf_agent is None
+        else get_cf_agent_order_samples(tmp_game, phase_name, cf_agent, n_cf_agent_samples)
+    )
     for power_i, power in enumerate(POWERS):
-        orders = game.order_history[phase_name].get(power, [])
-        order_idxs = []
-
-        if any(len(order.split()) < 3 for order in orders):
-            # skip over power with unparseably short order
-            valid_power_idxs[power_i] = 0
+        orders_samples = power_orders_samples[power]
+        if len(orders_samples) == 0:
+            valid_power_idxs[power_i] = False
+            y_actions_lst.append(
+                torch.empty(n_cf_agent_samples, MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
+            )
             continue
-        elif any(order.split()[2] == "B" for order in orders):
-            # builds are represented as a single ;-separated order
-            assert all(order.split()[2] == "B" for order in orders), orders
-            order = ";".join(sorted(orders))
-            try:
-                order_idx = ORDER_VOCABULARY_TO_IDX[order]
-            except KeyError:
-                logging.warning(f"Invalid build order: {order}")
-                valid_power_idxs[power_i] = 0
-                continue
-            order_idxs.append(order_idx)
-        else:
-            for order in orders:
-                try:
-                    order_idxs.append(smarter_order_index(order))
-                except KeyError:
-                    # skip over invalid orders; we may fill them in later
-                    continue
+        encoded_power_actions_lst = []
+        for orders in orders_samples:
+            encoded_power_actions, valid = encode_power_actions(
+                orders, x_possible_actions[power_i]
+            )
+            encoded_power_actions_lst.append(encoded_power_actions)
+            valid_power_idxs[power_i] &= valid
+        y_actions_lst.append(torch.stack(encoded_power_actions_lst, dim=0))  # [N, 17]
 
-            # maybe fill in Hold/Disband for invalid or missing orders
-            all_locs = {LOCS[x] for x in (x_loc_idxs[power_i] != -1).nonzero().squeeze(1)}
-            filled_locs = {ORDER_VOCABULARY[x].split()[1].split("/")[0] for x in order_idxs}
-            unfilled_locs = all_locs - filled_locs
-            if fill_missing_orders and not x_in_adj_phase[0] and unfilled_locs:
-                try:
-                    for loc in unfilled_locs:
-                        unit = next(unit for unit in phase_state["units"][power] if loc in unit)
-                        if "*" in unit:
-                            # FIXME: unit may be e.g. "F STP" when it should be "F STP/NC", and this will fail
-                            order_idxs.append(smarter_order_index(f"{unit.strip('*')} D"))
-                        else:
-                            order_idxs.append(smarter_order_index(f"{unit} H"))
-                except Exception:
-                    logging.exception("Error filling missing orders")
-                    valid_power_idxs[power_i] = 0
-                    continue
-
-        # sort by topo order
-        order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
-        for i, order_idx in enumerate(order_idxs):
-            try:
-                cand_idx = (x_possible_actions[power_i, i] == order_idx).nonzero()[0, 0]
-                y_actions[power_i, i] = cand_idx
-            except IndexError:
-                # filter away powers whose orders are not in valid_orders
-                # most common reasons why this happens:
-                # - actual garbage orders (e.g. moves between non-adjacent locations)
-                # - too many orders (e.g. three build orders with only two allowed builds)
-                valid_power_idxs[power_i] = 0
-                break
+    y_actions = torch.stack(y_actions_lst, dim=0)  # [7, N, 17]
 
     # filter away powers that have no orders
-    valid_power_idxs &= torch.any(y_actions != EOS_IDX, dim=1)
+    valid_power_idxs &= (y_actions != EOS_IDX).any(dim=2).all(dim=1)
     assert valid_power_idxs.ndimension() == 1
 
     # Maybe filter away powers that don't finish with enough SC.
@@ -400,6 +389,77 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         loc_idxs[0, LOCS.index(loc)] = i
 
     return all_order_idxs, loc_idxs, len(orderable_locs)
+
+
+def get_cf_agent_order_samples(game, phase_name, cf_agent, n_cf_agent_samples):
+    assert game.get_state()["name"] == phase_name, f"{game.get_state()['name']} != {phase_name}"
+
+    if hasattr(cf_agent, "get_all_power_prob_distributions"):
+        power_action_ps = cf_agent.get_all_power_prob_distributions(game)
+        logging.info(f"get_all_power_prob_distributions: {power_action_ps}")
+        return {
+            power: (
+                [sample_p_dict(power_action_ps[power]) for _ in range(n_cf_agent_samples)]
+                if power_action_ps[power]
+                else []
+            )
+            for power in POWERS
+        }
+    else:
+        return {
+            power: [cf_agent.get_orders(game, power) for _ in range(n_cf_agent_samples)]
+            for power in POWERS
+        }
+
+
+def encode_power_actions(orders: List[str], x_possible_actions) -> Tuple[torch.LongTensor, bool]:
+    """
+    Arguments:
+    - a list of orders, e.g. ["F APU - ION", "A NAP H"]
+    - x_possible_actions, a LongTensor of valid actions for this power-phase, shape=[17, 469]
+
+    Returns a tuple:
+    - MAX_SEQ_LEN-len 1d-tensor, pad=EOS_IDX
+    - True/False is valid
+    """
+    y_actions = torch.empty(MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
+    order_idxs = []
+
+    if any(len(order.split()) < 3 for order in orders):
+        # skip over power with unparseably short order
+        return y_actions, False
+    elif any(order.split()[2] == "B" for order in orders):
+        # builds are represented as a single ;-separated order
+        assert all(order.split()[2] == "B" for order in orders), orders
+        order = ";".join(sorted(orders))
+        try:
+            order_idx = ORDER_VOCABULARY_TO_IDX[order]
+        except KeyError:
+            logging.warning(f"Invalid build order: {order}")
+            return y_actions, False
+        order_idxs.append(order_idx)
+    else:
+        for order in orders:
+            try:
+                order_idxs.append(smarter_order_index(order))
+            except KeyError:
+                # skip over invalid orders; we may fill them in later
+                continue
+
+    # sort by topo order
+    order_idxs.sort(key=lambda idx: LOCS.index(ORDER_VOCABULARY[idx].split()[1]))
+    for i, order_idx in enumerate(order_idxs):
+        try:
+            cand_idx = (x_possible_actions[i] == order_idx).nonzero()[0, 0]
+            y_actions[i] = cand_idx
+        except IndexError:
+            # filter away powers whose orders are not in valid_orders
+            # most common reasons why this happens:
+            # - actual garbage orders (e.g. moves between non-adjacent locations)
+            # - too many orders (e.g. three build orders with only two allowed builds)
+            return y_actions, False
+
+    return y_actions, True
 
 
 def filter_orders_in_vocab(orders):
