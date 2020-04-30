@@ -150,6 +150,11 @@ message CE1PAgent {
   optional float rollout_temperature = 10;
 }
 
+message ReproAgent {
+    // Required, path to game.json file
+    optional string game_path = 1;
+}
+
 message Agent {
   oneof agent {
     MilaSlAgent mila = 1;
@@ -158,6 +163,7 @@ message Agent {
     CFR1PAgent cfr1p = 4;
     BRSearchAgent br_search = 5;
     CE1PAgent ce1p = 6;
+    ReproAgent repro = 7;
   }
 }
 
