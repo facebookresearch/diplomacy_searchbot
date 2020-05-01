@@ -1180,6 +1180,14 @@ export class ContentGame extends React.Component {
         const powerNames = Object.keys(engine.powers);
         powerNames.sort();
         const orderedPowers = powerNames.map(pn => engine.powers[pn]);
+
+        const isWaitingOn = function(power) {
+            return !power.isEliminated() && 
+            power.game.orderableLocations[power.name].length > 0 && 
+            power.order_is_set !== 2
+        }
+        const waitingOnYou = isWaitingOn(orderedPowers.filter(p => p.name == powerName)[0]);
+        const waitingCount = orderedPowers.map(isWaitingOn).filter(x=>x).length;
         return (
             <Tab id={'tab-current-phase'} display={toDisplay}>
                 <Row>
@@ -1187,8 +1195,8 @@ export class ContentGame extends React.Component {
                         {this.renderMapForCurrent(engine, powerName, orderType, orderPath)}
                     </div>
                     <div className={'col-xl'}>
-                        <div style={{"margin-bottom": "12pt", "font-style": "italic"}}>
-                            Waiting for {orderedPowers.map(p => p.wait).filter(b => b).length} powers
+                        <div style={{marginBottom: "12pt", fontStyle: "italic"}}>
+                            Waiting for {waitingOnYou ? "you!" : <span>{waitingCount} "others"</span>}
                         </div>
                         {/* Orders. */}
                         <div className={'panel-orders mb-4'}>
