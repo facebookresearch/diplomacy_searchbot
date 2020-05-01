@@ -1187,6 +1187,9 @@ export class ContentGame extends React.Component {
                         {this.renderMapForCurrent(engine, powerName, orderType, orderPath)}
                     </div>
                     <div className={'col-xl'}>
+                        <div style={{"margin-bottom": "12pt", "font-style": "italic"}}>
+                            Waiting for {orderedPowers.map(p => p.wait).filter(b => b).length} powers
+                        </div>
                         {/* Orders. */}
                         <div className={'panel-orders mb-4'}>
                             {currentTabOrderCreation ? <div className="mb-4">{currentTabOrderCreation}</div> : ''}
@@ -1198,13 +1201,6 @@ export class ContentGame extends React.Component {
                                     && this.props.data.observer_level === STRINGS.MASTER_TYPE) ?
                                     this.onProcessGame : null}/>
                             <div className={'orders'}>{this.renderOrders(this.props.data, powerName)}</div>
-                            <div className={'table-responsive'}>
-                                <Table className={'table table-striped table-sm'}
-                                       caption={'Powers info'}
-                                       columns={TABLE_POWER_VIEW}
-                                       data={orderedPowers}
-                                       wrapper={PowerView.wrap}/>
-                            </div>
                         </div>
                     </div>
                 </Row>
