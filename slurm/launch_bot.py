@@ -43,6 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("game_id")
     parser.add_argument("--power")
     parser.add_argument("--powers-except")
+    parser.add_argument("--suffix", default=None)
     args = parser.parse_args()
     assert (args.power is None) ^ (args.powers_except is None), args
     assert (args.power and args.power in POWERS) or (
@@ -52,7 +53,7 @@ if __name__ == "__main__":
     powers = [args.power] if args.power else [p for p in POWERS if p != args.powers_except]
 
     for power in powers:
-        job_name = f"{args.game_id}_{power[:3]}"
+        job_name = args.game_id + (f"_{args.suffix}" if args.suffix else "") + f"_{power[:3]}"
         exp_dir = f"{BASE_EXP_DIR}/{job_name}"
 
         sbatch_script = SBATCH_SCRIPT.format(
