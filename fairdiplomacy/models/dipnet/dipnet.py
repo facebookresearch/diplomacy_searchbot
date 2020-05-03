@@ -30,6 +30,7 @@ class DipNet(nn.Module):
         order_emb_size,  # 80
         lstm_dropout=0,
         encoder_dropout=0,
+        value_dropout,
         learnable_A=False,
         learnable_alignments=False,
         avg_embedding=False,
@@ -60,7 +61,11 @@ class DipNet(nn.Module):
             power_emb_size=power_emb_size,
         )
 
-        self.value_decoder = ValueDecoder(inter_emb_size, init_scale=value_decoder_init_scale)
+        self.value_decoder = ValueDecoder(
+            inter_emb_size=inter_emb_size,
+            init_scale=value_decoder_init_scale,
+            dropout=value_dropout,
+        )
 
     def forward(
         self,
@@ -460,7 +465,7 @@ class LSTMDipNetDecoder(nn.Module):
 
 
 def top_p_filtering(
-    logits: torch.Tensor, top_p: Union[float, torch.Tensor], min_tokens_to_keep=1,
+    logits: torch.Tensor, top_p: Union[float, torch.Tensor], min_tokens_to_keep=1
 ) -> torch.Tensor:
     """Filter a distribution of logits using nucleus (top-p) filtering.
 
@@ -654,10 +659,11 @@ class FiLM(nn.Module):
 
 
 class ValueDecoder(nn.Module):
-    def __init__(self, inter_emb_size, init_scale=1.0):
+    def __init__(self, *, inter_emb_size, dropout, init_scale=1.0):
         super().__init__()
         emb_flat_size = 81 * inter_emb_size * 2
         self.lin = nn.Linear(emb_flat_size, len(POWERS))
+        self.dropout = nn.Dropout(dropout)
 
         # scale down init
         torch.nn.init.xavier_normal_(self.lin.weight, gain=init_scale)
@@ -668,5 +674,6 @@ class ValueDecoder(nn.Module):
         """Returns [B, 7] FloatTensor summing to 1 across dim=1"""
         y = enc.view(enc.shape[0], -1)
         y = self.lin(y)
+        y = self.dropout(y)
         y = nn.functional.softmax(y, dim=1)
         return y

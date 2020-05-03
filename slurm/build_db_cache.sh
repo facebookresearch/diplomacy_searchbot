@@ -17,7 +17,7 @@ cat <<EOF | sbatch --job-name cfr_db_cache \
                    --mem=200GB \
                    --constraint=pascal \
                    --time=2880 \
-                   --array=1-$N
+                   --array=0-$(($N - 1))
 #!/bin/bash
 
 PREFIX=\$(( $BASE + \$SLURM_ARRAY_TASK_ID ))

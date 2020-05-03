@@ -309,6 +309,9 @@ message TrainTask {
   // power into the training set.
   optional int32 only_with_min_final_score = 26 [default = 7];
 
+  // Value head dropout pct.
+  optional float value_dropout = 27;
+
   optional Launcher launcher = 1000;
 }
 
