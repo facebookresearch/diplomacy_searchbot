@@ -46,7 +46,6 @@ class Dataset(torch.utils.data.Dataset):
             )
             for p in game_json_paths
         )
-
         logging.info(f"Got {len(encoded_games)} games")
 
         encoded_games = [g for g in encoded_games if g[-1][0].any()]
@@ -307,7 +306,7 @@ def encode_phase(
     valid_power_idxs = torch.ones(len(POWERS), dtype=torch.bool)
     y_actions_lst = []
     power_orders_samples = (
-        {power: [game.order_history[phase_name].get(power, [])]}
+        {power: [game.order_history[phase_name].get(power, [])] for power in POWERS}
         if cf_agent is None
         else get_cf_agent_order_samples(tmp_game, phase_name, cf_agent, n_cf_agent_samples)
     )
