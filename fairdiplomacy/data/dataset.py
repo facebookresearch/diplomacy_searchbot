@@ -36,9 +36,6 @@ class Dataset(torch.utils.data.Dataset):
         self.game_json_paths = game_json_paths
         self.n_cf_agent_samples = n_cf_agent_samples
         assert not debug_only_opening_phase, "FIXME"
-        assert (cf_agent is None and n_cf_agent_samples == 1) or (
-            cf_agent is not None and n_cf_agent_samples > 0
-        )
 
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(encode_game)(
@@ -76,7 +73,7 @@ class Dataset(torch.utils.data.Dataset):
         self.encoded_games = [_cat(x) for x in zip(*encoded_games)]
 
         self.num_games = len(encoded_games)
-        self.num_phases = len(self.encoded_games[0])
+        self.num_phases = len(self.encoded_games[0]) if self.encoded_games else 0
         self.num_elements = len(self.x_idxs)
 
         for i, e in enumerate(self.encoded_games):
@@ -84,6 +81,40 @@ class Dataset(torch.utils.data.Dataset):
                 assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
             else:
                 assert len(e) == self.num_phases
+
+    @classmethod
+    def from_merge(cls, datasets: List["Dataset"]) -> "Dataset":
+        if len(datasets) == 0:
+            raise ValueError("Trying to merge empty list of datasets")
+
+        n_cf_set = {d.n_cf_agent_samples for d in datasets}
+        if len(n_cf_set) != 1:
+            raise ValueError(
+                f"all datasets must have the same n_cf_agent_samples, got: {n_cf_set}"
+            )
+
+        cum_games = torch.LongTensor([0] + [d.num_games for d in datasets]).cumsum(dim=0)
+        cum_phases = torch.LongTensor([0] + [d.num_phases for d in datasets]).cumsum(dim=0)
+        cum_elements = torch.LongTensor([0] + [d.num_elements for d in datasets]).cumsum(dim=0)
+
+        r = Dataset([], n_jobs=1, n_cf_agent_samples=datasets[0].n_cf_agent_samples)
+        r.n_cf_agent_samples = datasets[0].n_cf_agent_samples
+        r.encoded_games = [_cat(x) for x in zip(*[d.encoded_games for d in datasets])]
+        r.game_idxs = torch.cat([d.game_idxs + off for d, off in zip(datasets, cum_games)])
+        r.phase_idxs = torch.cat([d.phase_idxs for d in datasets])
+        r.power_idxs = torch.cat([d.power_idxs for d in datasets])
+        r.x_idxs = torch.cat([d.x_idxs + off for d, off in zip(datasets, cum_phases)])
+        r.num_games = sum(d.num_games for d in datasets)
+        r.num_phases = sum(d.num_phases for d in datasets)
+        r.num_elements = sum(d.num_elements for d in datasets)
+
+        for i, e in enumerate(r.encoded_games):
+            if isinstance(e, TensorList):
+                assert len(e) == r.num_phases * len(POWERS) * MAX_SEQ_LEN
+            else:
+                assert len(e) == r.num_phases
+
+        return r
 
     def stats_str(self):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
@@ -122,7 +153,11 @@ class Dataset(torch.utils.data.Dataset):
             fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
 
         # for y_actions, select out the correct sample
-        fields[8] = fields[8][sample_idxs]
+        fields[8] = (
+            fields[8]
+            .gather(1, sample_idxs.view(-1, 1, 1).repeat((1, 1, fields[8].shape[2])))
+            .squeeze(1)
+        )
 
         # cast fields
         for i in range(len(fields) - 4):
