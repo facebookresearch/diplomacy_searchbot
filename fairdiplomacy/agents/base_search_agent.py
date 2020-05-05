@@ -37,31 +37,6 @@ if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
         pass
 
 
-def make_server_process(*, model_path, device, max_batch_size, wait_till_full):
-    q = mp.SimpleQueue()
-    server = ExceptionHandlingProcess(
-        target=run_server,
-        kwargs=dict(
-            port=0,
-            batch_size=max_batch_size,
-            load_model_fn=partial(
-                load_dipnet_model, model_path, map_location=f"cuda:{device}", eval=True
-            ),
-            output_transform=model_output_transform,
-            seed=0,
-            device=device,
-            port_q=q,
-            wait_till_full=wait_till_full,
-            model_path=model_path,  # debugging only
-        ),
-        daemon=True,
-    )
-    server.start()
-    port = q.get()
-    hostport = f"127.0.0.1:{port}"
-    return server, q, hostport
-
-
 class BaseSearchAgent(BaseAgent):
     def __init__(
         self,
@@ -79,9 +54,9 @@ class BaseSearchAgent(BaseAgent):
         use_server_addr=None,
         device=None,
         mix_square_ratio_scoring=0,
-        value_model_path=None
     ):
         super().__init__()
+
         self.n_rollout_procs = n_rollout_procs
         self.n_server_procs = n_server_procs
         self.use_predicted_final_scores = use_predicted_final_scores
@@ -93,6 +68,7 @@ class BaseSearchAgent(BaseAgent):
         device = int(device.lstrip("cuda:")) if type(device) == str else device
 
         logging.info("Launching servers")
+        servers = []
         assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
         try:
             mp.set_start_method("spawn")
@@ -100,31 +76,38 @@ class BaseSearchAgent(BaseAgent):
             logging.warning("Failed mp.set_start_method")
 
         if use_server_addr is not None:
-            assert value_model_path is None, "Not implemented"
             if n_server_procs != 1:
                 raise ValueError(
                     f"Bad args use_server_addr={use_server_addr} n_server_procs={n_server_procs}"
                 )
             self.hostports = [use_server_addr]
         else:
-            _servers, _qs, self.hostports = zip(*[
-                make_server_process(
-                    model_path=model_path,
-                    device=i % n_gpu if device is None else device,
-                    max_batch_size=max_batch_size,
-                    wait_till_full=postman_wait_till_full
-                ) for i in range(n_server_procs)
-            ])
-
-            if value_model_path is not None:
-                _, _, self.value_hostport = make_server_process(
-                    model_path=value_model_path,
-                    device=n_server_procs % n_gpu if device is None else device,
-                    max_batch_size=max_batch_size,
-                    wait_till_full=postman_wait_till_full
+            for i in range(n_server_procs):
+                q = mp.SimpleQueue()
+                device = i % n_gpu if device is None else device
+                server = ExceptionHandlingProcess(
+                    target=run_server,
+                    kwargs=dict(
+                        port=0,
+                        batch_size=max_batch_size,
+                        load_model_fn=partial(
+                            load_dipnet_model, model_path, map_location=f"cuda:{device}", eval=True
+                        ),
+                        output_transform=model_output_transform,
+                        seed=0,
+                        device=device,
+                        port_q=q,
+                        wait_till_full=postman_wait_till_full,
+                    ),
+                    daemon=True,
                 )
-            else:
-                self.value_hostport = None
+                server.start()
+                servers.append((server, q))
+
+            logging.info("Waiting for servers")
+            ports = [q.get() for _, q in servers]
+            logging.info(f"Servers started on ports {ports}")
+            self.hostports = [f"127.0.0.1:{p}" for p in ports]
 
         self.client = postman.Client(self.hostports[0])
         logging.info(f"Connecting to {self.hostports[0]} [{os.uname().nodename}]")
@@ -250,7 +233,6 @@ class BaseSearchAgent(BaseAgent):
                         game_json=game_json,
                         set_orders_dict=d,
                         hostport=self.hostports[i % self.n_server_procs],
-                        value_hostport=self.value_hostport,
                         temperature=self.rollout_temperature,
                         top_p=self.rollout_top_p,
                         max_rollout_length=self.max_rollout_length,
@@ -288,7 +270,6 @@ class BaseSearchAgent(BaseAgent):
         batch_size=1,
         use_predicted_final_scores,
         mix_square_ratio_scoring=0,
-        value_hostport=None,
     ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:
         """Complete game, optionally setting orders for the current turn
 
@@ -315,11 +296,6 @@ class BaseSearchAgent(BaseAgent):
         with timings("postman.client"):
             client = postman.Client(hostport)
             client.connect(3)
-            if value_hostport is not None:
-                value_client = postman.Client(value_hostport)
-                value_client.connect(3)
-            else:
-                value_client = client
 
         with timings("setup"):
             faulthandler.register(signal.SIGUSR2)
@@ -337,7 +313,7 @@ class BaseSearchAgent(BaseAgent):
 
             other_powers = [p for p in POWERS if p not in set_orders_dict]
 
-        for turn_idx in range(max_rollout_length + 1):
+        for turn_idx in range(max_rollout_length):
             with timings("prep"):
                 batch_data = []
                 for game in games:
@@ -356,19 +332,13 @@ class BaseSearchAgent(BaseAgent):
                 batch_inputs, seq_lens = cat_pad_inputs(xs)
 
             with timings("model"):
-                if turn_idx == max_rollout_length:
-                    _, final_scores = cls.do_model_request(
-                        value_client, batch_inputs, temperature, top_p
-                    )
-                    for game in games:
-                        if not game.is_game_done:
-                            est_final_scores[game.game_id] = final_scores  # FIXME: should be final_scores[i]!
-                    # don't step the environment on the turn that you're grabbing the value
-                    break
-
-                batch_orders, _ = cls.do_model_request(
+                batch_orders, final_scores = cls.do_model_request(
                     client, batch_inputs, temperature, top_p
                 )
+            with timings("final_scores"):
+                for game in games:
+                    if not game.is_game_done:
+                        est_final_scores[game.game_id] = final_scores
 
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
@@ -470,7 +440,6 @@ def server_handler(
     ckpt_sync_every=0,
     wait_till_full=False,
     empty_cache=True,
-    model_path=None,  # for debugging only
 ):
 
     if device > 0:
@@ -509,8 +478,6 @@ def server_handler(
 
                     with timings("next_batch"):
                         inputs = batch.get_inputs()[0]
-
-                    # print(f"GOT {len(inputs)} BATCH FOR {model_path}")
 
                     with timings("to_cuda"):
                         inputs = tuple(x.to("cuda") for x in inputs)

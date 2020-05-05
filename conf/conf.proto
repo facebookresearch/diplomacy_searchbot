@@ -77,11 +77,8 @@ message CFR1PAgent {
   // # plausible actions = min(ceil(max_actions_units_ratio * #units), n_plausible_orders)
   optional float max_actions_units_ratio = 17 [ default = -1 ];
 
-  // Optional: separate model path to compute the value function
-  optional string value_model_path = 18;
-
   // Optional, if True, sample from final iter instead of average iter
-  optional bool use_final_iter = 19 [ default = true ];
+  optional bool use_final_iter = 18 [ default = true ];
 }
 
 message BRSearchAgent {
