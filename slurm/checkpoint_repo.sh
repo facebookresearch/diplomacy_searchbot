@@ -15,6 +15,7 @@ tar -C $ROOT -cf $TMPDIR/$TARBALL \
     --exclude thirdparty/github/fairinternal/postman \
     --exclude thirdparty/github/diplomacy/diplomacy/diplomacy/web \
     --exclude .mypy_cache \
+    --exclude local \
     .
 tar -C $TMPDIR -xf $TMPDIR/$TARBALL
 rm $TMPDIR/$TARBALL
