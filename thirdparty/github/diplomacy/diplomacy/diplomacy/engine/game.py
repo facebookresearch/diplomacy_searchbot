@@ -277,6 +277,7 @@ class Game(Jsonable):
         "_unit_owner_cache",
         "daide_port",
         "fixed_state",
+        "_use_random_early_draw",
     ]
     zobrist_tables = {}
     rule_cache = ()
@@ -372,6 +373,7 @@ class Game(Jsonable):
         self.controlled_powers = None
         self.daide_port = None
         self.fixed_state = None
+        self._use_random_early_draw = kwargs.pop("use_random_early_draw", False)
 
         # Caches
         self._unit_owner_cache = None  # {(unit, coast_required): owner}
@@ -3143,6 +3145,13 @@ class Game(Jsonable):
 
         # Movement phase - Always need to process
         if self.phase_type == "M":
+            if (
+                self._use_random_early_draw
+                and int(self.phase.split()[1]) >= 1911
+                and random.random() < 0.05
+            ):
+                self.draw()
+
             return 0
 
         # Retreats phase

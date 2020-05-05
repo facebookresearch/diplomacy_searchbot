@@ -144,7 +144,9 @@ def on_create_game(server, request, connection_handler):
                              n_controls=request.n_controls,
                              deadline=request.deadline,
                              registration_password=request.registration_password,
-                             server=server)
+                             server=server,
+                             use_random_early_draw=True,
+                             )
 
     # Make sure game creator will be a game master (set him as moderator if he's not an admin).
     if not server.users.has_admin(username):
