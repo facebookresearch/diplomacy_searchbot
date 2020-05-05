@@ -3,7 +3,6 @@ import atexit
 import glob
 import json
 import logging
-import math
 import os
 import random
 import torch
@@ -190,12 +189,12 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
     p_losses, v_losses = [torch.cat(x) for x in zip(*batch_losses)]
     p_loss = torch.mean(p_losses)
     v_loss = torch.mean(v_losses)
-    val_loss = (1 - value_loss_weight) * p_loss + value_loss_weight * v_loss
+    valid_loss = (1 - value_loss_weight) * p_loss + value_loss_weight * v_loss
 
     # validation accuracy
     weights = [len(pl) / len(p_losses) for pl, _ in batch_losses]
-    val_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
-    val_value_accuracy = sum(a * w for (a, w) in zip(batch_value_accuracies, weights))
+    valid_p_accuracy = sum(a * w for (a, w) in zip(batch_accuracies, weights))
+    valid_v_accuracy = sum(a * w for (a, w) in zip(batch_value_accuracies, weights))
 
     # combine accuracy splits
     split_counts = reduce(
@@ -208,7 +207,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
         for k in [k.rsplit(".", 1)[0] for k in split_counts.keys()]
     }
 
-    return val_loss, val_accuracy, split_pcts, val_value_accuracy
+    return valid_loss, valid_p_accuracy, split_pcts, valid_v_accuracy
 
 
 def maybe_build_jsonl_logger(fpath, do_log):
@@ -334,7 +333,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            val_loss, val_accuracy, split_pcts, val_value_accuracy = validate(
+            valid_loss, valid_p_accuracy, split_pcts, valid_v_accuracy = validate(
                 net,
                 val_set,
                 policy_loss_fn,
@@ -344,9 +343,9 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             )
             scalars = dict(
                 epoch=epoch,
-                val_loss=val_loss,
-                val_accuracy=val_accuracy,
-                val_value_accuracy=val_value_accuracy,
+                valid_loss=valid_loss,
+                valid_p_accuracy=valid_p_accuracy,
+                valid_v_accuracy=valid_v_accuracy,
             )
             log_scalars(**scalars)
             logger.info("Validation " + " ".join([f"{k}= {v}" for k, v in scalars.items()]))
@@ -362,7 +361,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                         "optim": optim.state_dict(),
                         "epoch": epoch,
                         "batch_i": batch_i,
-                        "val_accuracy": val_accuracy,
+                        "valid_p_accuracy": valid_p_accuracy,
                         "args": args,
                     },
                     args.checkpoint,
