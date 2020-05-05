@@ -24,7 +24,7 @@
     - server saving
     - notifications sending
 """
-#pylint:disable=too-many-lines
+# pylint:disable=too-many-lines
 import logging
 import os
 import subprocess
@@ -35,8 +35,12 @@ from tornado.concurrent import Future
 from diplomacy.communication import notifications, requests, responses
 from diplomacy.server.notifier import Notifier
 from diplomacy.server.server_game import ServerGame
-from diplomacy.server.request_manager_utils import (SynchronizedData, verify_request, transfer_special_tokens,
-                                                    assert_game_not_finished)
+from diplomacy.server.request_manager_utils import (
+    SynchronizedData,
+    verify_request,
+    transfer_special_tokens,
+    assert_game_not_finished,
+)
 from diplomacy.utils import exceptions, strings, constants, export
 from diplomacy.utils.common import hash_password
 from diplomacy.utils.constants import OrderSettings
@@ -48,7 +52,8 @@ LOGGER = logging.getLogger(__name__)
 # Request managers.
 # =================
 
-SERVER_GAME_RULES = ['NO_PRESS', 'IGNORE_ERRORS', 'POWER_CHOICE']
+SERVER_GAME_RULES = ["NO_PRESS", "IGNORE_ERRORS", "POWER_CHOICE"]
+
 
 def on_clear_centers(server, request, connection_handler):
     """ Manage request ClearCenters.
@@ -63,7 +68,10 @@ def on_clear_centers(server, request, connection_handler):
     level = verify_request(server, request, connection_handler, observer_role=False)
     assert_game_not_finished(level.game)
     level.game.clear_centers(level.power_name)
-    Notifier(server, ignore_addresses=[request.address_in_game]).notify_cleared_centers(level.game, level.power_name)
+    Notifier(server, ignore_addresses=[request.address_in_game]).notify_cleared_centers(
+        level.game, level.power_name
+    )
+
 
 def on_clear_orders(server, request, connection_handler):
     """ Manage request ClearOrders.
@@ -79,9 +87,14 @@ def on_clear_orders(server, request, connection_handler):
     assert_game_not_finished(level.game)
     if not request.phase or request.phase != level.game.current_short_phase:
         raise exceptions.ResponseException(
-            'Invalid order phase, received %s, server phase is %s' % (request.phase, level.game.current_short_phase))
+            "Invalid order phase, received %s, server phase is %s"
+            % (request.phase, level.game.current_short_phase)
+        )
     level.game.clear_orders(level.power_name)
-    Notifier(server, ignore_addresses=[request.address_in_game]).notify_cleared_orders(level.game, level.power_name)
+    Notifier(server, ignore_addresses=[request.address_in_game]).notify_cleared_orders(
+        level.game, level.power_name
+    )
+
 
 def on_clear_units(server, request, connection_handler):
     """ Manage request ClearUnits.
@@ -96,7 +109,10 @@ def on_clear_units(server, request, connection_handler):
     level = verify_request(server, request, connection_handler, observer_role=False)
     assert_game_not_finished(level.game)
     level.game.clear_units(level.power_name)
-    Notifier(server, ignore_addresses=[request.address_in_game]).notify_cleared_units(level.game, level.power_name)
+    Notifier(server, ignore_addresses=[request.address_in_game]).notify_cleared_units(
+        level.game, level.power_name
+    )
+
 
 def on_create_game(server, request, connection_handler):
     """ Manage request CreateGame.
@@ -111,7 +127,12 @@ def on_create_game(server, request, connection_handler):
 
     # Check request token.
     verify_request(server, request, connection_handler)
-    game_id, token, power_name, state = request.game_id, request.token, request.power_name, request.state
+    game_id, token, power_name, state = (
+        request.game_id,
+        request.token,
+        request.power_name,
+        request.state,
+    )
 
     # Check if server still accepts to create new games.
     if server.cannot_create_more_games():
@@ -124,29 +145,30 @@ def on_create_game(server, request, connection_handler):
 
     # If rule SOLITAIRE is required, a power name cannot be queried (as all powers should be dummy).
     # In such case, game creator can only be omniscient.
-    if request.rules and 'SOLITAIRE' in request.rules and power_name is not None:
+    if request.rules and "SOLITAIRE" in request.rules and power_name is not None:
         raise exceptions.GameSolitaireException()
 
     # If a power name is given, check if it's a valid power name for related map.
-    if power_name is not None and power_name not in game_map['powers']:
+    if power_name is not None and power_name not in game_map["powers"]:
         raise exceptions.MapPowerException(power_name)
 
     # Create server game.
     username = server.users.get_name(token)
-    if game_id is None or game_id == '':
+    if game_id is None or game_id == "":
         game_id = server.create_game_id()
     elif server.has_game_id(game_id):
-        raise exceptions.GameIdException('Game ID already used (%s).' % game_id)
-    server_game = ServerGame(map_name=request.map_name,
-                             rules=request.rules or SERVER_GAME_RULES,
-                             game_id=game_id,
-                             initial_state=state,
-                             n_controls=request.n_controls,
-                             deadline=request.deadline,
-                             registration_password=request.registration_password,
-                             server=server,
-                             use_random_early_draw=True,
-                             )
+        raise exceptions.GameIdException("Game ID already used (%s)." % game_id)
+    server_game = ServerGame(
+        map_name=request.map_name,
+        rules=request.rules or SERVER_GAME_RULES,
+        game_id=game_id,
+        initial_state=state,
+        n_controls=request.n_controls,
+        deadline=request.deadline,
+        registration_password=request.registration_password,
+        server=server,
+        use_random_early_draw=True,
+    )
 
     # Make sure game creator will be a game master (set him as moderator if he's not an admin).
     if not server.users.has_admin(username):
@@ -169,16 +191,17 @@ def on_create_game(server, request, connection_handler):
 
     server.save_game(server_game)
 
-    if os.environ.get('DIP_POST_CREATE_HOOK'):
-        script = os.environ.get('DIP_POST_CREATE_HOOK')
-        script = script.replace('__POWER__', power_name)
-        script = script.replace('__GAMEID__', game_id)
+    if os.environ.get("DIP_POST_CREATE_HOOK"):
+        script = os.environ.get("DIP_POST_CREATE_HOOK")
+        script = script.replace("__POWER__", power_name)
+        script = script.replace("__GAMEID__", game_id)
         try:
             subprocess.run(script, shell=True, timeout=5, check=True)
         except Exception:
             LOGGER.exception(f"Caught in failed DIP_POST_CREATE_HOOK: {script}")
 
     return responses.DataGame(data=client_game, request_id=request.request_id)
+
 
 def on_delete_account(server, request, connection_handler):
     """ Manage request DeleteAccount.
@@ -228,6 +251,7 @@ def on_delete_account(server, request, connection_handler):
         # Require server data disk backup.
         server.save_data()
 
+
 def on_delete_game(server, request, connection_handler):
     """ Manage request DeleteGame.
 
@@ -237,10 +261,13 @@ def on_delete_game(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.DeleteGame
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, power_role=False)
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, power_role=False
+    )
     server.delete_game(level.game)
     server.unschedule_game(level.game)
     Notifier(server, ignore_tokens=[request.token]).notify_game_deleted(level.game)
+
 
 def on_get_all_possible_orders(server, request, connection_handler):
     """ Manage request GetAllPossibleOrders
@@ -252,9 +279,12 @@ def on_get_all_possible_orders(server, request, connection_handler):
         :type request: diplomacy.communication.requests.GetAllPossibleOrders
     """
     level = verify_request(server, request, connection_handler, require_master=False)
-    return responses.DataPossibleOrders(possible_orders=level.game.get_all_possible_orders(),
-                                        orderable_locations=level.game.get_orderable_locations(),
-                                        request_id=request.request_id)
+    return responses.DataPossibleOrders(
+        possible_orders=level.game.get_all_possible_orders(),
+        orderable_locations=level.game.get_orderable_locations(),
+        request_id=request.request_id,
+    )
+
 
 def on_get_available_maps(server, request, connection_handler):
     """ Manage request GetAvailableMaps.
@@ -268,6 +298,7 @@ def on_get_available_maps(server, request, connection_handler):
     """
     verify_request(server, request, connection_handler)
     return responses.DataMaps(data=server.available_maps, request_id=request.request_id)
+
 
 def on_get_daide_port(server, request, connection_handler):
     """ Manage request GetDaidePort.
@@ -283,8 +314,11 @@ def on_get_daide_port(server, request, connection_handler):
     daide_port = server.get_daide_port(request.game_id)
     if daide_port is None:
         raise exceptions.DaidePortException(
-            "Invalid game id %s or game's DAIDE server is not started for that game" % request.game_id)
+            "Invalid game id %s or game's DAIDE server is not started for that game"
+            % request.game_id
+        )
     return responses.DataPort(data=daide_port, request_id=request.request_id)
+
 
 def on_get_dummy_waiting_powers(server, request, connection_handler):
     """ Manage request GetAllDummyPowerNames.
@@ -298,7 +332,12 @@ def on_get_dummy_waiting_powers(server, request, connection_handler):
     """
     verify_request(server, request, connection_handler)
     return responses.DataGamesToPowerNames(
-        data=server.get_dummy_waiting_power_names(request.buffer_size, request.token, request.only_game_id, request.only_power), request_id=request.request_id)
+        data=server.get_dummy_waiting_power_names(
+            request.buffer_size, request.token, request.only_game_id, request.only_power
+        ),
+        request_id=request.request_id,
+    )
+
 
 def on_get_games_info(server, request, connection_handler):
     """ Manage request GetGamesInfo.
@@ -316,25 +355,28 @@ def on_get_games_info(server, request, connection_handler):
     for game_id in request.games:
         try:
             server_game = server.load_game(game_id)
-            games.append(responses.DataGameInfo(
-                game_id=server_game.game_id,
-                phase=server_game.current_short_phase,
-                timestamp=server_game.get_latest_timestamp(),
-                timestamp_created=server_game.timestamp_created,
-                map_name=server_game.map_name,
-                observer_level=server_game.get_observer_level(username),
-                controlled_powers=server_game.get_controlled_power_names(username),
-                rules=server_game.rules,
-                status=server_game.status,
-                n_players=server_game.count_controlled_powers(),
-                n_controls=server_game.get_expected_controls_count(),
-                deadline=server_game.deadline,
-                registration_password=bool(server_game.registration_password)
-            ))
+            games.append(
+                responses.DataGameInfo(
+                    game_id=server_game.game_id,
+                    phase=server_game.current_short_phase,
+                    timestamp=server_game.get_latest_timestamp(),
+                    timestamp_created=server_game.timestamp_created,
+                    map_name=server_game.map_name,
+                    observer_level=server_game.get_observer_level(username),
+                    controlled_powers=server_game.get_controlled_power_names(username),
+                    rules=server_game.rules,
+                    status=server_game.status,
+                    n_players=server_game.count_controlled_powers(),
+                    n_controls=server_game.get_expected_controls_count(),
+                    deadline=server_game.deadline,
+                    registration_password=bool(server_game.registration_password),
+                )
+            )
         except exceptions.GameIdException:
             # Invalid game ID, just pass.
             pass
     return responses.DataGames(data=games, request_id=request.request_id)
+
 
 def on_get_phase_history(server, request, connection_handler):
     """ Manage request GetPhaseHistory.
@@ -348,8 +390,11 @@ def on_get_phase_history(server, request, connection_handler):
         :rtype: diplomacy.communication.responses.DataGamePhases
     """
     level = verify_request(server, request, connection_handler, require_master=False)
-    game_phases = level.game.get_phase_history(request.from_phase, request.to_phase, request.game_role)
+    game_phases = level.game.get_phase_history(
+        request.from_phase, request.to_phase, request.game_role
+    )
     return responses.DataGamePhases(data=game_phases, request_id=request.request_id)
+
 
 def on_get_playable_powers(server, request, connection_handler):
     """ Manage request GetPlayablePowers.
@@ -363,7 +408,10 @@ def on_get_playable_powers(server, request, connection_handler):
     """
     verify_request(server, request, connection_handler)
     return responses.DataPowerNames(
-        data=server.get_game(request.game_id).get_dummy_power_names(), request_id=request.request_id)
+        data=server.get_game(request.game_id).get_dummy_power_names(),
+        request_id=request.request_id,
+    )
+
 
 def on_join_game(server, request, connection_handler):
     """ Manage request JoinGame.
@@ -378,7 +426,11 @@ def on_join_game(server, request, connection_handler):
 
     # Check request token.
     verify_request(server, request, connection_handler)
-    token, power_name, registration_password = request.token, request.power_name, request.registration_password
+    token, power_name, registration_password = (
+        request.token,
+        request.power_name,
+        request.registration_password,
+    )
 
     # Get related game.
     server_game = server.get_game(request.game_id)  # type: ServerGame
@@ -389,7 +441,9 @@ def on_join_game(server, request, connection_handler):
     if power_name is None:
 
         # Check given registration password for related game.
-        if not server_game.is_valid_password(registration_password) and not server.token_is_master(token, server_game):
+        if not server_game.is_valid_password(registration_password) and not server.token_is_master(
+            token, server_game
+        ):
             raise exceptions.GameRegistrationPasswordException()
 
         # Request token must not already be a player token.
@@ -398,7 +452,7 @@ def on_join_game(server, request, connection_handler):
 
         # Observations must be allowed for this game, or request sender must be a game master.
         if server_game.no_observations and not server.token_is_master(token, server_game):
-            raise exceptions.GameObserverException('Disallowed observation for non-master users.')
+            raise exceptions.GameObserverException("Disallowed observation for non-master users.")
 
         # Flag used to check if token was already registered with expected game role
         # (possibly because of a re-sent request). If True, we can send response
@@ -417,7 +471,7 @@ def on_join_game(server, request, connection_handler):
             elif not request.re_sent:
                 # Token already registered but request is a new one.
                 # This should not happen (programming error?).
-                raise exceptions.ResponseException('Token already omniscient from a new request.')
+                raise exceptions.ResponseException("Token already omniscient from a new request.")
 
             # Create client game.
             client_game = server_game.as_omniscient_game(username)
@@ -435,7 +489,7 @@ def on_join_game(server, request, connection_handler):
             elif not request.re_sent:
                 # Token already registered but request is a new one.
                 # This should not happen (programming error?).
-                raise exceptions.ResponseException('Token already observer.')
+                raise exceptions.ResponseException("Token already observer.")
 
             # Create client game.
             client_game = server_game.as_observer_game(username)
@@ -448,9 +502,11 @@ def on_join_game(server, request, connection_handler):
     else:
 
         # Check given registration password for related game.
-        if not (server_game.is_valid_password(registration_password)
-                or server.token_is_master(token, server_game)
-                or username == constants.PRIVATE_BOT_USERNAME):
+        if not (
+            server_game.is_valid_password(registration_password)
+            or server.token_is_master(token, server_game)
+            or username == constants.PRIVATE_BOT_USERNAME
+        ):
             raise exceptions.GameRegistrationPasswordException()
 
         # No new player allowed if game is ended.
@@ -462,7 +518,7 @@ def on_join_game(server, request, connection_handler):
 
         # Forbid to play a power that is already eliminated.
         if server_game.get_power(power_name).is_eliminated():
-            raise exceptions.ResponseException('%s is eliminated.' % power_name)
+            raise exceptions.ResponseException("%s is eliminated." % power_name)
 
         if username == constants.PRIVATE_BOT_USERNAME:
             # Private bot is allowed to control any dummy power after game started
@@ -470,9 +526,9 @@ def on_join_game(server, request, connection_handler):
             # A dummy power controlled by bot is still marked as "dummy", but
             # has tokens associated.
             if not server_game.is_game_active and not server_game.is_game_paused:
-                raise exceptions.ResponseException('Game is not active.')
+                raise exceptions.ResponseException("Game is not active.")
             if power_name not in server_game.get_dummy_power_names():
-                raise exceptions.ResponseException('Invalid dummy power name %s' % power_name)
+                raise exceptions.ResponseException("Invalid dummy power name %s" % power_name)
             server_game.get_power(power_name).add_token(token)
             client_game = server_game.as_power_game(power_name)
             return responses.DataGame(data=client_game, request_id=request.request_id)
@@ -499,20 +555,25 @@ def on_join_game(server, request, connection_handler):
                 raise exceptions.GameJoinRoleException()
 
             # If allowed number of players is already reached, only game masters are allowed to control dummy powers.
-            if server_game.has_expected_controls_count() and not server.token_is_master(token, server_game):
+            if server_game.has_expected_controls_count() and not server.token_is_master(
+                token, server_game
+            ):
                 raise exceptions.ResponseException(
-                    'Reached maximum number of allowed controlled powers for this game (%d).'
-                    % server_game.get_expected_controls_count())
+                    "Reached maximum number of allowed controlled powers for this game (%d)."
+                    % server_game.get_expected_controls_count()
+                )
 
             # If power is already controlled (by someone else), game must allow to select a power randomly.
             if server_game.is_controlled(power_name) and server_game.power_choice:
-                raise exceptions.ResponseException('You want to control a power that is already controlled,'
-                                                   'and this game does not allocate powers randomly.')
+                raise exceptions.ResponseException(
+                    "You want to control a power that is already controlled,"
+                    "and this game does not allocate powers randomly."
+                )
 
             # If request sender is already a game player and game does not allow multiple powers per player,
             # then it cannot register.
             if server_game.has_player(username) and not server_game.multiple_powers_per_player:
-                raise exceptions.ResponseException('Disallowed multiple powers per player.')
+                raise exceptions.ResponseException("Disallowed multiple powers per player.")
 
             # If game has no rule POWER_CHOICE, a randomly selected power is assigned to request sender,
             # whatever be the power he queried.
@@ -523,7 +584,9 @@ def on_join_game(server, request, connection_handler):
             server_game.control(power_name, username, token)
 
             # Notify other game tokens about new powers controllers.
-            Notifier(server, ignore_addresses=[(power_name, token)]).notify_game_powers_controllers(server_game)
+            Notifier(
+                server, ignore_addresses=[(power_name, token)]
+            ).notify_game_powers_controllers(server_game)
 
             # Create client game.
             client_game = server_game.as_power_game(power_name)
@@ -536,6 +599,7 @@ def on_join_game(server, request, connection_handler):
     server.save_game(server_game)
 
     return responses.DataGame(data=client_game, request_id=request.request_id)
+
 
 def on_join_powers(server, request, connection_handler):
     """ Manage request JoinPowers.
@@ -556,7 +620,7 @@ def on_join_powers(server, request, connection_handler):
     username = server.users.get_name(token)
 
     if not power_names:
-        raise exceptions.ResponseException('Required at least 1 power name to join powers.')
+        raise exceptions.ResponseException("Required at least 1 power name to join powers.")
 
     # Get related game.
     server_game = server.get_game(request.game_id)  # type: ServerGame
@@ -566,9 +630,11 @@ def on_join_powers(server, request, connection_handler):
         raise exceptions.GameFinishedException()
 
     # Check given registration password for related game.
-    if not (server_game.is_valid_password(request.registration_password)
-            or server.token_is_master(token, server_game)
-            or username == constants.PRIVATE_BOT_USERNAME):
+    if not (
+        server_game.is_valid_password(request.registration_password)
+        or server.token_is_master(token, server_game)
+        or username == constants.PRIVATE_BOT_USERNAME
+    ):
         raise exceptions.GameRegistrationPasswordException()
 
     # Check if given power names are valid.
@@ -586,12 +652,12 @@ def on_join_powers(server, request, connection_handler):
 
         # Check if game is started.
         if server_game.is_game_forming:
-            raise exceptions.ResponseException('Game is not active.')
+            raise exceptions.ResponseException("Game is not active.")
 
         # Check if all given power names are dummy.
         for power_name in power_names:
             if power_name not in dummy_power_names:
-                raise exceptions.ResponseException('Invalid dummy power name %s' % power_name)
+                raise exceptions.ResponseException("Invalid dummy power name %s" % power_name)
 
         # Join bot to each given power name.
         for power_name in power_names:
@@ -612,7 +678,9 @@ def on_join_powers(server, request, connection_handler):
         if power.is_dummy():
             required_dummy_powers.add(power_name)
         elif not power.is_controlled_by(username):
-            raise exceptions.ResponseException('Power %s is controlled by someone else.' % power_name)
+            raise exceptions.ResponseException(
+                "Power %s is controlled by someone else." % power_name
+            )
 
     # Nothing to do if all queried powers are already controlled by request sender.
     if not required_dummy_powers:
@@ -622,15 +690,19 @@ def on_join_powers(server, request, connection_handler):
     # Do additional checks for non-game masters.
     if not server.token_is_master(token, server_game):
 
-        if len(required_dummy_powers) < len(power_names) and not server_game.multiple_powers_per_player:
+        if (
+            len(required_dummy_powers) < len(power_names)
+            and not server_game.multiple_powers_per_player
+        ):
             # Request sender already controls some powers but game does not allow multiple powers per player.
-            raise exceptions.ResponseException('Disallowed multiple powers per player.')
+            raise exceptions.ResponseException("Disallowed multiple powers per player.")
 
         if server_game.has_expected_controls_count():
             # Allowed number of players is already reached for this game.
             raise exceptions.ResponseException(
-                'Reached maximum number of allowed controlled powers for this game (%d).'
-                % server_game.get_expected_controls_count())
+                "Reached maximum number of allowed controlled powers for this game (%d)."
+                % server_game.get_expected_controls_count()
+            )
 
     # Join user to each queried dummy power.
     for power_name in required_dummy_powers:
@@ -647,6 +719,7 @@ def on_join_powers(server, request, connection_handler):
     # Require game disk backup.
     server.save_game(server_game)
 
+
 def on_leave_game(server, request, connection_handler):
     """ Manage request LeaveGame.
         If user is an (omniscient) observer, stop observation.
@@ -662,16 +735,21 @@ def on_leave_game(server, request, connection_handler):
     level = verify_request(server, request, connection_handler, require_master=False)
     if level.is_power():
         level.game.set_controlled(level.power_name, None)
-        Notifier(server, ignore_addresses=[request.address_in_game]).notify_game_powers_controllers(level.game)
+        Notifier(
+            server, ignore_addresses=[request.address_in_game]
+        ).notify_game_powers_controllers(level.game)
         server.stop_game_if_needed(level.game)
         server.save_game(level.game)
-        LOGGER.info(f"on_leave_game {level.game.game_id} {level.power_name}, {level.game.count_controlled_powers()} left")
+        LOGGER.info(
+            f"on_leave_game {level.game.game_id} {level.power_name}, {level.game.count_controlled_powers()} left"
+        )
         if level.game.count_controlled_powers() == 0:
             LOGGER.info(f"deleting game {level.game.game_id}")
             server.delete_game(level.game)
     else:
         level.game.remove_special_token(request.game_role, request.token)
         server.save_game(level.game)
+
 
 def on_list_games(server, request, connection_handler):
     """ Manage request ListGames.
@@ -688,8 +766,10 @@ def on_list_games(server, request, connection_handler):
         raise exceptions.MapIdException()
     selected_game_indices = []
     for game_id in server.get_game_indices():
-        if request.game_id and not (game_id.lower() in request.game_id.lower()
-                                    or request.game_id.lower() in game_id.lower()):
+        if request.game_id and not (
+            game_id.lower() in request.game_id.lower()
+            or request.game_id.lower() in game_id.lower()
+        ):
             continue
         server_game = server.load_game(game_id)
         if request.for_omniscience and not server.token_is_omniscient(request.token, server_game):
@@ -701,22 +781,25 @@ def on_list_games(server, request, connection_handler):
         if request.map_name and server_game.map_name != request.map_name:
             continue
         username = server.users.get_name(request.token)
-        selected_game_indices.append(responses.DataGameInfo(
-            game_id=server_game.game_id,
-            phase=server_game.current_short_phase,
-            timestamp=server_game.get_latest_timestamp(),
-            timestamp_created=server_game.timestamp_created,
-            map_name=server_game.map_name,
-            observer_level=server_game.get_observer_level(username),
-            controlled_powers=server_game.get_controlled_power_names(username),
-            rules=server_game.rules,
-            status=server_game.status,
-            n_players=server_game.count_controlled_powers(),
-            n_controls=server_game.get_expected_controls_count(),
-            deadline=server_game.deadline,
-            registration_password=bool(server_game.registration_password)
-        ))
+        selected_game_indices.append(
+            responses.DataGameInfo(
+                game_id=server_game.game_id,
+                phase=server_game.current_short_phase,
+                timestamp=server_game.get_latest_timestamp(),
+                timestamp_created=server_game.timestamp_created,
+                map_name=server_game.map_name,
+                observer_level=server_game.get_observer_level(username),
+                controlled_powers=server_game.get_controlled_power_names(username),
+                rules=server_game.rules,
+                status=server_game.status,
+                n_players=server_game.count_controlled_powers(),
+                n_controls=server_game.get_expected_controls_count(),
+                deadline=server_game.deadline,
+                registration_password=bool(server_game.registration_password),
+            )
+        )
     return responses.DataGames(data=selected_game_indices, request_id=request.request_id)
+
 
 def on_logout(server, request, connection_handler):
     """ Manage request Logout.
@@ -731,6 +814,7 @@ def on_logout(server, request, connection_handler):
     verify_request(server, request, connection_handler)
     server.remove_token(request.token)
 
+
 def on_process_game(server, request, connection_handler):
     """ Manage request ProcessGame. Force a game to be processed the sooner.
 
@@ -741,7 +825,9 @@ def on_process_game(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.ProcessGame
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, power_role=False)
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, power_role=False
+    )
     assert_game_not_finished(level.game)
     for power_name in level.game.get_map_power_names():
         # Force power to not wait and tag it as if it has orders.
@@ -752,6 +838,7 @@ def on_process_game(server, request, connection_handler):
     if level.game.status == strings.FORMING:
         level.game.set_status(strings.ACTIVE)
     server.force_game_processing(level.game)
+
 
 @gen.coroutine
 def on_query_schedule(server, request, connection_handler):
@@ -767,13 +854,14 @@ def on_query_schedule(server, request, connection_handler):
     level = verify_request(server, request, connection_handler, require_master=False)
     schedule_event = yield server.games_scheduler.get_info(level.game)
     if not schedule_event:
-        raise exceptions.ResponseException('Game not scheduled.')
+        raise exceptions.ResponseException("Game not scheduled.")
     return responses.DataGameSchedule(
         game_id=level.game.game_id,
         phase=level.game.current_short_phase,
         schedule=schedule_event,
-        request_id=request.request_id
+        request_id=request.request_id,
     )
+
 
 def on_save_game(server, request, connection_handler):
     """ Manage request SaveGame
@@ -788,6 +876,7 @@ def on_save_game(server, request, connection_handler):
     game_json = export.to_saved_game_format(level.game)
     return responses.DataSavedGame(data=game_json, request_id=request.request_id)
 
+
 def on_send_game_message(server, request, connection_handler):
     """ Manage request SendGameMessage.
 
@@ -798,19 +887,21 @@ def on_send_game_message(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.SendGameMessage
     """
-    level = verify_request(server, request, connection_handler, omniscient_role=False, observer_role=False)
+    level = verify_request(
+        server, request, connection_handler, omniscient_role=False, observer_role=False
+    )
     token, message = request.token, request.message
     assert_game_not_finished(level.game)
     if level.game.no_press:
-        raise exceptions.ResponseException('Messages not allowed for this game.')
+        raise exceptions.ResponseException("Messages not allowed for this game.")
     if request.game_role != message.sender:
-        raise exceptions.ResponseException('A power can only send its own messages.')
+        raise exceptions.ResponseException("A power can only send its own messages.")
 
     if not level.game.has_power(message.sender):
         raise exceptions.MapPowerException(message.sender)
     if not request.message.is_global():
         if level.game.public_press:
-            raise exceptions.ResponseException('Only public messages allowed for this game.')
+            raise exceptions.ResponseException("Only public messages allowed for this game.")
         if not level.game.is_game_active:
             raise exceptions.GameNotPlayingException()
         if level.game.current_short_phase != message.phase:
@@ -820,28 +911,39 @@ def on_send_game_message(server, request, connection_handler):
         username = server.users.get_name(token)
         power_name = message.sender
         if not level.game.is_controlled_by(power_name, username):
-            raise exceptions.ResponseException('Power name %s is not controlled by given username.' % power_name)
+            raise exceptions.ResponseException(
+                "Power name %s is not controlled by given username." % power_name
+            )
         if message.sender == message.recipient:
-            raise exceptions.ResponseException('A power cannot send message to itself.')
+            raise exceptions.ResponseException("A power cannot send message to itself.")
 
     if request.re_sent:
         # Request is re-sent (e.g. after a synchronization). We may have already received this message.
         # lookup message. WARNING: This may take time if there are many messages. How to improve that ?
         for archived_message in level.game.messages.reversed_values():
-            if (archived_message.sender == message.sender
-                    and archived_message.recipient == message.recipient
-                    and archived_message.phase == message.phase
-                    and archived_message.message == message.message):
+            if (
+                archived_message.sender == message.sender
+                and archived_message.recipient == message.recipient
+                and archived_message.phase == message.phase
+                and archived_message.message == message.message
+            ):
                 # Message found. Send archived time_sent, don't notify anyone.
-                LOGGER.warning('Game message re-sent.')
-                return responses.DataTimeStamp(data=archived_message.time_sent, request_id=request.request_id)
+                LOGGER.warning("Game message re-sent.")
+                return responses.DataTimeStamp(
+                    data=archived_message.time_sent, request_id=request.request_id
+                )
         # If message not found, consider it as a new message.
     if message.time_sent is not None:
-        raise exceptions.ResponseException('Server cannot receive a message with a time sent already set.')
+        raise exceptions.ResponseException(
+            "Server cannot receive a message with a time sent already set."
+        )
     message.time_sent = level.game.add_message(message)
-    Notifier(server, ignore_addresses=[(request.game_role, token)]).notify_game_message(level.game, message)
+    Notifier(server, ignore_addresses=[(request.game_role, token)]).notify_game_message(
+        level.game, message
+    )
     server.save_game(level.game)
     return responses.DataTimeStamp(data=message.time_sent, request_id=request.request_id)
+
 
 def on_set_dummy_powers(server, request, connection_handler):
     """ Manage request SetDummyPowers.
@@ -853,24 +955,32 @@ def on_set_dummy_powers(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.SetDummyPowers
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, power_role=False)
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, power_role=False
+    )
     assert_game_not_finished(level.game)
     username, power_names = request.username, request.power_names
     if username is not None and not server.users.has_username(username):
         raise exceptions.UserException()
     if power_names:
-        power_names = [power_name for power_name in power_names if level.game.has_power(power_name)]
+        power_names = [
+            power_name for power_name in power_names if level.game.has_power(power_name)
+        ]
     else:
         power_names = list(level.game.get_map_power_names())
     if username is not None:
-        power_names = [power_name for power_name in power_names
-                       if level.game.is_controlled_by(power_name, username)]
+        power_names = [
+            power_name
+            for power_name in power_names
+            if level.game.is_controlled_by(power_name, username)
+        ]
     count_before = level.game.count_controlled_powers()
     level.game.update_dummy_powers(power_names)
     if count_before != level.game.count_controlled_powers():
         server.stop_game_if_needed(level.game)
         Notifier(server).notify_game_powers_controllers(level.game)
         server.save_game(level.game)
+
 
 def on_set_game_state(server, request, connection_handler):
     """ Manage request SetGameState.
@@ -882,12 +992,18 @@ def on_set_game_state(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.SetGameState
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, power_role=False)
-    level.game.set_phase_data(GamePhaseData(
-        request.phase, request.state, request.orders, request.results, request.messages))
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, power_role=False
+    )
+    level.game.set_phase_data(
+        GamePhaseData(
+            request.phase, request.state, request.orders, request.results, request.messages
+        )
+    )
     server.stop_game_if_needed(level.game)
     Notifier(server, ignore_addresses=[request.address_in_game]).notify_game_phase_data(level.game)
     server.save_game(level.game)
+
 
 def on_set_game_status(server, request, connection_handler):
     """ Manage request SetGameStatus.
@@ -899,7 +1015,9 @@ def on_set_game_status(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.SetGameStatus
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, power_role=False)
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, power_role=False
+    )
     status = request.status
     previous_status = level.game.status
     if previous_status != status:
@@ -911,7 +1029,9 @@ def on_set_game_status(server, request, connection_handler):
         if status == strings.COMPLETED:
             phase_data_before_draw, phase_data_after_draw = level.game.draw()
             server.unschedule_game(level.game)
-            Notifier(server).notify_game_processed(level.game, phase_data_before_draw, phase_data_after_draw)
+            Notifier(server).notify_game_processed(
+                level.game, phase_data_before_draw, phase_data_after_draw
+            )
         else:
             if status == strings.ACTIVE:
                 server.schedule_game(level.game)
@@ -921,8 +1041,11 @@ def on_set_game_status(server, request, connection_handler):
                 server.unschedule_game(level.game)
                 if server.remove_canceled_games:
                     server.delete_game(level.game)
-            Notifier(server, ignore_addresses=[request.address_in_game]).notify_game_status(level.game)
+            Notifier(server, ignore_addresses=[request.address_in_game]).notify_game_status(
+                level.game
+            )
         server.save_game(level.game)
+
 
 def on_set_grade(server, request, connection_handler):
     """ Manage request SetGrade.
@@ -938,7 +1061,12 @@ def on_set_grade(server, request, connection_handler):
     # Check request token.
     verify_request(server, request, connection_handler)
     token, grade, grade_update, username, game_id = (
-        request.token, request.grade, request.grade_update, request.username, request.game_id)
+        request.token,
+        request.grade,
+        request.grade_update,
+        request.username,
+        request.game_id,
+    )
 
     to_save = False
 
@@ -970,9 +1098,16 @@ def on_set_grade(server, request, connection_handler):
             for server_game in server.games.values():  # type: ServerGame
 
                 # We check games where user is not explicitly allowed to be moderator or omniscient.
-                if not server_game.is_moderator(username) and not server_game.is_omniscient(username):
-                    transfer_special_tokens(server_game, server, username, grade_update,
-                                            grade_update == strings.PROMOTE)
+                if not server_game.is_moderator(username) and not server_game.is_omniscient(
+                    username
+                ):
+                    transfer_special_tokens(
+                        server_game,
+                        server,
+                        username,
+                        grade_update,
+                        grade_update == strings.PROMOTE,
+                    )
 
     else:
         # Requested omniscient or moderator grade update for a specific game.
@@ -1022,7 +1157,10 @@ def on_set_grade(server, request, connection_handler):
             # Check if user omniscient rights was changed.
             user_is_omniscient_after = server.user_is_omniscient(username, server_game)
             if user_is_omniscient_before != user_is_omniscient_after:
-                transfer_special_tokens(server_game, server, username, grade_update, user_is_omniscient_after)
+                transfer_special_tokens(
+                    server_game, server, username, grade_update, user_is_omniscient_after
+                )
+
 
 def on_set_orders(server, request, connection_handler):
     """ Manage request SetOrders.
@@ -1034,11 +1172,15 @@ def on_set_orders(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.SetOrders
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, require_power=True)
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, require_power=True
+    )
     assert_game_not_finished(level.game)
     if not request.phase or request.phase != level.game.current_short_phase:
         raise exceptions.ResponseException(
-            'Invalid order phase, received %s, server phase is %s' % (request.phase, level.game.current_short_phase))
+            "Invalid order phase, received %s, server phase is %s"
+            % (request.phase, level.game.current_short_phase)
+        )
     power = level.game.get_power(level.power_name)
     previous_wait = power.wait
     power.clear_orders()
@@ -1046,14 +1188,17 @@ def on_set_orders(server, request, connection_handler):
     level.game.set_orders(level.power_name, request.orders)
     # Notify other power tokens.
     Notifier(server, ignore_addresses=[request.address_in_game]).notify_power_orders_update(
-        level.game, level.game.get_power(level.power_name), request.orders)
+        level.game, level.game.get_power(level.power_name), request.orders
+    )
     if request.wait is not None:
         level.game.set_wait(level.power_name, request.wait)
         Notifier(server, ignore_addresses=[request.address_in_game]).notify_power_wait_flag(
-            level.game, level.game.get_power(level.power_name), request.wait)
+            level.game, level.game.get_power(level.power_name), request.wait
+        )
     if level.game.does_not_wait():
         server.force_game_processing(level.game)
     server.save_game(level.game)
+
 
 def on_set_wait_flag(server, request, connection_handler):
     """ Manage request SetWaitFlag.
@@ -1065,15 +1210,19 @@ def on_set_wait_flag(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.SetWaitFlag
     """
-    level = verify_request(server, request, connection_handler, observer_role=False, require_power=True)
+    level = verify_request(
+        server, request, connection_handler, observer_role=False, require_power=True
+    )
     assert_game_not_finished(level.game)
     level.game.set_wait(level.power_name, request.wait)
     # Notify other power tokens.
     Notifier(server, ignore_addresses=[request.address_in_game]).notify_power_wait_flag(
-        level.game, level.game.get_power(level.power_name), request.wait)
+        level.game, level.game.get_power(level.power_name), request.wait
+    )
     if level.game.does_not_wait():
         server.force_game_processing(level.game)
     server.save_game(level.game)
+
 
 def on_sign_in(server, request, connection_handler):
     """ Manage request SignIn.
@@ -1107,6 +1256,7 @@ def on_sign_in(server, request, connection_handler):
     server.save_data()
     return responses.DataToken(data=token, request_id=request.request_id)
 
+
 def on_synchronize(server, request, connection_handler):
     """ Manage request Synchronize.
 
@@ -1132,8 +1282,11 @@ def on_synchronize(server, request, connection_handler):
     messages = level.game.get_messages(request.game_role, timestamp + 1)
     if level.is_power():
         # Don't notify a power about messages she sent herself.
-        messages = {message.time_sent: message for message in messages.values()
-                    if message.sender != level.power_name}
+        messages = {
+            message.time_sent: message
+            for message in messages.values()
+            if message.sender != level.power_name
+        }
     phase_data_list = level.game.phase_history_from_timestamp(timestamp + 1)
     current_phase_data = None
     if phase_data_list:
@@ -1141,11 +1294,17 @@ def on_synchronize(server, request, connection_handler):
         # and does not need to be sent. Otherwise current state is a new state
         # got after a processing, and must be sent.
         current_phase_data = level.game.get_phase_data()
-    data_to_send = [SynchronizedData(message.time_sent, 0, 'message', message) for message in messages.values()]
-    data_to_send += [SynchronizedData(phase_data.state['timestamp'], 1, 'state_history', phase_data)
-                     for phase_data in phase_data_list]
+    data_to_send = [
+        SynchronizedData(message.time_sent, 0, "message", message) for message in messages.values()
+    ]
+    data_to_send += [
+        SynchronizedData(phase_data.state["timestamp"], 1, "state_history", phase_data)
+        for phase_data in phase_data_list
+    ]
     if current_phase_data:
-        data_to_send.append(SynchronizedData(current_phase_data.state['timestamp'], 2, 'phase', current_phase_data))
+        data_to_send.append(
+            SynchronizedData(current_phase_data.state["timestamp"], 2, "phase", current_phase_data)
+        )
     data_to_send.sort(key=lambda x: (x.timestamp, x.order))
 
     # Send sync data.
@@ -1157,23 +1316,35 @@ def on_synchronize(server, request, connection_handler):
         addresses = list(level.game.get_power_addresses(request.game_role))
 
     for data in data_to_send:
-        if data.type == 'message':
+        if data.type == "message":
             notifier.notify_game_addresses(
-                level.game.game_id, addresses, notifications.GameMessageReceived, message=data.data)
+                level.game.game_id, addresses, notifications.GameMessageReceived, message=data.data
+            )
         else:
-            if data.type not in ('state_history', 'phase'):
-                raise AssertionError('Unknown synchronized data.')
-            phase_data = level.game.filter_phase_data(data.data, request.game_role, is_current=(data.type == 'phase'))
-            notifier.notify_game_addresses(level.game.game_id, addresses, notifications.GamePhaseUpdate,
-                                           phase_data=phase_data, phase_data_type=data.type)
+            if data.type not in ("state_history", "phase"):
+                raise AssertionError("Unknown synchronized data.")
+            phase_data = level.game.filter_phase_data(
+                data.data, request.game_role, is_current=(data.type == "phase")
+            )
+            notifier.notify_game_addresses(
+                level.game.game_id,
+                addresses,
+                notifications.GamePhaseUpdate,
+                phase_data=phase_data,
+                phase_data_type=data.type,
+            )
     # Send game status.
-    notifier.notify_game_addresses(level.game.game_id, addresses, notifications.GameStatusUpdate,
-                                   status=level.game.status)
-    return responses.DataGameInfo(game_id=level.game.game_id,
-                                  phase=level.game.current_short_phase,
-                                  timestamp=level.game.get_latest_timestamp(),
-                                  timestamp_created=level.game.timestamp_created,
-                                  request_id=request.request_id)
+    notifier.notify_game_addresses(
+        level.game.game_id, addresses, notifications.GameStatusUpdate, status=level.game.status
+    )
+    return responses.DataGameInfo(
+        game_id=level.game.game_id,
+        phase=level.game.current_short_phase,
+        timestamp=level.game.get_latest_timestamp(),
+        timestamp_created=level.game.timestamp_created,
+        request_id=request.request_id,
+    )
+
 
 def on_unknown_token(server, request, connection_handler):
     """ Manage notification request UnknownToken.
@@ -1185,11 +1356,12 @@ def on_unknown_token(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.UnknownToken
     """
-    del connection_handler                  # Unused - Not sending any responses back
-    LOGGER.debug('Removing token %s', request.token)
+    del connection_handler  # Unused - Not sending any responses back
+    LOGGER.debug("Removing token %s", request.token)
     if server.users.has_token(request.token):
         server.remove_token(request.token)
     return responses.NoResponse()
+
 
 def on_vote(server, request, connection_handler):
     """ Manage request Vote.
@@ -1201,12 +1373,18 @@ def on_vote(server, request, connection_handler):
         :type server: diplomacy.Server
         :type request: diplomacy.communication.requests.Vote
     """
-    level = verify_request(server, request, connection_handler,
-                           omniscient_role=False, observer_role=False, require_power=True)
+    level = verify_request(
+        server,
+        request,
+        connection_handler,
+        omniscient_role=False,
+        observer_role=False,
+        require_power=True,
+    )
     assert_game_not_finished(level.game)
     power = level.game.get_power(level.power_name)
     if power.is_eliminated():
-        raise exceptions.ResponseException('Power %s is eliminated.' % power.name)
+        raise exceptions.ResponseException("Power %s is eliminated." % power.name)
     if not power.is_controlled_by(server.users.get_name(request.token)):
         raise exceptions.GamePlayerException()
     power.vote = request.vote
@@ -1215,7 +1393,9 @@ def on_vote(server, request, connection_handler):
         # Votes allows to draw the game.
         phase_data_before_draw, phase_data_after_draw = level.game.draw()
         server.unschedule_game(level.game)
-        Notifier(server).notify_game_processed(level.game, phase_data_before_draw, phase_data_after_draw)
+        Notifier(server).notify_game_processed(
+            level.game, phase_data_before_draw, phase_data_after_draw
+        )
     server.save_game(level.game)
 
 
@@ -1254,6 +1434,7 @@ MAPPING = {
     requests.UnknownToken: on_unknown_token,
     requests.Vote: on_vote,
 }
+
 
 def handle_request(server, request, connection_handler):
     """ (coroutine) Find request handler function for associated request, run it and return its result.
