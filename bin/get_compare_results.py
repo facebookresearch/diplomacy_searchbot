@@ -57,6 +57,17 @@ def get_result(game_json_path):
         return "six", power_one, power_won, rl_rewards
 
 
+def make_safe(fn):
+    def foo(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            print(e)
+            return None
+
+    return foo
+
+
 def print_rl_stats(results, args):
     stats_per_power = collections.defaultdict(list)
     for _, real_power, _, rl_stats in results:
@@ -86,5 +97,6 @@ if __name__ == "__main__":
         if len(paths) > 0:
             break
 
-    results = [get_result(path) for path in paths]
+    results = [make_safe(get_result)(path) for path in paths]
+    results = [r for r in results if r is not None]
     print_rl_stats(results, args)
