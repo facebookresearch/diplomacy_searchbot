@@ -590,7 +590,6 @@ class Server:
             :param bot_token: bot token
             :return: a dictionary mapping each game ID to a list of power names.
         """
-        LOGGER.info(f"get_dummy {buffer_size} {bot_token[:16] if bot_token else bot_token} {only_game_id} {only_power} {self.games_with_dummy_powers} {self.dispatched_dummy_powers}")
         if self.users.get_name(bot_token) != constants.PRIVATE_BOT_USERNAME:
             raise exceptions.ResponseException('Invalid bot token %s' % bot_token)
         selected_size = 0
@@ -600,7 +599,6 @@ class Server:
                 continue
             for power in ([only_power] if only_power else POWERS):
                 registered_token, registered_time = self.dispatched_dummy_powers.get((game_id, power), (None, None))
-                LOGGER.info(f"get_dummy {game_id} {power} token={registered_token[:8] if registered_token else registered_token}")
                 if registered_token is not None:
                     time_elapsed_seconds = (common.timestamp_microseconds() - registered_time) / 1000000
                     if time_elapsed_seconds > constants.PRIVATE_BOT_TIMEOUT_SECONDS or registered_token == bot_token:
@@ -620,7 +618,6 @@ class Server:
                     selected_games[game_id].append(power)
                     selected_size += 1
                     self.dispatched_dummy_powers[(game_id, power)] = (bot_token, common.timestamp_microseconds())
-        LOGGER.info(f"get_dummy return {selected_games}")
         return selected_games
 
     def has_game_id(self, game_id):

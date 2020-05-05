@@ -227,31 +227,41 @@ class Bot:
             :param agent: Agent object
             :type game: diplomacy.client.network_game.NetworkGame
         """
-        with game.current_state():
-            game_copy = Game()
-            phase_history = yield game.get_phase_history()
-            game_copy.set_phase_data(phase_history + [game.get_phase_data()])
-            game_copy.to_saved_game_format("game.json")
+        while True:
+            LOGGER.info(f"Begin orders for {game.game_id}/{game.current_short_phase}/{power_name}")
+            with game.current_state():
+                game_copy = Game()
+                phase_history = yield game.get_phase_history()
+                game_copy.set_phase_data(phase_history + [game.get_phase_data()])
+                game_copy.to_saved_game_format("game.json")
 
-            orders = yield self.executor.submit(agent.get_orders, game_copy, power_name)
-            should_draw = False
+                orders = yield self.executor.submit(agent.get_orders, game_copy, power_name)
+                should_draw = False
 
-            # Setting vote
-            vote = strings.YES if should_draw else strings.NO
-            if game.get_power(power_name).vote != vote:
-                yield game.vote(power_name=power_name, vote=vote)
+                # Setting vote
+                vote = strings.YES if should_draw else strings.NO
+                if game.get_power(power_name).vote != vote:
+                    yield game.vote(power_name=power_name, vote=vote)
 
-            # Setting orders
-            yield game.set_orders(power_name=power_name, orders=orders, wait=False)
+                # Check that game has not moved on without us
+                if not game.is_fixed_state_unchanged():
+                    LOGGER.warning(
+                        f"Caught unexpected state change, retrying orders for {game.game_id}/{game.current_short_phase}/{power_name}"
+                    )
+                    continue
 
-            # Printing log message
-            LOGGER.info(
-                "%s/%s/%s/orders: %s",
-                game.game_id,
-                game.current_short_phase,
-                power_name,
-                ", ".join(orders) if orders else "(empty)",
-            )
+                # Setting orders
+                yield game.set_orders(power_name=power_name, orders=orders, wait=False)
+
+                # Printing log message
+                LOGGER.info(
+                    "%s/%s/%s/orders: %s",
+                    game.game_id,
+                    game.current_short_phase,
+                    power_name,
+                    ", ".join(orders) if orders else "(empty)",
+                )
+                return
 
     @gen.coroutine
     def launch_n_server_agents(self, n):
@@ -307,4 +317,4 @@ def run_with_cfg(cfg):
             break
         except Exception as err:  # pylint: disable=broad-except
             LOGGER.exception(err)
-            LOGGER.info("Restarting bot...")
+            break

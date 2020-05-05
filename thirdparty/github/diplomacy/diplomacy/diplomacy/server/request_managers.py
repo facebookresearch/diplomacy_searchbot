@@ -158,6 +158,7 @@ def on_create_game(server, request, connection_handler):
         game_id = server.create_game_id()
     elif server.has_game_id(game_id):
         raise exceptions.GameIdException("Game ID already used (%s)." % game_id)
+    LOGGER.info(f"Creating game {game_id} user={username} n_controls={request.n_controls}")
     server_game = ServerGame(
         map_name=request.map_name,
         rules=request.rules or SERVER_GAME_RULES,
@@ -196,6 +197,7 @@ def on_create_game(server, request, connection_handler):
         script = script.replace("__POWER__", power_name)
         script = script.replace("__GAMEID__", game_id)
         try:
+            LOGGER.info(f"Running script: {script}")
             subprocess.run(script, shell=True, timeout=5, check=True)
         except Exception:
             LOGGER.exception(f"Caught in failed DIP_POST_CREATE_HOOK: {script}")
@@ -436,6 +438,8 @@ def on_join_game(server, request, connection_handler):
     server_game = server.get_game(request.game_id)  # type: ServerGame
 
     username = server.users.get_name(token)
+
+    LOGGER.info(f"join game {request.game_id} user={username} power={power_name}")
 
     # No power name given, request sender wants to be an observer.
     if power_name is None:
@@ -837,6 +841,7 @@ def on_process_game(server, request, connection_handler):
         power.wait = False
     if level.game.status == strings.FORMING:
         level.game.set_status(strings.ACTIVE)
+    LOGGER.info(f"on_process_game force processing {level.game.game_id}")
     server.force_game_processing(level.game)
 
 
@@ -1185,6 +1190,9 @@ def on_set_orders(server, request, connection_handler):
     previous_wait = power.wait
     power.clear_orders()
     power.wait = previous_wait
+    LOGGER.info(
+        f"set orders game={level.game.game_id} power={level.power_name} orders={request.orders}"
+    )
     level.game.set_orders(level.power_name, request.orders)
     # Notify other power tokens.
     Notifier(server, ignore_addresses=[request.address_in_game]).notify_power_orders_update(
@@ -1196,6 +1204,7 @@ def on_set_orders(server, request, connection_handler):
             level.game, level.game.get_power(level.power_name), request.wait
         )
     if level.game.does_not_wait():
+        LOGGER.info(f"force game processing {level.game.game_id}")
         server.force_game_processing(level.game)
     server.save_game(level.game)
 
