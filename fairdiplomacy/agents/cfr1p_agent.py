@@ -70,6 +70,8 @@ class CFR1PAgent(BaseSearchAgent):
             game, early_exit_for_power=power
         )
         logging.info(f"Final strategy: {prob_distributions[power]}")
+        if len(prob_distributions[power]) == 0:
+            return []
         return list(sample_p_dict(prob_distributions[power]))
 
     def get_all_power_prob_distributions(
@@ -111,6 +113,8 @@ class CFR1PAgent(BaseSearchAgent):
                 torch.LongTensor([sum(map(len, power_plausible_orders.values()))])
             )
 
+        if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 0:
+            return {early_exit_for_power: {tuple(): 1.0}}
         if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 1:
             return {
                 early_exit_for_power: {
