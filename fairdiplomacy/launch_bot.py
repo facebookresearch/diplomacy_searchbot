@@ -276,9 +276,11 @@ class Bot:
 
         # save server addrs in reusable cfgs for serverless agents
         server_addrs = [agent.hostports[0] for agent in agents]
+        value_server_addrs = [agent.value_hostports for agent in agents]
         cfgs = [deepcopy(self.agent_cfg) for _ in server_addrs]
-        for addr, cfg in zip(server_addrs, cfgs):
+        for addr, cfg in zip(server_addrs, value_server_addrs, cfgs):
             getattr(cfg, cfg.WhichOneof("agent")).use_server_addr = addr
+            getattr(cfg, cfg.WhichOneof("agent")).use_value_server_addr = addr
         self.cfgs_with_server.extend(cfgs)
 
         LOGGER.info(f"Launched {len(cfgs)} new server agents, {len(self.cfgs_with_server)} total")

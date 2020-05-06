@@ -79,6 +79,12 @@ message CFR1PAgent {
 
   // Optional, if True, sample from final iter instead of average iter
   optional bool use_final_iter = 18 [ default = true ];
+
+  // Optional: separate model path to compute the value function
+  optional string value_model_path = 19;
+
+  // Optional host:port for value model server
+  optional string use_value_server_addr = 20;
 }
 
 message BRSearchAgent {
