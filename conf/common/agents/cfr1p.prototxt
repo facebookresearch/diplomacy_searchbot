@@ -12,4 +12,6 @@ cfr1p {
   rollout_top_p: 0.95
   postman_sync_batches: false
   average_n_rollouts: 1
+  plausible_orders_req_size: 2100
+  max_actions_units_ratio: 3
 }

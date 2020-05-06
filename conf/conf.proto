@@ -85,6 +85,8 @@ message CFR1PAgent {
 
   // Optional host:port for value model server
   optional string use_value_server_addr = 20;
+
+  optional uint32 plausible_orders_req_size = 21 [ default = 0 ];
 }
 
 message BRSearchAgent {

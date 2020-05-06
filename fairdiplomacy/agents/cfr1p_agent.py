@@ -32,6 +32,7 @@ class CFR1PAgent(BaseSearchAgent):
         average_n_rollouts=1,
         n_rollout_procs,
         max_actions_units_ratio=None,
+        plausible_orders_req_size=None,
         **kwargs,
     ):
         super().__init__(
@@ -55,7 +56,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.postman_sync_batches = postman_sync_batches
         self.use_optimistic_cfr = use_optimistic_cfr
         self.use_final_iter = use_final_iter
-        self.plausible_orders_req_size = max_batch_size
+        self.plausible_orders_req_size = plausible_orders_req_size or max_batch_size
         self.average_n_rollouts = average_n_rollouts
         self.max_actions_units_ratio = (
             max_actions_units_ratio
@@ -410,4 +411,4 @@ if __name__ == "__main__":
         n_plausible_orders=24,
         average_n_rollouts=3,
     )
-    print(agent.get_orders(Game(), "AUSTRIA", n_samples=3))
+    print(agent.get_orders(Game(), "AUSTRIA"))
