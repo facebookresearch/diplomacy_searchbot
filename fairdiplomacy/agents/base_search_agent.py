@@ -80,7 +80,7 @@ class BaseSearchAgent(BaseAgent):
         use_value_server_addr=None,
         device=None,
         mix_square_ratio_scoring=0,
-        value_model_path=None
+        value_model_path=None,
     ):
         super().__init__()
         self.n_rollout_procs = n_rollout_procs
@@ -109,21 +109,24 @@ class BaseSearchAgent(BaseAgent):
             self.hostports = [use_server_addr]
             self.value_hostport = use_value_server_addr
         else:
-            _servers, _qs, self.hostports = zip(*[
-                make_server_process(
-                    model_path=model_path,
-                    device=i % n_gpu if device is None else device,
-                    max_batch_size=max_batch_size,
-                    wait_till_full=postman_wait_till_full
-                ) for i in range(n_server_procs)
-            ])
+            _servers, _qs, self.hostports = zip(
+                *[
+                    make_server_process(
+                        model_path=model_path,
+                        device=i % n_gpu if device is None else device,
+                        max_batch_size=max_batch_size,
+                        wait_till_full=postman_wait_till_full,
+                    )
+                    for i in range(n_server_procs)
+                ]
+            )
 
             if value_model_path is not None:
                 _, _, self.value_hostport = make_server_process(
                     model_path=value_model_path,
                     device=n_server_procs % n_gpu if device is None else device,
                     max_batch_size=max_batch_size,
-                    wait_till_full=postman_wait_till_full
+                    wait_till_full=postman_wait_till_full,
                 )
             else:
                 self.value_hostport = None
@@ -180,7 +183,7 @@ class BaseSearchAgent(BaseAgent):
         game,
         *,
         n=1000,
-        temperature=0.5,
+        temperature=0.6,
         limit: Union[int, Sequence[int]],  # limit, or list of limits per power
         batch_size=500,
         top_p=1.0,
@@ -215,6 +218,20 @@ class BaseSearchAgent(BaseAgent):
         logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
                 n, temperature, list(map(len, counters.values())), limits
+            )
+        )
+
+        counters = {
+            power: (
+                filter_keys(counter, are_supports_coordinated, log_warn=True)
+                if len(counter) > limit
+                else counter
+            )
+            for (power, counter), limit in zip(counters.items(), limits)
+        }
+        logging.info(
+            "get_plausible_orders filtered down to {} unique sets, choosing top {}".format(
+                list(map(len, counters.values())), limits
             )
         )
 
@@ -364,13 +381,13 @@ class BaseSearchAgent(BaseAgent):
                     )
                     for game in games:
                         if not game.is_game_done:
-                            est_final_scores[game.game_id] = final_scores  # FIXME: should be final_scores[i]!
+                            est_final_scores[
+                                game.game_id
+                            ] = final_scores  # FIXME: should be final_scores[i]!
                     # don't step the environment on the turn that you're grabbing the value
                     break
 
-                batch_orders, _ = cls.do_model_request(
-                    client, batch_inputs, temperature, top_p
-                )
+                batch_orders, _ = cls.do_model_request(client, batch_inputs, temperature, top_p)
 
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
@@ -586,3 +603,57 @@ def unpad_lists(lists, lens):
 
 def average_score_dicts(score_dicts: List[Dict]) -> Dict:
     return {p: sum(d.get(p, 0) for d in score_dicts) / len(score_dicts) for p in POWERS}
+
+
+def filter_keys(d, fn, log_warn=False):
+    """Return a copy of a dict-like input containing the subset of keys where fn(k) is truthy"""
+    r = type(d)()
+    for k, v in d.items():
+        if fn(k):
+            r[k] = v
+        elif log_warn:
+            logging.warning(f"filtered bad key: {k}")
+    return r
+
+
+def are_supports_coordinated(orders: List[str]) -> bool:
+    """Return False if any supports or convoys are not properly coordinated
+
+    e.g. if "F BLA S A SEV - RUM", return False if "A SEV" is not ordered "A SEV - RUM"
+             0  1  2 3  4  5  6
+    """
+    required = {}
+    ordered = {}
+
+    for order in orders:
+        split = order.split()
+        ordered[split[1]] = split  # save by location
+        if split[2] in ("S", "C"):
+            if split[4] in required and required[split[4]] != split[3:]:
+                # an order is already required of this unit, but it contradicts this one
+                return False
+            else:
+                required[split[4]] = split[3:]
+
+    for req_loc, req_order in required.items():
+        if req_loc not in ordered:
+            # supporting a foreign unit is always allowed, since we can't
+            # control the coordination
+            continue
+
+        actual_order = ordered[req_loc]
+
+        if len(req_order) == 2 and actual_order[2] == "-":
+            # we supported a hold, but it tried to move
+            return False
+        elif (
+            len(req_order) > 2
+            and req_order[2] == "-"
+            and (actual_order[2] != "-" or actual_order[3] != req_order[3])
+        ):
+            # we supported a move, but the order given was (1) not a move, or
+            # (2) a move to the wrong destination
+            return False
+
+    # checks passed, return True
+    return True
