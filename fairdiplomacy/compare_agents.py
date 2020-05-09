@@ -52,7 +52,8 @@ def run_1v6_trial_multiprocess(agent_one, agent_six, agent_one_power, save_path=
     torch.set_num_threads(1)
     pool = mp.get_context("spawn").Pool(num_processes)
     BIG_PRIME = 377011
-    pool.map(call_with_args, [(run_1v6_trial, agent_one, agent_six, agent_one_power, f"{save_path}_{job_id}", seed + job_id * BIG_PRIME, cf_agent) for job_id in range(num_trials)])
+    save_base, save_ext = save_path.split('.', 1)  # sloppy, assuming that there's an extension
+    pool.map(call_with_args, [(run_1v6_trial, agent_one, agent_six, agent_one_power, f"{save_base}_{job_id}.{save_ext}", seed + job_id * BIG_PRIME, cf_agent) for job_id in range(num_trials)])
     logging.info("TERMINATING")
     pool.terminate()
     logging.info("FINISHED")
