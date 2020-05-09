@@ -3,7 +3,7 @@ import os
 import subprocess
 
 from fairdiplomacy.agents import build_agent_from_cfg
-from fairdiplomacy.compare_agents import run_1v6_trial
+from fairdiplomacy.compare_agents import run_1v6_trial, run_1v6_trial_multiprocess
 from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.models.dipnet import train_sl
 import heyhi
@@ -33,15 +33,28 @@ def compare_agents(cfg):
 
     power_string = _power_to_string(cfg.power_one)
 
-    result = run_1v6_trial(
-        agent_one,
-        agent_six,
-        power_string,
-        save_path=cfg.out if cfg.out else None,
-        seed=cfg.seed,
-        cf_agent=cf_agent,
-    )
-    logging.warning("Result: {}".format(result))
+    if cfg.num_processes > 0:
+        assert cfg.num_trials > 0
+        result = run_1v6_trial_multiprocess(
+            agent_one,
+            agent_six,
+            power_string,
+            save_path=cfg.out if cfg.out else None,
+            seed=cfg.seed,
+            cf_agent=cf_agent,
+            num_processes=cfg.num_processes,
+            num_trials=cfg.num_trials,
+        )
+    else:
+        result = run_1v6_trial(
+            agent_one,
+            agent_six,
+            power_string,
+            save_path=cfg.out if cfg.out else None,
+            seed=cfg.seed,
+            cf_agent=cf_agent,
+        )
+        logging.warning("Result: {}".format(result))
 
 
 @_register

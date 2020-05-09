@@ -1,4 +1,6 @@
 import logging
+import multiprocessing as mp
+import torch
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
@@ -16,6 +18,7 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
+    torch.set_num_threads(1)
     env = Env(
         {power: agent_one if power == agent_one_power else agent_six for power in POWERS},
         seed=seed,
@@ -26,7 +29,6 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
 
     if save_path is not None:
         env.save(save_path)
-
     if all(s < 18 for s in scores.values()):
         if scores[agent_one_power] > 0:
             # agent 1 is still alive and nobody has won
@@ -40,3 +42,18 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
         f"Scores: {scores} ; Winner: {winning_power} ; agent_one_power= {agent_one_power}"
     )
     return "one" if winning_power == agent_one_power else "six"
+
+
+def call_with_args(args):
+    args[0](*args[1:])
+
+
+def run_1v6_trial_multiprocess(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None, num_processes=8, num_trials=100):
+    torch.set_num_threads(1)
+    pool = mp.get_context("spawn").Pool(num_processes)
+    BIG_PRIME = 377011
+    pool.map(call_with_args, [(run_1v6_trial, agent_one, agent_six, agent_one_power, f"{save_path}_{job_id}", seed + job_id * BIG_PRIME, cf_agent) for job_id in range(num_trials)])
+    logging.info("TERMINATING")
+    pool.terminate()
+    logging.info("FINISHED")
+    return ""
