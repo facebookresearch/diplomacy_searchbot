@@ -22,7 +22,10 @@ def _register(f):
 def compare_agents(cfg):
     agent_one = build_agent_from_cfg(cfg.agent_one)
     agent_six = build_agent_from_cfg(cfg.agent_six)
-    cf_agent = build_agent_from_cfg(cfg.cf_agent)
+    if cfg.cf_agent.WhichOneof("agent") is not None:
+        cf_agent = build_agent_from_cfg(cfg.cf_agent)
+    else:
+        cf_agent = None
 
     def _power_to_string(power_id):
         power_enum = conf.conf_pb2.CompareAgentsTask.Power

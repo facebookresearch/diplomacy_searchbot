@@ -1,6 +1,5 @@
 includes {path: "agents/dipnet"; mount: "agent_one";}
 includes {path: "agents/mila"; mount: "agent_six";}
-includes {path: "agents/mila"; mount: "cf_agent";}
 compare_agents {
   power_one: AUSTRIA
   seed: 0
