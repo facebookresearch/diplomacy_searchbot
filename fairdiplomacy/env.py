@@ -47,22 +47,22 @@ class Env:
         self.cf_agent = cf_agent
 
     def process_turn(self, timeout=10):
-        logging.info("Starting turn {}".format(self.game.phase))
+        logging.debug("Starting turn {}".format(self.game.phase))
 
         for power, agent in self.agents.items():
             if not self.game.get_orderable_locations(power):
-                logging.info(f"Skipping orders for {power}")
+                logging.debug(f"Skipping orders for {power}")
                 continue
             t = time.time()
             orders = agent.get_orders(self.game, power)
-            logging.info(
+            logging.debug(
                 "Set orders {} {} {} in {}s".format(
                     self.game._phase_abbr(), power, orders, time.time() - t
                 )
             )
             if self.cf_agent:
                 cf_orders = self.cf_agent.get_orders(self.game, power)
-                logging.info(
+                logging.debug(
                     "CF  orders {} {} {}".format(self.game._phase_abbr(), power, cf_orders)
                 )
             self.game.set_orders(power, orders)
