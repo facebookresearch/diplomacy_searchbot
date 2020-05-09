@@ -577,6 +577,16 @@ class SetGrade(_AbstractChannelRequest):
         super(SetGrade, self).__init__(**kwargs)
 
 
+class GetAdminPanelInfo(_AbstractChannelRequest):
+    """ Channel request to get a json blob of admin-only info. Require admin privileges.
+
+    No params.
+    Returns a json blob.
+    """
+
+    __slots__ = []
+
+
 # ==============
 # Game requests.
 # ==============

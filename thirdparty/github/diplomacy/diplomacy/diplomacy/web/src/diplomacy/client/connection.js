@@ -251,6 +251,7 @@ export class Connection {
             }
             if (jsonMessage.request_id) {
                 const requestID = jsonMessage.request_id;
+                console.log("hi mom got msg", jsonMessage);
                 if (!this.requestsWaitingResponses.hasOwnProperty(requestID)) {
                     Diplog.error('Unknown request ' + requestID + '.');
                     return;
@@ -308,6 +309,7 @@ export class Connection {
         const connection = this;
 
         const onConnected = () => {
+            console.log("hi mom send req", request);
             connection.socket.send(JSON.stringify(request));
             connection.requestsWaitingResponses[requestID] = requestContext;
             if (connection.requestsToSend.hasOwnProperty(requestID)) {

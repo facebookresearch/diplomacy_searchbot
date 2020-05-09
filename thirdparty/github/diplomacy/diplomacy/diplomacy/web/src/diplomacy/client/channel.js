@@ -158,6 +158,10 @@ export class Channel {
         }, undefined, parameters, undefined);
     }
 
+    getAdminPanelInfo(parameters) {
+        return this._req('get_admin_panel_info', undefined, undefined, parameters, undefined);
+    }
+
     //// Public game API.
 
     getAllPossibleOrders(parameters, game) {

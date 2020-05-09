@@ -21,7 +21,7 @@ export const RESPONSES = {
     names: new Set([
         'error', 'ok', 'data_game_phase', 'data_token', 'data_maps', 'data_power_names', 'data_games',
         'data_possible_orders', 'data_game_info', 'data_time_stamp', 'data_game_phases', 'data_game',
-        'data_game_schedule', 'data_saved_game'
+        'data_game_schedule', 'data_saved_game', 'data_dict'
     ]),
     parse: function (jsonObject) {
         if (!jsonObject.hasOwnProperty('name'))

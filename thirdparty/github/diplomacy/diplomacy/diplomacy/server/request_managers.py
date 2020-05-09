@@ -28,6 +28,7 @@
 import logging
 import os
 import subprocess
+from datetime import datetime
 
 from tornado import gen
 from tornado.concurrent import Future
@@ -1052,6 +1053,46 @@ def on_set_game_status(server, request, connection_handler):
         server.save_game(level.game)
 
 
+def on_get_admin_panel_info(server, request, connection_handler):
+    verify_request(server, request, connection_handler)
+    server.assert_admin_token(request.token)
+    username = server.users.get_name(request.token)
+    users_last_seen_dict = server.users.get_users_last_seen_dict()
+
+    LOGGER.info(f"admin panel req from {username}")
+
+    def convert_timestamp(t):
+        return t / 1e3 - (1000 * (datetime.now() - datetime.utcnow()).total_seconds())
+
+    data = {
+        "users": {
+            username: {
+                "username": username,
+                "is_admin": username in server.users.administrators,
+                "last_seen": users_last_seen_dict.get(username, None),
+            }
+            for username in server.users.users.keys()
+        },
+        "games": {
+            game.game_id: {
+                "game_id": game.game_id,
+                "phase": game.current_short_phase,
+                "timestamp": convert_timestamp(game.get_latest_timestamp()),
+                "timestamp_created": convert_timestamp(game.timestamp_created),
+                "powers": {
+                    p: dict(
+                        **v.to_dict(), is_waiting_on=not (v.is_eliminated() or v.does_not_wait())
+                    )
+                    for p, v in game.powers.items()
+                },
+            }
+            for game in server.games.values()
+        },
+    }
+
+    return responses.DataDict(data=data, request_id=request.request_id)
+
+
 def on_set_grade(server, request, connection_handler):
     """ Manage request SetGrade.
 
@@ -1442,6 +1483,7 @@ MAPPING = {
     requests.Synchronize: on_synchronize,
     requests.UnknownToken: on_unknown_token,
     requests.Vote: on_vote,
+    requests.GetAdminPanelInfo: on_get_admin_panel_info,
 }
 
 

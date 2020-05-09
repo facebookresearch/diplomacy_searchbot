@@ -28,6 +28,7 @@ from diplomacy.utils import strings, common
 
 LOGGER = logging.getLogger(__name__)
 
+
 def _req_fn(request_class, local_req_fn=None, **request_args):
     """ Create channel request method that sends request with channel token.
 
@@ -42,8 +43,16 @@ def _req_fn(request_class, local_req_fn=None, **request_args):
         :param request_args: arguments to pass to request class to create the request object.
         :return: a Channel method.
     """
-    str_params = (', '.join('%s=%s' % (key, common.to_string(value))
-                            for (key, value) in sorted(request_args.items()))) if request_args else ''
+    str_params = (
+        (
+            ", ".join(
+                "%s=%s" % (key, common.to_string(value))
+                for (key, value) in sorted(request_args.items())
+            )
+        )
+        if request_args
+        else ""
+    )
 
     @gen.coroutine
     def func(self, game=None, **kwargs):
@@ -79,15 +88,21 @@ def _req_fn(request_class, local_req_fn=None, **request_args):
             Send request :class:`.%(request_name)s`%(with_params)s``kwargs``.
             Return response data returned by server for this request.
             See :class:`.%(request_name)s` about request parameters and response.
-                """ % {'request_name': request_class.__name__,
-                       'with_params': ' with forced parameters ``(%s)`` and additional request parameters '
-                                      % str_params if request_args else ' with request parameters '}
+                """ % {
+        "request_name": request_class.__name__,
+        "with_params": " with forced parameters ``(%s)`` and additional request parameters "
+        % str_params
+        if request_args
+        else " with request parameters ",
+    }
     return func
+
 
 class Channel:
     """ Channel - Represents an authenticated connection over a physical socket """
+
     # pylint: disable=too-few-public-methods
-    __slots__ = ['connection', 'token', 'game_id_to_instances', '__weakref__']
+    __slots__ = ["connection", "token", "game_id_to_instances", "__weakref__"]
 
     def __init__(self, connection, token):
         """ Initialize a channel.
@@ -145,12 +160,25 @@ class Channel:
     logout = _req_fn(requests.Logout)
 
     # Admin / Moderator API.
-    make_omniscient = _req_fn(requests.SetGrade, grade=strings.OMNISCIENT, grade_update=strings.PROMOTE)
-    remove_omniscient = _req_fn(requests.SetGrade, grade=strings.OMNISCIENT, grade_update=strings.DEMOTE)
-    promote_administrator = _req_fn(requests.SetGrade, grade=strings.ADMIN, grade_update=strings.PROMOTE)
-    demote_administrator = _req_fn(requests.SetGrade, grade=strings.ADMIN, grade_update=strings.DEMOTE)
-    promote_moderator = _req_fn(requests.SetGrade, grade=strings.MODERATOR, grade_update=strings.PROMOTE)
-    demote_moderator = _req_fn(requests.SetGrade, grade=strings.MODERATOR, grade_update=strings.DEMOTE)
+    make_omniscient = _req_fn(
+        requests.SetGrade, grade=strings.OMNISCIENT, grade_update=strings.PROMOTE
+    )
+    remove_omniscient = _req_fn(
+        requests.SetGrade, grade=strings.OMNISCIENT, grade_update=strings.DEMOTE
+    )
+    promote_administrator = _req_fn(
+        requests.SetGrade, grade=strings.ADMIN, grade_update=strings.PROMOTE
+    )
+    demote_administrator = _req_fn(
+        requests.SetGrade, grade=strings.ADMIN, grade_update=strings.DEMOTE
+    )
+    promote_moderator = _req_fn(
+        requests.SetGrade, grade=strings.MODERATOR, grade_update=strings.PROMOTE
+    )
+    demote_moderator = _req_fn(
+        requests.SetGrade, grade=strings.MODERATOR, grade_update=strings.DEMOTE
+    )
+    get_admin_panel_info = _req_fn(requests.GetAdminPanelInfo)
 
     # ====================================================================
     # Game API. Intended to be called by NetworkGame object, not directly.

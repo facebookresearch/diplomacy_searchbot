@@ -25,6 +25,7 @@
     Tokens are effectively deleted when they expire after TOKEN_LIFETIME_SECONDS seconds since last token usage.
 """
 import logging
+import time
 
 from diplomacy.server.user import User
 from diplomacy.utils import common, parsing, strings
@@ -35,6 +36,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Token lifetime in seconds: default 24hours.
 TOKEN_LIFETIME_SECONDS = 24 * 60 * 60
+
 
 class Users(Jsonable):
     """ Users class.
@@ -49,16 +51,31 @@ class Users(Jsonable):
         - **token_to_connection_handler**: (memory only) dictionary mapping each token to a connection handler
         - **connection_handler_to_tokens**: (memory only) dictionary mapping a connection handler to a set of its tokens
     """
-    __slots__ = ['users', 'administrators', 'token_timestamp', 'token_to_username', 'username_to_tokens',
-                 'token_to_connection_handler', 'connection_handler_to_tokens']
+
+    __slots__ = [
+        "users",
+        "administrators",
+        "token_timestamp",
+        "token_to_username",
+        "username_to_tokens",
+        "token_to_connection_handler",
+        "connection_handler_to_tokens",
+        "token_last_seen",
+    ]
     model = {
-        strings.USERS: parsing.DefaultValueType(parsing.DictType(str, parsing.JsonableClassType(User)), {}),
+        strings.USERS: parsing.DefaultValueType(
+            parsing.DictType(str, parsing.JsonableClassType(User)), {}
+        ),
         # {username => User}
-        strings.ADMINISTRATORS: parsing.DefaultValueType(parsing.SequenceType(str, sequence_builder=set), ()),
+        strings.ADMINISTRATORS: parsing.DefaultValueType(
+            parsing.SequenceType(str, sequence_builder=set), ()
+        ),
         # {usernames}
         strings.TOKEN_TIMESTAMP: parsing.DefaultValueType(parsing.DictType(str, int), {}),
         strings.TOKEN_TO_USERNAME: parsing.DefaultValueType(parsing.DictType(str, str), {}),
-        strings.USERNAME_TO_TOKENS: parsing.DefaultValueType(parsing.DictType(str, parsing.SequenceType(str, set)), {}),
+        strings.USERNAME_TO_TOKENS: parsing.DefaultValueType(
+            parsing.DictType(str, parsing.SequenceType(str, set)), {}
+        ),
     }
 
     def __init__(self, **kwargs):
@@ -69,6 +86,7 @@ class Users(Jsonable):
         self.username_to_tokens = {}
         self.token_to_connection_handler = {}
         self.connection_handler_to_tokens = {}
+        self.token_last_seen = {}
         super(Users, self).__init__(**kwargs)
 
     def has_username(self, username):
@@ -95,6 +113,7 @@ class Users(Jsonable):
         if self.has_token(token):
             current_time = common.timestamp_microseconds()
             elapsed_time_seconds = (current_time - self.token_timestamp[token]) / 1000000
+            self.token_last_seen[token] = int(time.time())
             return elapsed_time_seconds <= TOKEN_LIFETIME_SECONDS
         return False
 
@@ -225,10 +244,11 @@ class Users(Jsonable):
         if self.has_token(token):
             previous_connection = self.get_connection_handler(token)
             if previous_connection:
-                assert previous_connection == connection_handler, \
-                    "A new connection handler cannot be attached to a token always connected to another handler."
+                assert (
+                    previous_connection == connection_handler
+                ), "A new connection handler cannot be attached to a token always connected to another handler."
             else:
-                LOGGER.warning('Attaching a new connection handler to a token.')
+                LOGGER.warning("Attaching a new connection handler to a token.")
                 if connection_handler not in self.connection_handler_to_tokens:
                     self.connection_handler_to_tokens[connection_handler] = set()
                 self.token_to_connection_handler[token] = connection_handler
@@ -247,3 +267,13 @@ class Users(Jsonable):
             self.connection_handler_to_tokens[connection_handler].remove(token)
             if not self.connection_handler_to_tokens[connection_handler]:
                 self.connection_handler_to_tokens.pop(connection_handler)
+
+    def get_users_last_seen_dict(self):
+        r = {}
+        for token, last_seen in self.token_last_seen.items():
+            try:
+                user = self.get_name(token)
+            except KeyError:
+                pass
+            r[user] = max(r.get(user, -1), last_seen)
+        return r

@@ -196,6 +196,13 @@ class UniqueData(_AbstractResponse):
         self.data = None
         super(UniqueData, self).__init__(**kwargs)
 
+class DataDict(UniqueData):
+    __slots__ = []
+    params = {
+        strings.DATA: dict
+    }
+
+
 class DataToken(UniqueData):
     """ Unique data containing a token. """
     __slots__ = []

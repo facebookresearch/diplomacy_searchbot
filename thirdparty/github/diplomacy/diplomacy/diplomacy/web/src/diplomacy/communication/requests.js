@@ -76,6 +76,7 @@ export const REQUESTS = {
         synchronize: {level: STRINGS.GAME, phase_dependent: false, model: {timestamp: null}},
         vote: {level: STRINGS.GAME, model: {vote: null}},
         save_game: {level: STRINGS.GAME, model: {}},
+        get_admin_panel_info: {level: STRINGS.CHANNEL, model: {}},
     },
 
     isPhaseDependent: function (name) {

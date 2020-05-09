@@ -237,7 +237,7 @@ class Connection:
                     if request_id in self.requests_waiting_responses:
                         break
                 else:
-                    LOGGER.error('Unknown request.')
+                    LOGGER.error('Unknown request..')
                     return
             request_context = self.requests_waiting_responses.pop(request_id)  # type: RequestFutureContext
             try:
