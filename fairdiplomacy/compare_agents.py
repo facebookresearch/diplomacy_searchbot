@@ -1,6 +1,7 @@
 import logging
 import multiprocessing as mp
 import torch
+import os
 
 from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
@@ -50,10 +51,11 @@ def call_with_args(args):
 
 def run_1v6_trial_multiprocess(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None, num_processes=8, num_trials=100):
     torch.set_num_threads(1)
+    save_base, save_ext = save_path.rsplit('.', 1)  # sloppy, assuming that there's an extension
+    os.makedirs(save_base, exist_ok=True)
     pool = mp.get_context("spawn").Pool(num_processes)
     BIG_PRIME = 377011
-    save_base, save_ext = save_path.split('.', 1)  # sloppy, assuming that there's an extension
-    pool.map(call_with_args, [(run_1v6_trial, agent_one, agent_six, agent_one_power, f"{save_base}_{job_id}.{save_ext}", seed + job_id * BIG_PRIME, cf_agent) for job_id in range(num_trials)])
+    pool.map(call_with_args, [(run_1v6_trial, agent_one, agent_six, agent_one_power, f"{save_base}/output_{job_id}.{save_ext}", seed + job_id * BIG_PRIME, cf_agent) for job_id in range(num_trials)])
     logging.info("TERMINATING")
     pool.terminate()
     logging.info("FINISHED")
