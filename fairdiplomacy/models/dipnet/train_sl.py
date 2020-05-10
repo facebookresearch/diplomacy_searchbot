@@ -396,7 +396,7 @@ def run_with_cfg(args):
         train_dataset, val_dataset = torch.load(args.data_cache)
     else:
         assert args.data_dir is not None
-        game_jsons = glob.glob(os.path.join(args.data_dir, "*.json"))
+        game_jsons = glob.glob(os.path.join(args.data_dir, "*/**.json"))
         assert len(game_jsons) > 0
         logger.info(f"Found dataset of {len(game_jsons)} games...")
         val_game_jsons = random.sample(game_jsons, max(1, int(len(game_jsons) * args.val_set_pct)))
