@@ -28,6 +28,7 @@ class CFR1PAgent(BaseSearchAgent):
         postman_sync_batches=False,
         use_optimistic_cfr=True,
         use_final_iter=True,
+        use_pruning=False,
         max_batch_size=700,
         average_n_rollouts=1,
         n_rollout_procs,
@@ -56,6 +57,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.postman_sync_batches = postman_sync_batches
         self.use_optimistic_cfr = use_optimistic_cfr
         self.use_final_iter = use_final_iter
+        self.use_pruning = use_pruning
         self.plausible_orders_req_size = plausible_orders_req_size or max_batch_size
         self.average_n_rollouts = average_n_rollouts
         self.max_actions_units_ratio = (
@@ -124,8 +126,41 @@ class CFR1PAgent(BaseSearchAgent):
             }
 
         timings = TimingCtx()
+        iter_weight = 0.0
         for cfr_iter in range(self.n_rollouts):
+
+            if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 4):
+                for pwr, actions in power_plausible_orders.items():
+                    paired_list = []
+                    for action in actions:
+                        ave_regret = self.cum_regrets[(pwr, action)] / iter_weight
+                        new_pair = (action, ave_regret)
+                        paired_list.append(new_pair)
+                    paired_list.sort(key=lambda tup: tup[1])
+                    for (action, ave_regret) in paired_list:
+                        ave_strat = self.cum_sigma[(pwr, action)] / iter_weight
+                        if ave_regret < -0.06 and ave_strat < 0.002 and self.sigma[(pwr, action)] == 0:
+                            self.cum_sigma[(pwr, action)] = 0
+                            logging.info("pruning on iter {} action {} with ave regret {} and ave strat {}".format(cfr_iter,action,ave_regret,ave_strat))
+                            actions.remove(action)
+            if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 2):
+                for pwr, actions in power_plausible_orders.items():
+                    paired_list = []
+                    for action in actions:
+                        ave_regret = self.cum_regrets[(pwr, action)] / iter_weight
+                        new_pair = (action, ave_regret)
+                        paired_list.append(new_pair)
+                    paired_list.sort(key=lambda tup: tup[1])
+                    for (action, ave_regret) in paired_list:
+                        ave_strat = self.cum_sigma[(pwr, action)] / iter_weight
+                        if ave_regret < -0.03 and ave_strat < 0.001 and self.sigma[(pwr, action)] == 0:
+                            self.cum_sigma[(pwr, action)] = 0
+                            logging.info("pruning on iter {} action {} with ave regret {} and ave strat {}".format(cfr_iter,action,ave_regret,ave_strat))
+                            actions.remove(action)
+
             discount_factor = (cfr_iter + 0.000001) / (cfr_iter + 1)
+            iter_weight *= discount_factor
+            iter_weight += 1.0
 
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:

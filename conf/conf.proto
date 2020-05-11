@@ -87,6 +87,9 @@ message CFR1PAgent {
   optional string use_value_server_addr = 20;
 
   optional uint32 plausible_orders_req_size = 21 [ default = 0 ];
+
+  // Optional, if True, prune actions after 1/4 of the number of iters
+  optional bool use_pruning = 22 [ default = false ];
 }
 
 message BRSearchAgent {
