@@ -5,18 +5,19 @@ CODE_CHECKPOINT="$($(dirname $0)/checkpoint_repo.sh)"
 OUT_DIR=/checkpoint/$USER/diplomacy/slurm/cfr_db_cache
 mkdir -p $OUT_DIR
 
+PARTITION=${PARTITION:-learnfair}
 BASE=${BASE:-10000}
 N=${N:-500}
 
 cat <<EOF | sbatch --job-name cfr_db_cache \
-                   --partition=learnfair \
+                   --partition=${PARTITION} \
                    --open-mode=append \
                    --chdir=$OUT_DIR \
                    --gpus=1 \
                    --cpus-per-task=40 \
                    --mem=200GB \
                    --constraint=pascal \
-                   --time=2880 \
+                   --time=1080 \
                    --array=0-$(($N - 1))
 #!/bin/bash
 
@@ -35,5 +36,7 @@ python $CODE_CHECKPOINT/run.py --adhoc \
     only_with_min_final_score=0 \
     n_cf_agent_samples=10 \
     n_parallel_jobs=1 \
+    use_final_iter=false \
+    max_actions_units_ratio=2.5 \
     glob=/checkpoint/jsgray/diplomacy/mila_dataset/data/game_\${PREFIX}?.json
 EOF
