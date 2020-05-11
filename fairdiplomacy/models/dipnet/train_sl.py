@@ -207,7 +207,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
         for k in [k.rsplit(".", 1)[0] for k in split_counts.keys()]
     }
 
-    return valid_loss, valid_p_accuracy, split_pcts, valid_v_accuracy
+    return valid_loss, p_loss, v_loss, valid_p_accuracy, valid_v_accuracy, split_pcts
 
 
 def maybe_build_jsonl_logger(fpath, do_log):
@@ -276,6 +276,8 @@ def main_subproc(rank, world_size, args, train_set, val_set):
     if checkpoint:
         optim.load_state_dict(checkpoint["optim"])
 
+    best_loss, best_p_loss, best_v_loss = None, None, None
+
     train_set_sampler = DistributedSampler(train_set)
     for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, args.num_epochs):
         train_set_sampler.set_epoch(epoch)
@@ -333,7 +335,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            valid_loss, valid_p_accuracy, split_pcts, valid_v_accuracy = validate(
+            valid_loss, valid_p_loss, valid_v_loss, valid_p_accuracy, valid_v_accuracy, split_pcts = validate(
                 net,
                 val_set,
                 policy_loss_fn,
@@ -344,6 +346,8 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             scalars = dict(
                 epoch=epoch,
                 valid_loss=valid_loss,
+                valid_p_loss=valid_p_loss,
+                valid_v_loss=valid_v_loss,
                 valid_p_accuracy=valid_p_accuracy,
                 valid_v_accuracy=valid_v_accuracy,
             )
@@ -354,18 +358,23 @@ def main_subproc(rank, world_size, args, train_set, val_set):
 
             # save model
             if args.checkpoint and rank == 0:
+                obj = {
+                    "model": net.state_dict(),
+                    "optim": optim.state_dict(),
+                    "epoch": epoch,
+                    "batch_i": batch_i,
+                    "valid_p_accuracy": valid_p_accuracy,
+                    "args": args,
+                }
                 logger.info("Saving checkpoint to {}".format(args.checkpoint))
-                torch.save(
-                    {
-                        "model": net.state_dict(),
-                        "optim": optim.state_dict(),
-                        "epoch": epoch,
-                        "batch_i": batch_i,
-                        "valid_p_accuracy": valid_p_accuracy,
-                        "args": args,
-                    },
-                    args.checkpoint,
-                )
+                torch.save(obj, args.checkpoint)
+
+                if best_loss is None or val_loss < best_loss:
+                    torch.save(obj, args.checkpoint + ".best")
+                if best_p_loss is None or val_p_loss < best_p_loss:
+                    torch.save(obj, args.checkpoint + ".bestp")
+                if best_v_loss is None or val_v_loss < best_v_loss:
+                    torch.save(obj, args.checkpoint + ".bestv")
 
         lr_scheduler.step()
 
