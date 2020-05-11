@@ -170,6 +170,7 @@ def on_create_game(server, request, connection_handler):
         registration_password=request.registration_password,
         server=server,
         use_random_early_draw=True,
+        use_stalemate_early_draw=True,
     )
 
     # Make sure game creator will be a game master (set him as moderator if he's not an admin).

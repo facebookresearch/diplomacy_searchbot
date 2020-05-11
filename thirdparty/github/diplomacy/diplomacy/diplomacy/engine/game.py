@@ -278,6 +278,8 @@ class Game(Jsonable):
         "daide_port",
         "fixed_state",
         "_use_random_early_draw",
+        "_use_stalemate_early_draw",
+        "_year_last_center_changed",
     ]
     zobrist_tables = {}
     rule_cache = ()
@@ -374,6 +376,8 @@ class Game(Jsonable):
         self.daide_port = None
         self.fixed_state = None
         self._use_random_early_draw = kwargs.pop("use_random_early_draw", False)
+        self._use_stalemate_early_draw = kwargs.pop("use_stalemate_early_draw", False)
+        self._year_last_center_changed = 1901
 
         # Caches
         self._unit_owner_cache = None  # {(unit, coast_required): owner}
@@ -3145,13 +3149,13 @@ class Game(Jsonable):
 
         # Movement phase - Always need to process
         if self.phase_type == "M":
-            if (
-                self._use_random_early_draw
-                and int(self.phase.split()[1]) >= 1911
-                and random.random() < 0.05
-            ):
+            year = int(self.phase.split()[1])
+            if self._use_random_early_draw and random.random() < random_early_exit_p(year):
+                LOGGER.info("Random early draw triggered!")
                 self.draw()
-
+            if self._use_stalemate_early_draw and year - self._year_last_center_changed > 2:
+                LOGGER.info("No centers changed hands in 2 years; early draw")
+                self.draw()
             return 0
 
         # Retreats phase
@@ -3175,7 +3179,9 @@ class Game(Jsonable):
         # Adjustments phase
         if self.phase_type == "A":
             # Capturing supply centers
-            self._capture_centers()
+            any_centers_captured = self._capture_centers()
+            if any_centers_captured:
+                self._year_last_center_changed = int(self.current_short_phase[1:-1])
 
             # If completed, can't skip
             if self.phase == "COMPLETED":
@@ -3298,8 +3304,10 @@ class Game(Jsonable):
     def _capture_centers(self):
         """ In Adjustment Phase, proceed with the capture of occupied supply centers
 
-            :return: Nothing
+            :return: True if a center changed hands
         """
+        is_stalemate = True
+
         victory_score_prev_year = self._calculate_victory_score()
 
         # If no power owns centers, initialize them
@@ -3339,6 +3347,7 @@ class Game(Jsonable):
                         x[2:5] for x in owner.units
                     ]:
                         self._transfer_center(power, owner, center)
+                        is_stalemate = False
                         if not power:
                             unowned.remove(center)
                         else:
@@ -3347,6 +3356,8 @@ class Game(Jsonable):
 
         # Determining if we have a winner
         self._determine_win(victory_score_prev_year)
+
+        return not is_stalemate
 
     def _transfer_center(self, from_power, to_power, center):
         """ Transfers a supply center from a power to another
@@ -4851,3 +4862,14 @@ class Game(Jsonable):
         self.message_history.clear()
         self.clear_orders()
         self.clear_vote()
+
+
+def random_early_exit_p(year):
+    if year < 1908:
+        return 0
+    if year < 1914:
+        return 0.05
+    if year < 1920:
+        return 0.1
+    else:
+        return 1.0
