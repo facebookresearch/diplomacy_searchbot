@@ -297,7 +297,7 @@ export class AdminPanelGamesRow extends React.Component {
             <th>{humanized_time_span(this.props.game.timestamp)}</th>
             <th>{this.props.game.phase}</th>
             <th>{POWERS.map(p => (
-                <div key={p}>{p}: {this.get_controller(p)}</div>
+                <div key={p}>{p}: {this.get_controller(p)} [{this.props.game.powers[p].centers.length}]</div>
             ))}</th>
             <th>{
                 POWERS.filter(p => this.props.game.powers[p].is_waiting_on)
