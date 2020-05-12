@@ -221,6 +221,7 @@ class BaseSearchAgent(BaseAgent):
             )
         )
 
+        # filter out badly-coordinated actions
         counters = {
             power: (
                 filter_keys(counter, are_supports_coordinated, log_warn=True)
@@ -229,15 +230,31 @@ class BaseSearchAgent(BaseAgent):
             )
             for (power, counter), limit in zip(counters.items(), limits)
         }
-        logging.info(
-            "get_plausible_orders filtered down to {} unique sets, choosing top {}".format(
-                list(map(len, counters.values())), limits
+
+        # choose most common
+        most_common = {
+            power: counter.most_common(limit)
+            for (power, counter), limit in zip(counters.items(), limits)
+        }
+
+        try:
+            logging.info(
+                "get_plausible_orders filtered down to {} unique sets, n_0={}, n_cut={}".format(
+                    list(map(len, counters.values())),
+                    [safe_idx(most_common[p], 0, default=(None, None))[1] for p in POWERS],
+                    [
+                        safe_idx(most_common[p], limit - 1, default=(None, None))[1]
+                        for (p, limit) in zip(POWERS, limits)
+                    ],
+                )
             )
-        )
+        except:
+            # TODO: remove this if not seen in production
+            logging.warning("error in get_plausible_orders logging")
 
         return {
-            power: set([orders for orders, _ in counter.most_common(limit)])
-            for (power, counter), limit in zip(counters.items(), limits)
+            power: set([orders for orders, _ in orders_and_counts])
+            for power, orders_and_counts in most_common.items()
         }
 
     def distribute_rollouts(
@@ -657,3 +674,10 @@ def are_supports_coordinated(orders: List[str]) -> bool:
 
     # checks passed, return True
     return True
+
+
+def safe_idx(seq, idx, default=None):
+    try:
+        return seq[idx]
+    except IndexError:
+        return default
