@@ -3181,7 +3181,10 @@ class Game(Jsonable):
             # Capturing supply centers
             any_centers_captured = self._capture_centers()
             if any_centers_captured:
-                self._year_last_center_changed = int(self.current_short_phase[1:-1])
+                try:
+                    self._year_last_center_changed = int(self.current_short_phase[1:-1])
+                except ValueError:
+                    pass
 
             # If completed, can't skip
             if self.phase == "COMPLETED":
