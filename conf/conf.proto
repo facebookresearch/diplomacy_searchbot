@@ -40,11 +40,11 @@ message CFR1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVE PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
-  // If false, use current SC counts after max_rollout_length steps
+  // If false, use current SC counts after max_rollout_length movement phases
   optional bool use_predicted_final_scores = 8;
 
   // Number of order-sets (actions) to consider at each step in search code
