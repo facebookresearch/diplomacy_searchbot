@@ -280,6 +280,7 @@ class Game(Jsonable):
         "_use_random_early_draw",
         "_use_stalemate_early_draw",
         "_year_last_center_changed",
+        "_ignore_multiple_disbands_per_unit",
     ]
     zobrist_tables = {}
     rule_cache = ()
@@ -378,6 +379,9 @@ class Game(Jsonable):
         self._use_random_early_draw = kwargs.pop("use_random_early_draw", False)
         self._use_stalemate_early_draw = kwargs.pop("use_stalemate_early_draw", False)
         self._year_last_center_changed = 1901
+        self._ignore_multiple_disbands_per_unit = kwargs.pop(
+            "ignore_multiple_disbands_per_unit", False
+        )
 
         # Caches
         self._unit_owner_cache = None  # {(unit, coast_required): owner}
@@ -3742,7 +3746,8 @@ class Game(Jsonable):
                     # Invalid order, voiding
                     else:
                         adjust += ["VOID " + order]
-                        self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % order]
+                        if not self._ignore_multiple_disbands_per_unit:
+                            self.error += [err.GAME_MULTIPLE_ORDERS_FOR_UNIT % order]
                 else:
                     adjust += ["VOID " + order]
                     self.error += [err.GAME_BAD_ADJUSTMENT_ORDER % order]

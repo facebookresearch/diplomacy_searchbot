@@ -14,6 +14,8 @@ class Game(diplomacy.Game):
                 "NO_PRESS",
                 "POWER_CHOICE",
             ]
+        if "ignore_multiple_disbands_per_unit" not in kwargs:
+            kwargs["ignore_multiple_disbands_per_unit"] = True
         super().__init__(**kwargs)
 
     @property
