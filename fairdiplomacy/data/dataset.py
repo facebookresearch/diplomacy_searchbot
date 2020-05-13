@@ -37,6 +37,7 @@ class Dataset(torch.utils.data.Dataset):
         self.n_cf_agent_samples = n_cf_agent_samples
         assert not debug_only_opening_phase, "FIXME"
 
+        torch.set_num_threads(1)
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(encode_game)(
                 p,
@@ -198,6 +199,7 @@ def encode_game(
     [9] valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
     """
 
+    torch.set_num_threads(1)
     if isinstance(game, str):
         with open(game) as f:
             j = json.load(f)

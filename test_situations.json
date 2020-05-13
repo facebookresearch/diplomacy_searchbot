@@ -1,0 +1,21 @@
+{
+  "tur_rus_opening": {
+      "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/11may.json",
+      "phase": "S1901M",
+      "powers": ["RUSSIA", "TURKEY"],
+      "comment": "RUS and TUR should almost always open BLA"
+  },
+  "france_support_1": {
+      "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/tuesday_test.json",
+      "phase": "F1901M",
+      "powers": ["FRANCE"],
+      "comment": "FRA should not support WAL or ENG to BEL"
+  },
+  "italy_to_boh": {
+      "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/12May_game2.json",
+      "phase": "S1903M",
+      "powers": ["ITALY"],
+      "comment": "ITA should not move to BOH"
+  }
+}
+

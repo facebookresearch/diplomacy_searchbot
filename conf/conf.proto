@@ -524,6 +524,13 @@ message BuildDbCacheTask {
 
 }
 
+// Root config to compare agents.
+message SituationCheckTask {
+  optional Agent agent = 1;
+  optional string situation_json = 2;
+  optional int32 seed = 3 [ default = 0 ];
+  optional Launcher launcher = 100;
+}
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -549,6 +556,7 @@ message MetaCfg {
     LaunchBotTask launch_bot = 103;
     ExploitTask exploit = 104;
     BuildDbCacheTask build_db_cache = 105;
+    SituationCheckTask situation_check = 106;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

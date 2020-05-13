@@ -1,9 +1,12 @@
 import logging
 import os
 import subprocess
+import json
+
 
 from fairdiplomacy.agents import build_agent_from_cfg
 from fairdiplomacy.compare_agents import run_1v6_trial, run_1v6_trial_multiprocess
+from fairdiplomacy.game import Game
 from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.models.dipnet import train_sl
 import heyhi
@@ -80,6 +83,32 @@ def build_db_cache(cfg):
     from fairdiplomacy.data.build_db_cache import build_db_cache_from_cfg
 
     build_db_cache_from_cfg(cfg)
+
+
+@_register
+def situation_check(cfg):
+    agent = build_agent_from_cfg(cfg.agent)
+
+    with open(cfg.situation_json) as f:
+        meta = json.load(f)
+
+    for name, config in meta.items():
+        print("=" * 80)
+        print(f"{name}: {config['comment']}")
+        with open(config["game_path"]) as f:
+            j = json.load(f)
+        game = Game.from_saved_game_format(j)
+        game = Game.clone_from(game, up_to_phase=config["phase"])
+
+        prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
+        for power in config["powers"]:
+            pd = prob_distributions[power]
+            pdl = sorted(list(pd.items()), key=lambda x: -x[1])
+            print(f"    {power}")
+            for order, prob in pdl:
+                if prob < 0.01:
+                    break
+                print(f"        {prob:5.2f} {order}")
 
 
 @heyhi.save_result_in_cwd
