@@ -13,7 +13,7 @@ import postman
 import torch
 import torch.multiprocessing as mp
 
-from fairdiplomacy.game import Game, sort_phase_key
+from fairdiplomacy.game import Game
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
@@ -373,29 +373,26 @@ class BaseSearchAgent(BaseAgent):
 
             other_powers = [p for p in POWERS if p not in set_orders_dict]
 
-        rollout_end_phase = n_move_phases_later(games[0].current_short_phase, max_rollout_length)
-        while True:
-            # step games together at the pace of the slowest game, e.g. process
-            # games with retreat phases alone before moving on to the next move phase
-            min_phase = min([game.current_short_phase for game in games], key=sort_phase_key)
-
+        for turn_idx in range(max_rollout_length + 1):
             with timings("prep"):
                 batch_data = []
                 for game in games:
-                    if not game.is_game_done and game.current_short_phase == min_phase:
+                    if game.is_game_done:
+                        inputs = zero_inputs()
+                    else:
                         inputs = encode_inputs(
                             game,
                             all_possible_orders=game.get_all_possible_orders(),  # expensive
                             game_state=encode_state(game),
                         )
-                        batch_data.append((game, inputs))
+                    batch_data.append((game, inputs))
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
                 batch_inputs, seq_lens = cat_pad_inputs(xs)
 
             with timings("model"):
-                if min_phase == rollout_end_phase:
+                if turn_idx == max_rollout_length:
                     _, final_scores = cls.do_model_request(
                         value_client, batch_inputs, temperature, top_p
                     )
@@ -415,7 +412,6 @@ class BaseSearchAgent(BaseAgent):
                 )
 
                 # set_orders and process
-                assert len(batch_data) == len(batch_orders)
                 for (game, _), power_orders in zip(batch_data, batch_orders):
                     if game.is_game_done:
                         continue
@@ -423,8 +419,9 @@ class BaseSearchAgent(BaseAgent):
                     for other_power in other_powers:
                         game.set_orders(other_power, list(power_orders[other_power]))
 
-                    assert game.current_short_phase == min_phase 
-                    game.process()
+                for game in games:
+                    if not game.is_game_done:
+                        game.process()
 
             other_powers = POWERS  # no set orders on subsequent turns
 
@@ -684,13 +681,3 @@ def safe_idx(seq, idx, default=None):
         return seq[idx]
     except IndexError:
         return default
-
-
-def n_move_phases_later(from_phase, n):
-    year_idx = int(from_phase[1:-1]) - 1901
-    season = from_phase[0]
-    from_move_phase_idx = 2 * year_idx + (1 if season in "FW" else 0)
-    to_move_phase_idx = from_move_phase_idx + n
-    to_move_phase_year = to_move_phase_idx // 2 + 1901
-    to_move_phase_season = "S" if to_move_phase_idx % 2 == 0 else "F"
-    return f"{to_move_phase_season}{to_move_phase_year}M"

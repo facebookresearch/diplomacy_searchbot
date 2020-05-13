@@ -72,11 +72,8 @@ class Game(diplomacy.Game):
 
 
 def sort_phase_key(phase):
-    if phase == "COMPLETED":
-        return 1e9
-    else:
-        return (
-            int(phase[1:5]),
-            {"S": 0, "F": 1, "W": 2}[phase[0]],
-            {"M": 0, "R": 1, "A": 2}[phase[5]],
-        )
+    return (
+        int(phase[1:5]),
+        {"S": 0, "F": 1, "W": 2}[phase[0]],
+        {"M": 0, "R": 1, "A": 2}[phase[5]],
+    )

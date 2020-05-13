@@ -1,6 +1,6 @@
 cfr1p {
   max_batch_size: 700
-  max_rollout_length: 3
+  max_rollout_length: 5
   model_path: "/checkpoint/jsgray/diplomacy/slurm/sl_candidx_sos/checkpoint.pth"
   n_gpu: 1
   n_plausible_orders: 8
