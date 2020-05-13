@@ -151,6 +151,7 @@ class CFR1PAgent(BaseSearchAgent):
                                 )
                             )
                             actions.remove(action)
+
             if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 2):
                 for pwr, actions in power_plausible_orders.items():
                     paired_list = []
@@ -205,7 +206,7 @@ class CFR1PAgent(BaseSearchAgent):
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
-            logging.info(f"{phase}.{cfr_iter} power_sampled_orders: {power_sampled_orders}")
+            logging.info(f"{phase}.{cfr_iter} power_sampled_orders={power_sampled_orders}")
 
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
@@ -237,9 +238,24 @@ class CFR1PAgent(BaseSearchAgent):
                     all_rollout_results[len(actions) :],
                 )
 
+                # calculate regrets
                 action_utilities: List[float] = [r[1][pwr] for r in results]
                 state_utility = np.dot(power_action_ps[pwr], action_utilities)
                 action_regrets = [(u - state_utility) for u in action_utilities]
+
+                # log some action values
+                if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
+                    u_dict = dict(
+                        sorted(zip(actions, action_utilities), key=lambda ac_u: -ac_u[1])
+                    )
+                    logging.info(
+                        f"Action values [{cfr_iter+1}/{self.n_rollouts}] {pwr} {u_dict} state_utility={state_utility}"
+                    )
+                elif pwr == early_exit_for_power:
+                    u = action_utilities[idxs[pwr]]
+                    logging.info(
+                        f"Sampled action utility={u} exp_utility={state_utility} regret={u - state_utility}"
+                    )
 
                 # update cfr data structures
                 for action, regret, s in zip(actions, action_regrets, power_action_ps[pwr]):
@@ -277,12 +293,16 @@ class CFR1PAgent(BaseSearchAgent):
         # return prob. distributions for each power
         ret = {}
         for p in POWERS:
-            if self.use_final_iter:
-                ps = self.strategy(p, power_plausible_orders[p])
-            else:
-                ps = self.avg_strategy(p, power_plausible_orders[p])
+            final_ps = self.strategy(p, power_plausible_orders[p])
+            avg_ps = self.avg_strategy(p, power_plausible_orders[p])
+            ps = final_ps if self.use_final_iter else avg_ps
+            ret[p] = dict(sorted(zip(power_plausible_orders[p], ps), key=lambda ac_p: -ac_p[1]))
 
-            ret[p] = dict(zip(power_plausible_orders[p], ps))
+            if early_exit_for_power == p:
+                avg_ps_dict = dict(
+                    sorted(zip(power_plausible_orders[p], avg_ps), key=lambda ac_p: -ac_p[1])
+                )
+                logging.info(f"Final avg strategy: {avg_ps_dict}")
 
         return ret
 
