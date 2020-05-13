@@ -139,9 +139,17 @@ class CFR1PAgent(BaseSearchAgent):
                     paired_list.sort(key=lambda tup: tup[1])
                     for (action, ave_regret) in paired_list:
                         ave_strat = self.cum_sigma[(pwr, action)] / iter_weight
-                        if ave_regret < -0.06 and ave_strat < 0.002 and self.sigma[(pwr, action)] == 0:
+                        if (
+                            ave_regret < -0.06
+                            and ave_strat < 0.002
+                            and self.sigma[(pwr, action)] == 0
+                        ):
                             self.cum_sigma[(pwr, action)] = 0
-                            logging.info("pruning on iter {} action {} with ave regret {} and ave strat {}".format(cfr_iter,action,ave_regret,ave_strat))
+                            logging.info(
+                                "pruning on iter {} action {} with ave regret {} and ave strat {}".format(
+                                    cfr_iter, action, ave_regret, ave_strat
+                                )
+                            )
                             actions.remove(action)
             if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 2):
                 for pwr, actions in power_plausible_orders.items():
@@ -153,9 +161,17 @@ class CFR1PAgent(BaseSearchAgent):
                     paired_list.sort(key=lambda tup: tup[1])
                     for (action, ave_regret) in paired_list:
                         ave_strat = self.cum_sigma[(pwr, action)] / iter_weight
-                        if ave_regret < -0.03 and ave_strat < 0.001 and self.sigma[(pwr, action)] == 0:
+                        if (
+                            ave_regret < -0.03
+                            and ave_strat < 0.001
+                            and self.sigma[(pwr, action)] == 0
+                        ):
                             self.cum_sigma[(pwr, action)] = 0
-                            logging.info("pruning on iter {} action {} with ave regret {} and ave strat {}".format(cfr_iter,action,ave_regret,ave_strat))
+                            logging.info(
+                                "pruning on iter {} action {} with ave regret {} and ave strat {}".format(
+                                    cfr_iter, action, ave_regret, ave_strat
+                                )
+                            )
                             actions.remove(action)
 
             discount_factor = (cfr_iter + 0.000001) / (cfr_iter + 1)
