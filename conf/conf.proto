@@ -93,6 +93,11 @@ message CFR1PAgent {
 
   // Optional, if >0 then play BP strategy for this many iters
   optional int32 bp_iters = 23 [ default = 0 ];
+
+  // Optional, if >0, then at each rollout step will use the current
+  // model-predicted value as this fraction of the final estimate
+  // (i.e. exponentially decaying effect of rollouts of increasing length)
+  optional float rollout_value_frac = 24 [ default = 0 ];
 }
 
 message BRSearchAgent {

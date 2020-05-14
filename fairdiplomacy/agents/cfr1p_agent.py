@@ -268,6 +268,13 @@ class CFR1PAgent(BaseSearchAgent):
                         f"Sampled action utility={u} exp_utility={state_utility} regret={u - state_utility}"
                     )
 
+                # print(f"iter {cfr_iter} {pwr}")
+                # def PP(label, L):
+                #     print(label, [f"{x:.3f}" for x in L])
+                # PP("    utilities", action_utilities)
+                # PP("    regrets  ", action_regrets)
+                # PP("    cur_strat", power_action_ps[pwr])
+
                 # update cfr data structures
                 for action, regret, s in zip(actions, action_regrets, power_action_ps[pwr]):
                     self.cum_regrets[(pwr, action)] += regret

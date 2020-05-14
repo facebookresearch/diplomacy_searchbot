@@ -81,6 +81,7 @@ class BaseSearchAgent(BaseAgent):
         device=None,
         mix_square_ratio_scoring=0,
         value_model_path=None,
+        rollout_value_frac=0,
     ):
         super().__init__()
         self.n_rollout_procs = n_rollout_procs
@@ -91,6 +92,7 @@ class BaseSearchAgent(BaseAgent):
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
         self.mix_square_ratio_scoring = mix_square_ratio_scoring
+        self.rollout_value_frac = rollout_value_frac
         device = int(device.lstrip("cuda:")) if type(device) == str else device
 
         logging.info("Launching servers")
@@ -312,6 +314,7 @@ class BaseSearchAgent(BaseAgent):
                         batch_size=average_n_rollouts,
                         use_predicted_final_scores=self.use_predicted_final_scores,
                         mix_square_ratio_scoring=self.mix_square_ratio_scoring,
+                        rollout_value_frac=self.rollout_value_frac,
                     )
                     for i, d in enumerate(set_orders_dicts)
                 ],
@@ -344,6 +347,7 @@ class BaseSearchAgent(BaseAgent):
         use_predicted_final_scores,
         mix_square_ratio_scoring=0,
         value_hostport=None,
+        rollout_value_frac=0,
     ) -> Tuple[Tuple[Dict, List[Dict]], TimingCtx]:
         """Complete game, optionally setting orders for the current turn
 
@@ -392,6 +396,7 @@ class BaseSearchAgent(BaseAgent):
 
             other_powers = [p for p in POWERS if p not in set_orders_dict]
 
+        remaining_score_weight = 1.0
         for turn_idx in range(max_rollout_length + 1):
             with timings("prep"):
                 batch_data = []
@@ -411,19 +416,37 @@ class BaseSearchAgent(BaseAgent):
                 batch_inputs, seq_lens = cat_pad_inputs(xs)
 
             with timings("model"):
-                if turn_idx == max_rollout_length:
-                    _, _, final_scores = cls.do_model_request(
-                        value_client, batch_inputs, temperature, top_p
-                    )
-                    for game_idx, game in enumerate(games):
-                        if not game.is_game_done:
-                            est_final_scores[
-                                game.game_id
-                            ] = final_scores[game_idx]
-                    # don't step the environment on the turn that you're grabbing the value
-                    break
+                if client != value_client:
+                    assert (
+                        rollout_value_frac == 0
+                    ), "If separate value model, you can't add in value each step (slow)"
 
-                batch_orders, _, _ = cls.do_model_request(client, batch_inputs, temperature, top_p)
+                cur_client = value_client if turn_idx == max_rollout_length else client
+
+                batch_orders, _, batch_est_final_scores = cls.do_model_request(
+                    cur_client, batch_inputs, temperature, top_p
+                )
+
+                assert (
+                    max_rollout_length > 0
+                ), "max_rollout_length = 0 doesn't even execute the orders..."
+                score_weight = remaining_score_weight
+                if turn_idx == 0:  # don't accumulate score on turn 0 when we haven't moved
+                    score_weight == 0
+                if turn_idx < max_rollout_length:
+                    score_weight *= rollout_value_frac
+                remaining_score_weight *= 1 - score_weight
+
+                assert batch_est_final_scores.shape[0] == len(games), batch_est_final_scores.shape
+                assert batch_est_final_scores.shape[1] == len(POWERS)
+                for game_idx, game in enumerate(games):
+                    cur_score_est = (
+                        batch_est_final_scores[game_idx]
+                        if game.is_game_done
+                        else get_square_scores_from_game(game)
+                    )
+                    # print('is_done', game.is_game_done, 'cur_score_est', cur_score_est, 'weight', score_weight, 'est_final', est_final_scores[game.game_id])
+                    est_final_scores[game.game_id] += np.array(cur_score_est) * score_weight
 
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
@@ -456,11 +479,7 @@ class BaseSearchAgent(BaseAgent):
 
             # get estimated or current sum of squares scoring
             final_game_scores = [
-                (
-                    {p: v.square_score for p, v in current_scores.items()}
-                    if game.is_game_done or not use_predicted_final_scores
-                    else dict(zip(POWERS, est_final_scores[game.game_id]))
-                )
+                dict(zip(POWERS, est_final_scores[game.game_id]))
                 for game, current_scores in zip(games, current_game_scores)
             ]
 
@@ -703,6 +722,13 @@ def are_supports_coordinated(orders: List[str]) -> bool:
 
     # checks passed, return True
     return True
+
+
+def get_square_scores_from_game(game):
+    return [
+        compute_game_scores_from_state(power_idx, game.get_state()).square_score
+        for power_idx in range(len(POWERS))
+    ]
 
 
 def safe_idx(seq, idx, default=None):
