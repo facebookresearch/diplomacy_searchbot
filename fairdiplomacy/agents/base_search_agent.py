@@ -184,7 +184,7 @@ class BaseSearchAgent(BaseAgent):
         game,
         *,
         n=1000,
-        temperature=0.6,
+        temperature=1.0,
         limit: Union[int, Sequence[int]],  # limit, or list of limits per power
         batch_size=500,
         top_p=1.0,
