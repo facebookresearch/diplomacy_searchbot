@@ -88,6 +88,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.sigma: Dict[Tuple[Power, Action], float] = {}
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        self.cum_utility: Dict[Action, float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.bp_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
@@ -118,7 +119,7 @@ class CFR1PAgent(BaseSearchAgent):
             p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()
         }
 
-        logging.info(f"{phase} power_plausible_orders: {power_plausible_orders}")
+        logging.debug(f"{phase} power_plausible_orders: {power_plausible_orders}")
 
         if self.postman_sync_batches:
             self.client.set_batch_size(
@@ -191,6 +192,7 @@ class CFR1PAgent(BaseSearchAgent):
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
                     continue
+                self.cum_utility[pwr] *= discount_factor
                 for action in actions:
                     self.cum_regrets[(pwr, action)] *= discount_factor
                     self.cum_sigma[(pwr, action)] *= discount_factor
@@ -218,7 +220,7 @@ class CFR1PAgent(BaseSearchAgent):
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
-            logging.info(f"{phase}.{cfr_iter} power_sampled_orders={power_sampled_orders}")
+            logging.debug(f"{phase}.{cfr_iter} power_sampled_orders={power_sampled_orders}")
 
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
@@ -239,6 +241,11 @@ class CFR1PAgent(BaseSearchAgent):
                 if self.cache_rollout_results
                 else on_miss()
             )
+            if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
+                logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] Power sampled orders:")
+                for power, (orders, _) in power_sampled_orders.items():
+                    logging.info(f"    {power:10s}  {orders}")
+
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
                     continue
@@ -256,16 +263,18 @@ class CFR1PAgent(BaseSearchAgent):
 
                 # log some action values
                 if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
-                    u_dict = dict(
-                        sorted(zip(actions, action_utilities), key=lambda ac_u: -ac_u[1])
-                    )
-                    logging.info(
-                        f"Action values [{cfr_iter+1}/{self.n_rollouts}] {pwr} {u_dict} state_utility={state_utility}"
-                    )
+                    logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}")
+                    logging.info(f"    {'probs':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
+                    action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])
+                    avg_utilities = [(self.cum_regrets[(pwr, a)] + self.cum_utility[pwr]) / iter_weight for a in actions]
+                    sorted_metrics = sorted(zip(actions, action_probs, avg_utilities, action_utilities), key=lambda ac: -ac[2])
+                    for orders, p, avg_u, cur_u in sorted_metrics:
+                        logging.info(f"    {p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
+
                 elif pwr == early_exit_for_power:
                     u = action_utilities[idxs[pwr]]
                     logging.info(
-                        f"Sampled action utility={u} exp_utility={state_utility} regret={u - state_utility}"
+                        f"Sampled action utility={u} exp_utility={state_utility:.5f} regret={u - state_utility:.5f}"
                     )
 
                 # print(f"iter {cfr_iter} {pwr}")
@@ -276,6 +285,7 @@ class CFR1PAgent(BaseSearchAgent):
                 # PP("    cur_strat", power_action_ps[pwr])
 
                 # update cfr data structures
+                self.cum_utility[pwr] += state_utility
                 for action, regret, s in zip(actions, action_regrets, power_action_ps[pwr]):
                     self.cum_regrets[(pwr, action)] += regret
                     self.last_regrets[(pwr, action)] = regret
@@ -296,11 +306,11 @@ class CFR1PAgent(BaseSearchAgent):
                     else:
                         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
 
-            if self.enable_compute_nash_conv and cfr_iter in [24, 49, 99, 199, 399]:
+            if self.enable_compute_nash_conv and cfr_iter in (24, 49, 99, 199, 399, self.n_rollouts - 1):
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
 
-            logging.info(
+            logging.debug(
                 f"Timing[cfr_iter {cfr_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
             )
             timings.clear()

@@ -239,7 +239,7 @@ class BaseSearchAgent(BaseAgent):
         # filter out badly-coordinated actions
         counters = {
             power: (
-                filter_keys(counter, are_supports_coordinated, log_warn=True)
+                filter_keys(counter, are_supports_coordinated)
                 if len(counter) > limit
                 else counter
             )
@@ -320,7 +320,7 @@ class BaseSearchAgent(BaseAgent):
                 ],
             )
         )
-        logging.info(
+        logging.debug(
             "Timings[avg.do_rollout, n={}*{}, len={}] {}".format(
                 len(set_orders_dicts),
                 average_n_rollouts,
@@ -605,11 +605,11 @@ def server_handler(
                     frame_count += inputs[0].shape[0]
                     if (total_batches & (total_batches - 1)) == 0:
                         delta = time.time() - totaltic
-                        logging.info(
+                        logging.debug(
                             f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
                             f"in {delta} s, {frame_count / delta} forward/s."
                         )
-                        logging.info(f"Timings[server] {str(timings)}")
+                        logging.debug(f"Timings[server] {str(timings)}")
                         batch_count = frame_count = 0
                         timings.clear()
                         totaltic = time.time()
