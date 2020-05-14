@@ -87,26 +87,37 @@ def build_db_cache(cfg):
 
 @_register
 def situation_check(cfg):
+    from fairdiplomacy.models.consts import POWERS
+
     agent = build_agent_from_cfg(cfg.agent)
+
+    selection = None
+    if cfg.selection != "":
+        selection = cfg.selection.split(",")
 
     with open(cfg.situation_json) as f:
         meta = json.load(f)
 
     for name, config in meta.items():
+        if selection is not None and name not in selection:
+            print(f"Skipping {name} because it's not in {selection}")
+            continue
         print("=" * 80)
-        print(f"{name}: {config['comment']}")
+        print(f"{name}: {config['comment']} ({config['phase']})")
+        print(f"path: {config['game_path']}")
         with open(config["game_path"]) as f:
             j = json.load(f)
         game = Game.from_saved_game_format(j)
         game = Game.clone_from(game, up_to_phase=config["phase"])
 
         prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
-        for power in config["powers"]:
+        print("CFR Average strategy:")
+        for power in POWERS:  # config["powers"]:
             pd = prob_distributions[power]
             pdl = sorted(list(pd.items()), key=lambda x: -x[1])
             print(f"    {power}")
             for order, prob in pdl:
-                if prob < 0.01:
+                if prob < 0.05:
                     break
                 print(f"        {prob:5.2f} {order}")
 

@@ -532,6 +532,7 @@ message SituationCheckTask {
   optional Agent agent = 1;
   optional string situation_json = 2;
   optional int32 seed = 3 [ default = 0 ];
+  optional string selection = 4;
   optional Launcher launcher = 100;
 }
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
