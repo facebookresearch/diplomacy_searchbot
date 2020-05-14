@@ -432,7 +432,7 @@ class BaseSearchAgent(BaseAgent):
                 ), "max_rollout_length = 0 doesn't even execute the orders..."
                 score_weight = remaining_score_weight
                 if turn_idx == 0:  # don't accumulate score on turn 0 when we haven't moved
-                    score_weight == 0
+                    score_weight = 0
                 if turn_idx < max_rollout_length:
                     score_weight *= rollout_value_frac
                 remaining_score_weight *= 1 - score_weight
@@ -442,7 +442,7 @@ class BaseSearchAgent(BaseAgent):
                 for game_idx, game in enumerate(games):
                     cur_score_est = (
                         batch_est_final_scores[game_idx]
-                        if game.is_game_done
+                        if not game.is_game_done
                         else get_square_scores_from_game(game)
                     )
                     # print('is_done', game.is_game_done, 'cur_score_est', cur_score_est, 'weight', score_weight, 'est_final', est_final_scores[game.game_id])
