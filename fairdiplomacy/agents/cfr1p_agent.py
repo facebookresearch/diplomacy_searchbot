@@ -34,6 +34,7 @@ class CFR1PAgent(BaseSearchAgent):
         n_rollout_procs,
         max_actions_units_ratio=None,
         plausible_orders_req_size=None,
+        bp_iters=0,
         **kwargs,
     ):
         super().__init__(
@@ -65,6 +66,7 @@ class CFR1PAgent(BaseSearchAgent):
             if max_actions_units_ratio is not None and max_actions_units_ratio > 0
             else 1e6
         )
+        self.bp_iters = bp_iters
 
         logging.info(f"Initialized CFR1P Agent: {self.__dict__}")
 
@@ -87,6 +89,7 @@ class CFR1PAgent(BaseSearchAgent):
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.last_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        self.bp_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
 
         game_state = game.get_state()
         phase = game_state["name"]
@@ -108,7 +111,13 @@ class CFR1PAgent(BaseSearchAgent):
             n=self.plausible_orders_req_size,
             batch_size=self.plausible_orders_req_size,
         )
-        power_plausible_orders = {p: sorted(v) for p, v in power_plausible_orders.items()}
+        for p, orders_to_prob in power_plausible_orders.items():
+            for o, prob in orders_to_prob.items():
+                self.bp_sigma[(p, o)] = float(np.exp(prob))
+        power_plausible_orders = {
+            p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()
+        }
+
         logging.info(f"{phase} power_plausible_orders: {power_plausible_orders}")
 
         if self.postman_sync_batches:
@@ -188,10 +197,13 @@ class CFR1PAgent(BaseSearchAgent):
 
             # get policy probs for all powers
             power_action_ps: Dict[Power, List[float]] = {
-                pwr: self.strategy(pwr, actions)
+                pwr: (
+                    self.strategy(pwr, actions)
+                    if cfr_iter >= self.bp_iters
+                    else self.bp_strategy(pwr, actions)
+                )
                 for (pwr, actions) in power_plausible_orders.items()
             }
-
             # sample policy for all powers
             idxs = {
                 pwr: np.random.choice(range(len(action_ps)), p=action_ps)
@@ -227,7 +239,6 @@ class CFR1PAgent(BaseSearchAgent):
                 if self.cache_rollout_results
                 else on_miss()
             )
-
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
                     continue
@@ -319,6 +330,12 @@ class CFR1PAgent(BaseSearchAgent):
             return [1 / len(actions) for _ in actions]
         else:
             return [s / sum_sigmas for s in sigmas]
+
+    def bp_strategy(self, power, actions) -> List[float]:
+        sigmas = [self.bp_sigma[(power, a)] for a in actions]
+        sum_sigmas = sum(sigmas)
+        assert sum_sigmas > 0, f"{actions} {self.bp_sigma}"
+        return [s / sum_sigmas for s in sigmas]
 
     def compute_nash_conv(self, cfr_iter, game, power_plausible_orders):
         """For each power, compute EV of each action assuming opponent ave policies"""

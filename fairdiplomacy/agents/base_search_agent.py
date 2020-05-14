@@ -3,7 +3,7 @@ import logging
 import os
 import signal
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from functools import partial
 from typing import List, Tuple, Set, Dict, Union, Sequence
 
@@ -160,7 +160,7 @@ class BaseSearchAgent(BaseAgent):
         top_p_array = torch.zeros(x[0].shape[0], 1).fill_(top_p)
         req = (*x, temp_array, top_p_array)
         try:
-            order_idxs, final_scores = client.evaluate(req)
+            order_idxs, order_logprobs, final_scores = client.evaluate(req)
         except Exception:
             logging.error(
                 "Caught server error with inputs {}".format([(x.shape, x.dtype) for x in req])
@@ -175,7 +175,8 @@ class BaseSearchAgent(BaseAgent):
                 [tuple(decode_order_idxs(order_idxs[b, p, :])) for p in range(len(POWERS))]
                 for b in range(order_idxs.shape[0])
             ],
-            np.mean(final_scores, axis=0),
+            order_logprobs,
+            final_scores,
         )
 
     def get_plausible_orders(
@@ -210,11 +211,23 @@ class BaseSearchAgent(BaseAgent):
         x = [encode_inputs(game)] * n
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
             batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
-            batch_orders, _ = self.do_model_request(self.client, batch_inputs, temperature, top_p)
-            batch_orders = list(zip(*batch_orders))
+            batch_orders, batch_order_logprobs, _ = self.do_model_request(
+                self.client, batch_inputs, temperature, top_p
+            )
+            batch_orders = list(zip(*batch_orders))  # power -> list[orders]
+            batch_order_logprobs = batch_order_logprobs.t()  # [7 x B]
             for p, power in enumerate(POWERS):
                 counters[power].update(batch_orders[p])
 
+            # slow and steady
+            orders_to_logprobs = {}
+            for power_orders, power_scores in zip(batch_orders, batch_order_logprobs):
+                for order, score in zip(power_orders, power_scores):
+                    if order not in orders_to_logprobs:
+                        orders_to_logprobs[order] = score
+                    assert (
+                        abs(orders_to_logprobs[order] - score) < 1e-2
+                    ), f"{order} : {orders_to_logprobs[order]} != {score}"
         logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
                 n, temperature, list(map(len, counters.values())), limits
@@ -252,8 +265,15 @@ class BaseSearchAgent(BaseAgent):
             # TODO: remove this if not seen in production
             logging.warning("error in get_plausible_orders logging")
 
+        # print("Plausible orders:")
+        # print("        count,count_frac,prob")
+        # for power, orders_and_counts in most_common.items():
+        #     print(f"    {power}")
+        #     for orders, count in orders_and_counts:
+        #         print(f"        {count:5d} {count/n:8.3f} {np.exp(orders_to_logprobs[orders]):8.3f}  {orders}")
+
         return {
-            power: set([orders for orders, _ in orders_and_counts])
+            power: {orders: orders_to_logprobs[orders] for orders, _ in orders_and_counts}
             for power, orders_and_counts in most_common.items()
         }
 
@@ -275,7 +295,6 @@ class BaseSearchAgent(BaseAgent):
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
         game_json = game.to_saved_game_format()
-
         # divide up the rollouts among the processes
         all_results, all_timings = zip(
             *self.proc_pool.map(
@@ -364,7 +383,7 @@ class BaseSearchAgent(BaseAgent):
             games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
             for i in range(len(games)):
                 games[i].game_id += f"_{i}"
-            est_final_scores = {}
+            est_final_scores = defaultdict(float)
 
             # set orders if specified
             for power, orders in set_orders_dict.items():
@@ -393,18 +412,18 @@ class BaseSearchAgent(BaseAgent):
 
             with timings("model"):
                 if turn_idx == max_rollout_length:
-                    _, final_scores = cls.do_model_request(
+                    _, _, final_scores = cls.do_model_request(
                         value_client, batch_inputs, temperature, top_p
                     )
-                    for game in games:
+                    for game_idx, game in enumerate(games):
                         if not game.is_game_done:
                             est_final_scores[
                                 game.game_id
-                            ] = final_scores  # FIXME: should be final_scores[i]!
+                            ] = final_scores[game_idx]
                     # don't step the environment on the turn that you're grabbing the value
                     break
 
-                batch_orders, _ = cls.do_model_request(client, batch_inputs, temperature, top_p)
+                batch_orders, _, _ = cls.do_model_request(client, batch_inputs, temperature, top_p)
 
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
@@ -454,7 +473,6 @@ class BaseSearchAgent(BaseAgent):
                         final_scores[p] = (1 - mix_square_ratio_scoring) * final_scores[p] + (
                             mix_square_ratio_scoring * current_scores[p].square_ratio
                         )
-
             result = (set_orders_dict, final_game_scores)
 
         return result, timings
@@ -546,8 +564,6 @@ def server_handler(
                     with timings("next_batch"):
                         inputs = batch.get_inputs()[0]
 
-                    # print(f"GOT {len(inputs)} BATCH FOR {model_path}")
-
                     with timings("to_cuda"):
                         inputs = tuple(x.to("cuda") for x in inputs)
 
@@ -600,9 +616,22 @@ def cat_pad_inputs(xs):
     return batch_inputs, seq_lens
 
 
+def compute_sampled_logprobs(sampled_idxs, logits):
+    sampled_idxs = sampled_idxs[:, :, : logits.shape[-2]]  # trim off excess seq dim
+    invalid_mask = sampled_idxs < 0
+    sampled_idxs = sampled_idxs.clamp(
+        min=0
+    )  # otherwise gather(-1) will blow up. We'll mask these out later
+    logprobs = logits.log_softmax(-1)
+    sampled_logprobs = logprobs.gather(-1, sampled_idxs.unsqueeze(-1)).squeeze(-1)
+    sampled_logprobs[invalid_mask] = 0
+    total_logprobs = sampled_logprobs.sum(-1)
+    return total_logprobs
+
+
 def model_output_transform(y):
-    # return only order_idxs, final_scores
-    return y[0], y[-1]
+    order_idxs, sampled_idxs, logits, final_sos = y
+    return order_idxs, compute_sampled_logprobs(sampled_idxs, logits), final_sos
 
 
 def call(f):

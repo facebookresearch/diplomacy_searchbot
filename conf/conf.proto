@@ -90,6 +90,9 @@ message CFR1PAgent {
 
   // Optional, if True, prune actions after 1/4 of the number of iters
   optional bool use_pruning = 22 [ default = false ];
+
+  // Optional, if >0 then play BP strategy for this many iters
+  optional int32 bp_iters = 23 [ default = 0 ];
 }
 
 message BRSearchAgent {
