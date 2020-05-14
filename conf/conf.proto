@@ -90,9 +90,6 @@ message CFR1PAgent {
 
   // Optional, if True, prune actions after 1/4 of the number of iters
   optional bool use_pruning = 22 [ default = false ];
-
-  // Optional, if True will mix in the blueprint with decreasing prob up to iter T/4
-  optional bool use_bp_blend = 23 [ default = false ];
 }
 
 message BRSearchAgent {

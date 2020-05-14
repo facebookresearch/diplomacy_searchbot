@@ -29,7 +29,6 @@ class CFR1PAgent(BaseSearchAgent):
         use_optimistic_cfr=True,
         use_final_iter=True,
         use_pruning=False,
-        use_bp_blend=False,
         max_batch_size=700,
         average_n_rollouts=1,
         n_rollout_procs,
@@ -59,7 +58,6 @@ class CFR1PAgent(BaseSearchAgent):
         self.use_optimistic_cfr = use_optimistic_cfr
         self.use_final_iter = use_final_iter
         self.use_pruning = use_pruning
-        self.use_bp_blend = use_bp_blend
         self.plausible_orders_req_size = plausible_orders_req_size or max_batch_size
         self.average_n_rollouts = average_n_rollouts
         self.max_actions_units_ratio = (
@@ -277,9 +275,6 @@ class CFR1PAgent(BaseSearchAgent):
                 for action, pos_regret in zip(actions, pos_regrets):
                     if sum_pos_regrets == 0:
                         self.sigma[(pwr, action)] = 1.0 / len(actions)
-                    elif self.use_bp_blend and cfr_iter < self.n_rollouts / 4:
-                        uniform_prob = (1.0 / len(actions)) * ((self.n_rollouts / 4.0) - cfr_iter) / (self.n_rollouts / 4.0)
-                        self.sigma[(pwr, action)] = (uniform_prob + (pos_regret / sum_pos_regrets)) / (1.0 + uniform_prob * len(actions))
                     else:
                         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
 
