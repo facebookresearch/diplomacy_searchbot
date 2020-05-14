@@ -341,7 +341,7 @@ class CFR1PAgent(BaseSearchAgent):
     def bp_strategy(self, power, actions) -> List[float]:
         sigmas = [self.bp_sigma[(power, a)] for a in actions]
         sum_sigmas = sum(sigmas)
-        assert sum_sigmas > 0, f"{actions} {self.bp_sigma}"
+        assert len(actions) == 0 or sum_sigmas > 0, f"{actions} {self.bp_sigma}"
         return [s / sum_sigmas for s in sigmas]
 
     def compute_nash_conv(self, cfr_iter, game, power_plausible_orders):

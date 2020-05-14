@@ -199,14 +199,14 @@ class BaseSearchAgent(BaseAgent):
         del limit
 
         # trivial return case: all powers have at most `limit` actions
-        orderable_locs = game.get_orderable_locations()
-        if max(map(len, orderable_locs.values())) <= 1:
-            all_orders = game.get_all_possible_orders()
-            pow_orders = {
-                p: all_orders[orderable_locs[p][0]] if orderable_locs[p] else [] for p in POWERS
-            }
-            if all(len(pow_orders[p]) <= limit for p, limit in zip(POWERS, limits)):
-                return {p: set((x,) for x in orders) for p, orders in pow_orders.items()}
+        # orderable_locs = game.get_orderable_locations()
+        # if max(map(len, orderable_locs.values())) <= 1:
+        #     all_orders = game.get_all_possible_orders()
+        #     pow_orders = {
+        #         p: all_orders[orderable_locs[p][0]] if orderable_locs[p] else [] for p in POWERS
+        #     }
+        #     if all(len(pow_orders[p]) <= limit for p, limit in zip(POWERS, limits)):
+        #         return {p: set((x,) for x in orders) for p, orders in pow_orders.items()}
 
         # non-trivial return case: query model
         counters = {p: Counter() for p in POWERS}
