@@ -12,17 +12,16 @@ from typing import Optional
 import argparse
 import json
 import pathlib
+import urllib.parse
 
 import flask
 
-import diplomacy.engine.renderer
 import fairdiplomacy.game
 
+TESTCASE_PATH = pathlib.Path(__file__).parent.parent.parent / "test_situations.json"
 
 app = flask.Flask("viz", root_path=pathlib.Path(__file__).parent)
-manager: Optional["TBManager"] = None
 
-TMP_PATH = pathlib.Path("/tmp/tb_links")
 DEMO_QUERY = "?game=/checkpoint/yolo/fairdiplomacy/data/20200420_noam_cfr_selfplay_games_more/games/game_AUS.100.json"
 
 INDEX_HTML = """
@@ -37,12 +36,15 @@ INDEX_HTML = """
     <nav class="navbar navbar-light" style="background-color: #e3f2fd;">
             <a href="?" class="navbar-brand mb-0 h1">Diplomacy viz</a>
             {% if num_phases %}
-            Phase: {{ phase }} / {{ num_phases }}
-                {% if phase > 0 %}<a href="?game={{ game_json_path }}&phase={{ phase - 1 }}">prev</a>{% else %}prev{% endif %}
-                {% if phase < num_phases - 1 %}<a href="?game={{ game_json_path }}&phase={{ phase + 1 }}">next</a>{% endif %}
+            Phase: {{ phase_id }} / {{ num_phases }} ({{phase}})
+                {% if prev_phase %}<a href="?game={{ game_json_path }}&phase={{ prev_phase }}{{ url_suffix }}">prev</a>{% else %}prev{% endif %}
+                {% if next_phase %}<a href="?game={{ game_json_path }}&phase={{ next_phase }}{{ url_suffix }}">next</a>{% else %}next{% endif %}
             {% endif %}
     </nav>
     {% if image %}
+    {% if test_situation %}
+    <pre>{{ test_situation }}</pre>
+    {% endif %}
     <div>
         <div style="margin: 0 auto; width: 918px">
             {{ image|safe }}
@@ -56,6 +58,12 @@ INDEX_HTML = """
         </form>
     </div>
     <small>Note: you can also pass the path in url, e.g., <a href="{{DEMO_QUERY}}">{{DEMO_QUERY}}.</a>
+    <h4>Load test situation</h4>
+    <ul>
+        {% for name in test_situations %}
+        <li><a href="/test/{{name}}/">{{name}}</a></li>
+        {% endfor %}
+    </ul>
     {% endif %}
 </div>
 </body>
@@ -63,27 +71,72 @@ INDEX_HTML = """
 """
 
 
+def load_test_situations():
+    assert TESTCASE_PATH.exists(), TESTCASE_PATH
+    with TESTCASE_PATH.open() as stream:
+        return json.load(stream)
+
+
+def maybe_load_game(game_json_path: str) -> Optional[fairdiplomacy.game.Game]:
+    game_json_path = pathlib.Path(game_json_path)
+    if not game_json_path.exists():
+        return None
+    with game_json_path.open() as stream:
+        game_json = json.load(stream)
+    game = fairdiplomacy.game.Game.from_saved_game_format(game_json)
+    return game
+
+
 @app.route("/")
 def root():
     game_json_path = flask.request.args.get("game")
     if not game_json_path:
-        return flask.render_template_string(INDEX_HTML, DEMO_QUERY=DEMO_QUERY)
-    try:
-        phase = int(flask.request.args.get("phase") or 0)
-    except ValueError:
-        return "Bad phase! Check url"
-    game_json_path = pathlib.Path(game_json_path)
-    if not game_json_path.exists():
+        return flask.render_template_string(
+            INDEX_HTML, DEMO_QUERY=DEMO_QUERY, test_situations=list(load_test_situations())
+        )
+    phase = flask.request.args.get("phase") or "S1901M"
+    game = maybe_load_game(game_json_path)
+    if game is None:
         return f"Bad game.json (not found): {game_json_path}"
-    with game_json_path.open() as stream:
-        game_json = json.load(stream)
-    num_phases = len(game_json["phases"])
-    phase = min(phase, num_phases - 1)
-    del game_json["phases"][phase + 1 :]
-    game = fairdiplomacy.game.Game.from_saved_game_format(game_json)
-    image = diplomacy.engine.renderer.Renderer(game).render()
+    phase_list = list(game.order_history)
+    try:
+        phase_id = phase_list.index(phase)
+    except ValueError:
+        return "Bad phase. Known: " + " ".join(phase_list)
+    num_phases = len(phase_list)
+    prev_phase = phase_list[phase_id - 1] if phase_id > 0 else ""
+    next_phase = phase_list[phase_id + 1] if phase_id < len(phase_list) - 1 else ""
+
+    test_situation_name = flask.request.args.get("test")
+    if test_situation_name:
+        test_situation = json.dumps(load_test_situations()[test_situation_name], indent=2)
+        url_suffix = f"&test={test_situation_name}"
+    else:
+        url_suffix = ""
+
+    game = fairdiplomacy.game.Game.clone_from(game, up_to_phase=phase)
+    image = game.render()
     return flask.render_template_string(INDEX_HTML, **locals())
 
+
+@app.route("/test/<test_situation_name>/")
+def show_test_situation(test_situation_name):
+    test_situations = load_test_situations()
+    if test_situation_name not in test_situations:
+        known = " ".join(sorted(test_situations))
+        return f"Uknown situation. Known: {known}"
+
+    situation = test_situations[test_situation_name]
+    game = maybe_load_game(situation["game_path"])
+    if game is None:
+        return f"Bad game.json (not found): " + situation["game_path"]
+
+    return flask.redirect(
+        "/?" + urllib.parse.urlencode(
+            dict(game=situation["game_path"], phase=situation["phase"], test=test_situation_name)
+        ),
+        code=307,
+    )
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -94,7 +147,7 @@ def main():
         help="Where to server toplog. This port has to be forwarded.",
     )
     args = parser.parse_args()
-    app.run(host="0.0.0.0", port=args.port, threaded=True)
+    app.run(host="0.0.0.0", port=args.port, threaded=True, debug=True)
 
 
 if __name__ == "__main__":

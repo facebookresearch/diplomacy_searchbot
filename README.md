@@ -138,6 +138,24 @@ watch -n 600 "python -m conf.c02_sup_train.rs_yolo_01_example  2>&1 | tail -n3; 
 
 # Visualizing a Saved Game
 
+The following allows to load a saved game on devfair and explore test situations.
+
+Run:
+```
+pip install flask
+nohup python -m fairdiplomacy.viz --port 8894 &
+```
+
+By default, this runs a webserver on `localhost:8994`.
+
+If running on your devfair, be sure to run `ssh` with `-L 8894:localhost:8894`
+
+Type the path to the game and press "Show the game".
+
+![Instructions for visualizing a game](docs/images/viz_screen.png)
+
+# Playing Against a Bot
+
 Run:
 ```
 ./bin/open_visualizer.py
@@ -147,14 +165,9 @@ By default, this runs a webserver on `localhost:3000` (and a websocket server on
 
 If running on your devfair, be sure to run `ssh` with `-L 3000:localhost:3000 -L 8432:localhost:8432`
 
-Log in as admin/password, and use "Load a game from disk" in the top-right to visualize a `game.json` file.
-
 ![Instructions for visualizing a game](https://github.com/diplomacy/diplomacy/blob/master/docs/images/visualize_game.png)
 
-
-# Playing Against a Bot
-
-After [opening the visualizer](#visualizing-a-saved-game), create a new standard game with 1 human user. Then run
+Create a new standard game with 1 human user. Then run
 ```
 python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt I.agent=agents/dipnet
 ```
