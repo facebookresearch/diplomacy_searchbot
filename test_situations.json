@@ -16,6 +16,12 @@
       "phase": "S1903M",
       "powers": ["ITALY"],
       "comment": "ITA should not move to BOH"
+  },
+  "bad_disband": {
+      "game_path": "/private/home/jsgray/diplomacy/slurm/13May_game2.json",
+      "phase": "S1903R",
+      "powers": ["GERMANY"],
+      "comment": "GER should retreat to Kie"
   }
 }
 
