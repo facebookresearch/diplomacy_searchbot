@@ -4,11 +4,11 @@ from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import POWERS
 
 
-def order_prob(prob_distributions, order):
+def order_prob(prob_distributions, *expected_orders):
     total = 0
     for pd in prob_distributions.values():
         for orders, prob in pd.items():
-            if order in orders:
+            if all(x in orders for x in expected_orders):
                 total += prob
     return total
 

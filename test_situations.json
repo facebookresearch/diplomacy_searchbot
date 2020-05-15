@@ -11,7 +11,7 @@
         "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/tuesday_test.json",
         "phase": "F1901M",
         "tests": {
-          "FRA should not support WAL or ENG to BEL": "lambda r: order_prob(r, 'A BUR S A WAL - BEL') < 0.01 and order_prob(r, 'A BUR S F ENG - BEL') < 0.01"
+          "FRA should not support WAL or ENG to BEL": "lambda r: order_prob(r, 'A BUR S A WAL - BEL') + order_prob(r, 'A BUR S F ENG - BEL') < 0.02"
         }
     },
     "italy_to_boh": {
@@ -24,16 +24,34 @@
     "f1901_test16": {
       "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/noam_test16.json",
       "phase": "F1901M",
-      "comment": "ENG should not move to SKA, ITA should not convoy to GRE",
       "tests": {
         "ENG should not go to SKA": "lambda r: order_prob(r, 'F NTH - SKA') < 0.05",
         "ITA should not convoy to GRE": "lambda r: order_prob(r, 'F ION C A APU - GRE') < 0.05"
       }
     },
-    "bad_disband": {
-        "game_path": "/private/home/jsgray/diplomacy/slurm/13May_game2.json",
+    "s1902_test16": {
+        "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/noam_test16.json",
+        "phase": "S1902M",
+        "tests": {
+          "UKR should not move to MOS": "lambda r: order_prob(r, 'A UKR - MOS') < 0.01"
+        }
+    },
+    "f1902_test16": {
+        "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/noam_test16.json",
+        "phase": "F1902M",
+        "tests": {
+          "MOS should not move to LVN or (mostly) STP":
+          "lambda r: order_prob(r, 'A MOS - LVN') + order_prob(r, 'A MOS - STP') - order_prob(r, 'A MOS - STP', 'A STP - FIN') < 0.05"
+        }
+    },
+    "bad_disband_1": {
+        "game_path": "/checkpoint/jsgray/diplomacy/games/13May_game2.json",
         "phase": "S1903R",
         "powers": ["GERMANY"],
-        "comment": "GER should retreat to Kie"
+        "tests": {
+            "GER should retreat to Kie" : "lambda r: order_prob(r, 'A HOL R KIE') > 0.99",
+            "ENG should mix R KIE to screw GER ?" : "lambda r: order_prob(r, 'F DEN R KIE') > 0.05"
+
+        }
     }
 }
