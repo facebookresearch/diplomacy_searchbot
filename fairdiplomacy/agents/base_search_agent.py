@@ -239,9 +239,7 @@ class BaseSearchAgent(BaseAgent):
         # filter out badly-coordinated actions
         counters = {
             power: (
-                filter_keys(counter, are_supports_coordinated)
-                if len(counter) > limit
-                else counter
+                filter_keys(counter, are_supports_coordinated) if len(counter) > limit else counter
             )
             for (power, counter), limit in zip(counters.items(), limits)
         }
@@ -267,12 +265,14 @@ class BaseSearchAgent(BaseAgent):
             # TODO: remove this if not seen in production
             logging.warning("error in get_plausible_orders logging")
 
-        # print("Plausible orders:")
-        # print("        count,count_frac,prob")
-        # for power, orders_and_counts in most_common.items():
-        #     print(f"    {power}")
-        #     for orders, count in orders_and_counts:
-        #         print(f"        {count:5d} {count/n:8.3f} {np.exp(orders_to_logprobs[orders]):8.3f}  {orders}")
+        logging.info("Plausible orders:")
+        logging.info("        count,count_frac,prob")
+        for power, orders_and_counts in most_common.items():
+            logging.info(f"    {power}")
+            for orders, count in orders_and_counts:
+                logging.info(
+                    f"        {count:5d} {count/n:8.3f} {np.exp(orders_to_logprobs[orders]):8.3f}  {orders}"
+                )
 
         return {
             power: {orders: orders_to_logprobs[orders] for orders, _ in orders_and_counts}

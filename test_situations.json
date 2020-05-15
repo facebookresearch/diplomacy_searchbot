@@ -2,20 +2,33 @@
     "opening": {
         "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/11may.json",
         "phase": "S1901M",
-        "powers": ["RUSSIA", "TURKEY"],
-        "comment": "RUS and TUR should almost always open BLA"
+        "tests": {
+          "RUS should open BLA": "lambda r: order_prob(r, 'F SEV - BLA') > 0.9",
+          "TUR should open BLA": "lambda r: order_prob(r, 'F ANK - BLA') > 0.9"
+        }
     },
     "france_support_1": {
         "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/tuesday_test.json",
         "phase": "F1901M",
-        "powers": ["FRANCE"],
-        "comment": "FRA should not support WAL or ENG to BEL"
+        "tests": {
+          "FRA should not support WAL or ENG to BEL": "lambda r: order_prob(r, 'A BUR S A WAL - BEL') < 0.01 and order_prob(r, 'A BUR S F ENG - BEL') < 0.01"
+        }
     },
     "italy_to_boh": {
         "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/12May_game2.json",
         "phase": "S1903M",
-        "powers": ["ITALY"],
-        "comment": "ITA should not move to BOH"
+        "tests": {
+          "ITA should not move to BOH": "lambda r: order_prob(r, 'A TYR - BOH') < 0.05"
+        }
+    },
+    "f1901_test16": {
+      "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/noam_test16.json",
+      "phase": "F1901M",
+      "comment": "ENG should not move to SKA, ITA should not convoy to GRE",
+      "tests": {
+        "ENG should not go to SKA": "lambda r: order_prob(r, 'F NTH - SKA') < 0.05",
+        "ITA should not convoy to GRE": "lambda r: order_prob(r, 'F ION C A APU - GRE') < 0.05"
+      }
     },
     "bad_disband": {
         "game_path": "/private/home/jsgray/diplomacy/slurm/13May_game2.json",
