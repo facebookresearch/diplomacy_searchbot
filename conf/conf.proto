@@ -330,6 +330,9 @@ message TrainTask {
   // Value head dropout pct.
   optional float value_dropout = 27;
 
+  // Factor used in exponential weighted average of sum of squares scores
+  optional float value_decay_alpha = 28 [ default = 1.0 ];
+
   optional Launcher launcher = 1000;
 }
 

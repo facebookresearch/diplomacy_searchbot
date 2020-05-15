@@ -28,7 +28,7 @@ def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
 
 
 def compute_game_scores_from_state(power_id: int, game_state: Dict) -> GameScores:
-    center_counts = [len(game_state["centers"][p]) for p in POWERS]
+    center_counts = [len(game_state["centers"].get(p, [])) for p in POWERS]
     center_squares = [x ** 2 for x in center_counts]
     complete_unroll = game_state["name"] == "COMPLETED"
     is_clear_win = center_counts[power_id] > N_SCS / 2

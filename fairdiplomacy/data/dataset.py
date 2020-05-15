@@ -14,6 +14,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
+from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
 from fairdiplomacy.utils.tensorlist import TensorList
 from fairdiplomacy.utils.sampling import sample_p_dict
 
@@ -30,12 +31,17 @@ class Dataset(torch.utils.data.Dataset):
         debug_only_opening_phase=False,
         only_with_min_final_score=7,
         n_jobs=20,
+        value_decay_alpha=1.0,
         cf_agent=None,
         n_cf_agent_samples=1,
     ):
         self.game_json_paths = game_json_paths
         self.n_cf_agent_samples = n_cf_agent_samples
         assert not debug_only_opening_phase, "FIXME"
+
+        logging.info(
+            f"Building dataset from {len(game_json_paths)} games, only_with_min_final_score={only_with_min_final_score} value_decay_alpha={value_decay_alpha} cf_agent={cf_agent}"
+        )
 
         torch.set_num_threads(1)
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
@@ -44,6 +50,7 @@ class Dataset(torch.utils.data.Dataset):
                 only_with_min_final_score=only_with_min_final_score,
                 cf_agent=cf_agent,
                 n_cf_agent_samples=n_cf_agent_samples,
+                value_decay_alpha=value_decay_alpha,
             )
             for p in game_json_paths
         )
@@ -177,6 +184,7 @@ def encode_game(
     *,
     cf_agent=None,
     n_cf_agent_samples=1,
+    value_decay_alpha,
 ):
     """
     Arguments:
@@ -214,6 +222,7 @@ def encode_game(
             only_with_min_final_score=only_with_min_final_score,
             cf_agent=cf_agent,
             n_cf_agent_samples=n_cf_agent_samples,
+            value_decay_alpha=value_decay_alpha,
         )
         for phase_idx in range(num_phases)
     ]
@@ -230,6 +239,7 @@ def encode_phase(
     only_with_min_final_score: Optional[int],
     cf_agent=None,
     n_cf_agent_samples=1,
+    value_decay_alpha,
 ):
     """
     Arguments:
@@ -283,10 +293,7 @@ def encode_phase(
     x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(phase_name[-1] == "A")
 
     # encode final scores
-    y_final_scores = torch.zeros(1, 7, dtype=torch.int8)
-    final_centers = game.get_state()["centers"]
-    for power_i, power in enumerate(POWERS):
-        y_final_scores[:, power_i] = len(final_centers.get(power, []))
+    y_final_scores = encode_weighted_sos_scores(game, phase_idx, value_decay_alpha)
 
     # encode possible actions
     tmp_game = Game.clone_from(game, up_to_phase=phase_name)
@@ -518,6 +525,53 @@ def smarter_order_index(order):
         for suffix in ["/NC", "/EC", "/SC", "/WC"]:
             order = order.replace(suffix, "")
         return ORDER_VOCABULARY_TO_IDX[order]
+
+
+def encode_weighted_sos_scores(game, phase_idx, value_decay_alpha):
+    y_final_scores = torch.zeros(1, 7, dtype=torch.float)
+    phases = game.get_phase_history()
+
+    if phase_idx == len(phases) - 1:
+        # end of game
+        phase = phases[phase_idx]
+        y_final_scores[0, :] = torch.FloatTensor(
+            [
+                compute_game_scores_from_state(p, phase.state).square_score
+                for p in range(len(POWERS))
+            ]
+        )
+        return y_final_scores
+
+    # only weight scores at end of year, noting that not all years have a
+    # winter adjustment phase
+    end_of_year_phases = {}
+    for phase in phases:
+        end_of_year_phases[int(phase.name[1:-1])] = phase.name
+    end_of_year_phases = set(end_of_year_phases.values())
+
+    remaining = 1.0
+    weight = 1.0 - value_decay_alpha
+    for phase in phases[phase_idx + 1 :]:
+        if phase.name not in end_of_year_phases:
+            continue
+
+        # calculate sos score at this phase
+        sq_scores = torch.FloatTensor(
+            [
+                compute_game_scores_from_state(p, phase.state).square_score
+                for p in range(len(POWERS))
+            ]
+        )
+
+        # accumulate exp. weighted average
+        y_final_scores[0, :] += weight * sq_scores
+        remaining -= weight
+        weight *= value_decay_alpha
+
+    # fill in remaining weight with final score
+    y_final_scores[0, :] += remaining * sq_scores
+
+    return y_final_scores
 
 
 def _cat(x):

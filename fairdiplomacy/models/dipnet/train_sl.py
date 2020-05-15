@@ -90,12 +90,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
 
     # calculate sum-of-squares value loss
     y_final_scores = y_final_scores.to(device).float().squeeze(1)
-    y_final_scores_sq = y_final_scores.pow(2)
-    y_final_sos = y_final_scores_sq / y_final_scores_sq.sum(dim=1, keepdim=True)
-    y_final_sos = torch.where(
-        (y_final_scores > 17).any(dim=1, keepdim=True), (y_final_scores > 17).float(), y_final_sos
-    )
-    value_loss = value_loss_fn(final_sos, y_final_sos)
+    value_loss = value_loss_fn(final_sos, y_final_scores)
 
     return policy_loss, value_loss, sampled_idxs, final_sos
 
@@ -369,11 +364,11 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                 logger.info("Saving checkpoint to {}".format(args.checkpoint))
                 torch.save(obj, args.checkpoint)
 
-                if best_loss is None or val_loss < best_loss:
+                if best_loss is None or valid_loss < best_loss:
                     torch.save(obj, args.checkpoint + ".best")
-                if best_p_loss is None or val_p_loss < best_p_loss:
+                if best_p_loss is None or valid_p_loss < best_p_loss:
                     torch.save(obj, args.checkpoint + ".bestp")
-                if best_v_loss is None or val_v_loss < best_v_loss:
+                if best_v_loss is None or valid_v_loss < best_v_loss:
                     torch.save(obj, args.checkpoint + ".bestv")
 
         lr_scheduler.step()
@@ -405,7 +400,7 @@ def run_with_cfg(args):
         train_dataset, val_dataset = torch.load(args.data_cache)
     else:
         assert args.data_dir is not None
-        game_jsons = glob.glob(os.path.join(args.data_dir, "*/**.json"))
+        game_jsons = glob.glob(os.path.join(args.data_dir, "**/*.json"), recursive=True)
         assert len(game_jsons) > 0
         logger.info(f"Found dataset of {len(game_jsons)} games...")
         val_game_jsons = random.sample(game_jsons, max(1, int(len(game_jsons) * args.val_set_pct)))
@@ -415,11 +410,13 @@ def run_with_cfg(args):
             train_game_jsons,
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
+            value_decay_alpha=args.value_decay_alpha,
         )
         val_dataset = Dataset(
             val_game_jsons,
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
+            value_decay_alpha=args.value_decay_alpha,
         )
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")
