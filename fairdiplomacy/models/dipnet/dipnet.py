@@ -662,7 +662,9 @@ class ValueDecoder(nn.Module):
     def __init__(self, *, inter_emb_size, dropout, init_scale=1.0):
         super().__init__()
         emb_flat_size = 81 * inter_emb_size * 2
-        self.lin = nn.Linear(emb_flat_size, len(POWERS))
+        self.prelin = nn.Linear(emb_flat_size, inter_emb_size)
+        self.lin = nn.Linear(inter_emb_size, len(POWERS))
+
         self.dropout = nn.Dropout(dropout)
 
         # scale down init
@@ -673,7 +675,11 @@ class ValueDecoder(nn.Module):
     def forward(self, enc):
         """Returns [B, 7] FloatTensor summing to 1 across dim=1"""
         y = enc.view(enc.shape[0], -1)
-        y = self.lin(y)
+        y = self.prelin(y)
+        y = F.relu(y)
         y = self.dropout(y)
-        y = nn.functional.softmax(y, dim=1)
+        y = self.lin(y)
+        y = y ** 2
+        y = y / y.sum(dim=1, keepdim=True)
+        # y = nn.functional.softmax(y, dim=1)
         return y
