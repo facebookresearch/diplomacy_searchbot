@@ -11,7 +11,7 @@
         "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/tuesday_test.json",
         "phase": "F1901M",
         "tests": {
-          "FRA should not support WAL or ENG to BEL": "lambda r: order_prob(r, 'A BUR S A WAL - BEL') + order_prob(r, 'A BUR S F ENG - BEL') < 0.02"
+          "FRA should not support WAL or ENG to BEL": "lambda r: order_prob(r, 'A BUR S A WAL - BEL') + order_prob(r, 'A BUR S F ENG - BEL') < 0.05"
         }
     },
     "italy_to_boh": {
@@ -49,9 +49,7 @@
         "phase": "S1903R",
         "powers": ["GERMANY"],
         "tests": {
-            "GER should retreat to Kie" : "lambda r: order_prob(r, 'A HOL R KIE') > 0.99",
-            "ENG should mix R KIE to screw GER ?" : "lambda r: order_prob(r, 'F DEN R KIE') > 0.05"
-
+            "GER should retreat to Kie" : "lambda r: order_prob(r, 'A HOL R KIE') > 0.9"
         }
     }
 }

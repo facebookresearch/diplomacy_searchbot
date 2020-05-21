@@ -35,6 +35,7 @@ class CFR1PAgent(BaseSearchAgent):
         max_actions_units_ratio=None,
         plausible_orders_req_size=None,
         bp_iters=0,
+        bp_prob=0,
         **kwargs,
     ):
         super().__init__(
@@ -67,6 +68,7 @@ class CFR1PAgent(BaseSearchAgent):
             else 1e6
         )
         self.bp_iters = bp_iters
+        self.bp_prob = bp_prob
 
         logging.info(f"Initialized CFR1P Agent: {self.__dict__}")
 
@@ -200,9 +202,9 @@ class CFR1PAgent(BaseSearchAgent):
             # get policy probs for all powers
             power_action_ps: Dict[Power, List[float]] = {
                 pwr: (
-                    self.strategy(pwr, actions)
-                    if cfr_iter >= self.bp_iters
-                    else self.bp_strategy(pwr, actions)
+                    self.bp_strategy(pwr, actions)
+                    if cfr_iter < self.bp_iters or np.random.rand() < self.bp_prob
+                    else self.strategy(pwr, actions)
                 )
                 for (pwr, actions) in power_plausible_orders.items()
             }
