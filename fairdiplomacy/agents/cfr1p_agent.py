@@ -200,6 +200,9 @@ class CFR1PAgent(BaseSearchAgent):
                     self.cum_sigma[(pwr, action)] *= discount_factor
 
             # get policy probs for all powers
+            power_action_cfr = {
+                pwr: self.strategy(pwr, actions) for (pwr, actions) in power_plausible_orders.items()
+            }
             power_action_ps: Dict[Power, List[float]] = {
                 pwr: (
                     self.bp_strategy(pwr, actions)
@@ -288,7 +291,7 @@ class CFR1PAgent(BaseSearchAgent):
 
                 # update cfr data structures
                 self.cum_utility[pwr] += state_utility
-                for action, regret, s in zip(actions, action_regrets, power_action_ps[pwr]):
+                for action, regret, s in zip(actions, action_regrets, power_action_cfr[pwr]):
                     self.cum_regrets[(pwr, action)] += regret
                     self.last_regrets[(pwr, action)] = regret
                     self.cum_sigma[(pwr, action)] += s
