@@ -32,7 +32,7 @@ def run_situation_check(meta, agent):
             logging.info(f"   {power}")
 
             for order, prob in pdl:
-                if prob < 0.05:
+                if prob < 0.02:
                     break
                 logging.info(f"       {prob:5.2f} {order}")
 

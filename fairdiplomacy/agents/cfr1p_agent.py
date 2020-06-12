@@ -114,8 +114,8 @@ class CFR1PAgent(BaseSearchAgent):
             n=self.plausible_orders_req_size,
             batch_size=self.plausible_orders_req_size,
         )
-        for p, orders_to_prob in power_plausible_orders.items():
-            for o, prob in orders_to_prob.items():
+        for p, orders_to_logprob in power_plausible_orders.items():
+            for o, prob in orders_to_logprob.items():
                 self.bp_sigma[(p, o)] = float(np.exp(prob))
         power_plausible_orders = {
             p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()

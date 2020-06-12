@@ -190,7 +190,7 @@ class BaseSearchAgent(BaseAgent):
         limit: Union[int, Sequence[int]],  # limit, or list of limits per power
         batch_size=500,
         top_p=1.0,
-    ) -> Dict[str, Set[Tuple[str]]]:
+    ) -> Dict[str, Dict[Tuple[str], float]]:
         assert n % batch_size == 0, f"{n}, {batch_size}"
 
         # limits is a list of 7 limits
