@@ -312,12 +312,12 @@ class LSTMDipNetDecoder(nn.Module):
             self.lstm.flatten_parameters()
 
             hidden = (
-                torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
-                torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
+                torch.zeros(1, enc.shape[0], self.lstm_size, device=device),
+                torch.zeros(1, enc.shape[0], self.lstm_size, device=device),
             )
 
             # embedding for the last decoded order
-            order_emb = torch.zeros(enc.shape[0], self.order_emb_size).to(device)
+            order_emb = torch.zeros(enc.shape[0], self.order_emb_size, device=device)
 
             # power embedding, constant for each lstm step
             assert len(power_1h.shape) == 2 and power_1h.shape[1] == 7, power_1h.shape
