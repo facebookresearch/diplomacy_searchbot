@@ -21,7 +21,7 @@ class DipNet(nn.Module):
         prev_orders_size,  # 40
         inter_emb_size,  # 120
         power_emb_size,  # 60
-        season_emb_size,  # 20
+        season_emb_size,  # 20,
         num_blocks,  # 16
         A,  # 81x81
         master_alignments,
@@ -39,10 +39,9 @@ class DipNet(nn.Module):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
         self.encoder = DipNetEncoder(
-            board_state_size=board_state_size,
-            prev_orders_size=prev_orders_size,
+            board_state_size=board_state_size + len(POWERS) + season_emb_size,
+            prev_orders_size=board_state_size + prev_orders_size + len(POWERS) + season_emb_size,
             inter_emb_size=inter_emb_size,
-            season_emb_size=season_emb_size,
             num_blocks=num_blocks,
             A=A,
             dropout=encoder_dropout,
@@ -66,6 +65,8 @@ class DipNet(nn.Module):
             init_scale=value_decoder_init_scale,
             dropout=value_dropout,
         )
+
+        self.season_lin = nn.Linear(3, season_emb_size)
 
     def forward(
         self,
@@ -116,11 +117,18 @@ class DipNet(nn.Module):
             candidate order, 0 < S <= 17, 0 < C <= 469
           - final_sos [B, 7]: estimated sum of squares share for each power
         """
+
+        # following https://arxiv.org/pdf/2006.04635.pdf , Appendix C
+        x_season_emb = self.season_lin(x_season_1h)
+        NUM_LOCS = x_bo.shape[1]
+        x_build_numbers_exp = x_build_numbers[:, None].expand(-1, NUM_LOCS, -1)
+        x_season_emb_exp = x_season_emb[:, None].expand(-1, NUM_LOCS, -1)
+        x_bo_hat = torch.cat((x_bo, x_build_numbers_exp, x_season_emb_exp), dim=-1)
+        x_po_hat = torch.cat((x_bp, x_po, x_build_numbers_exp, x_season_emb_exp), dim=-1)
         if x_power is None:
             return self.forward_all_powers(
-                x_bo=x_bo,
-                x_po=x_po,
-                x_season_1h=x_season_1h,
+                x_bo=x_bo_hat,
+                x_po=x_po_hat,
                 in_adj_phase=in_adj_phase,
                 loc_idxs=loc_idxs,
                 cand_idxs=cand_idxs,
@@ -130,9 +138,8 @@ class DipNet(nn.Module):
             )
         else:
             return self.forward_one_power(
-                x_bo=x_bo,
-                x_po=x_po,
-                x_season_1h=x_season_1h,
+                x_bo=x_bo_hat,
+                x_po=x_po_hat,
                 in_adj_phase=in_adj_phase,
                 loc_idxs=loc_idxs,
                 cand_idxs=cand_idxs,
@@ -147,7 +154,6 @@ class DipNet(nn.Module):
         *,
         x_bo,
         x_po,
-        x_season_1h,
         in_adj_phase,
         loc_idxs,
         cand_idxs,
@@ -159,7 +165,7 @@ class DipNet(nn.Module):
         assert len(loc_idxs.shape) == 2
         assert len(cand_idxs.shape) == 3
 
-        enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
+        enc = self.encoder(x_bo, x_po)  # [B, 81, 240]
         order_idxs, sampled_idxs, logits = self.policy_decoder(
             enc,
             in_adj_phase,
@@ -178,7 +184,6 @@ class DipNet(nn.Module):
         *,
         x_bo,
         x_po,
-        x_season_1h,
         in_adj_phase,
         loc_idxs,
         cand_idxs,
@@ -193,7 +198,7 @@ class DipNet(nn.Module):
         assert len(cand_idxs.shape) == 4
 
         with timings("enc"):
-            enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
+            enc = self.encoder(x_bo, x_po)  # [B, 81, 240]
 
         with timings("policy_decoder_prep"):
             enc_repeat = enc.repeat_interleave(7, dim=0)
@@ -513,7 +518,6 @@ class DipNetEncoder(nn.Module):
         board_state_size,  # 35
         prev_orders_size,  # 40
         inter_emb_size,  # 120
-        season_emb_size,  # 20
         num_blocks,  # 16
         A,  # 81x81
         dropout,
@@ -521,16 +525,12 @@ class DipNetEncoder(nn.Module):
     ):
         super().__init__()
 
-        # power/season embeddings
-        self.season_lin = nn.Linear(3, season_emb_size)
-
         # board state blocks
         self.board_blocks = nn.ModuleList()
         self.board_blocks.append(
             DipNetBlock(
                 in_size=board_state_size,
                 out_size=inter_emb_size,
-                season_emb_size=season_emb_size,
                 A=A,
                 residual=False,
                 learnable_A=learnable_A,
@@ -542,7 +542,6 @@ class DipNetEncoder(nn.Module):
                 DipNetBlock(
                     in_size=inter_emb_size,
                     out_size=inter_emb_size,
-                    season_emb_size=season_emb_size,
                     A=A,
                     residual=True,
                     learnable_A=learnable_A,
@@ -556,7 +555,6 @@ class DipNetEncoder(nn.Module):
             DipNetBlock(
                 in_size=prev_orders_size,
                 out_size=inter_emb_size,
-                season_emb_size=season_emb_size,
                 A=A,
                 residual=False,
                 learnable_A=learnable_A,
@@ -568,7 +566,6 @@ class DipNetEncoder(nn.Module):
                 DipNetBlock(
                     in_size=inter_emb_size,
                     out_size=inter_emb_size,
-                    season_emb_size=season_emb_size,
                     A=A,
                     residual=True,
                     learnable_A=learnable_A,
@@ -576,16 +573,15 @@ class DipNetEncoder(nn.Module):
                 )
             )
 
-    def forward(self, x_bo, x_po, x_season_1h):
-        season_emb = self.season_lin(x_season_1h)
+    def forward(self, x_bo, x_po):
 
         y_bo = x_bo
         for block in self.board_blocks:
-            y_bo = block(y_bo, season_emb)
+            y_bo = block(y_bo)
 
         y_po = x_po
         for block in self.prev_orders_blocks:
-            y_po = block(y_po, season_emb)
+            y_po = block(y_po)
 
         state_emb = torch.cat([y_bo, y_po], -1)
         return state_emb
@@ -593,19 +589,17 @@ class DipNetEncoder(nn.Module):
 
 class DipNetBlock(nn.Module):
     def __init__(
-        self, *, in_size, out_size, season_emb_size, A, dropout, residual=True, learnable_A=False
+        self, *, in_size, out_size, A, dropout, residual=True, learnable_A=False
     ):
         super().__init__()
         self.graph_conv = GraphConv(in_size, out_size, A, learnable_A=learnable_A)
         self.batch_norm = nn.BatchNorm1d(A.shape[0])
-        self.film = FiLM(season_emb_size, out_size)
         self.dropout = nn.Dropout(dropout)
         self.residual = residual
 
-    def forward(self, x, season_emb):
+    def forward(self, x):
         y = self.graph_conv(x)
         y = self.batch_norm(y)
-        y = self.film(y, season_emb)
         y = F.relu(y)
         y = self.dropout(y)
         if self.residual:
@@ -643,23 +637,6 @@ class GraphConv(nn.Module):
         x += self.b
 
         return x
-
-
-class FiLM(nn.Module):
-    def __init__(self, season_emb_size, out_size):
-        super().__init__()
-        self.W_gamma = nn.Linear(season_emb_size, out_size)
-        self.W_beta = nn.Linear(season_emb_size, out_size)
-
-    def forward(self, x, season_emb):
-        """Modulate x by gamma/beta calculated from power/season embeddings
-
-        x -> (B, out_size)
-        season_emb -> (B, season_emb_size)
-        """
-        gamma = self.W_gamma(season_emb).unsqueeze(1)
-        beta = self.W_beta(season_emb).unsqueeze(1)
-        return gamma * x + beta
 
 
 class ValueDecoder(nn.Module):
