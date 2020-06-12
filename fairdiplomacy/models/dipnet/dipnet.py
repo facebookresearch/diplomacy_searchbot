@@ -70,9 +70,11 @@ class DipNet(nn.Module):
     def forward(
         self,
         x_bo,
+        x_bp,
         x_po,
         x_season_1h,
         in_adj_phase,
+        x_build_numbers,
         loc_idxs,
         cand_idxs,
         temperature,
@@ -83,9 +85,11 @@ class DipNet(nn.Module):
         """
         Arguments:
         - x_bo: [B, 81, 35]
+        - x_pb: [B, 81, 35]
         - x_po: [B, 81, 40]
         - x_season_1h: [B, 3]
         - in_adj_phase: [B], bool
+        - x_build_numbers: [B, 7]
         - loc_idxs: int8, [B, 81] or [B, 7, 81]
         - all_cand_idxs: long, [B, S, 469] or [B, 7, S, 469]
         - temperature: softmax temp, lower = more deterministic; must be either
