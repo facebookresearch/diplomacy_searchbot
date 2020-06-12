@@ -18,7 +18,7 @@ message DipnetAgent {
   optional float temperature = 2;
 
   // Optional. Share of probability mass to keep for sampling.
-  optional float top_p = 3 [default = 1.0];
+  optional float top_p = 3 [ default = 1.0 ];
 }
 
 message CFR1PAgent {
@@ -74,7 +74,8 @@ message CFR1PAgent {
   optional float rollout_top_p = 16;
 
   // Optional, limit number of actions to consider as a ratio of # units
-  // # plausible actions = min(ceil(max_actions_units_ratio * #units), n_plausible_orders)
+  // # plausible actions = min(ceil(max_actions_units_ratio * #units),
+  // n_plausible_orders)
   optional float max_actions_units_ratio = 17 [ default = -1 ];
 
   // Optional, if True, sample from final iter instead of average iter
@@ -170,8 +171,8 @@ message CE1PAgent {
 }
 
 message ReproAgent {
-    // Required, path to game.json file
-    optional string game_path = 1;
+  // Required, path to game.json file
+  optional string game_path = 1;
 }
 
 message Agent {
@@ -245,8 +246,9 @@ message CompareAgentsTask {
   optional string out = 6;
   optional int32 seed = 7 [ default = 0 ];
 
-  optional int32 num_processes = 90 [ default = 0 ];  // for data collection only!
-  optional int32 num_trials = 91 [ default = 0 ];  // for data collection only!
+  optional int32 num_processes = 90
+      [ default = 0 ];                            // for data collection only!
+  optional int32 num_trials = 91 [ default = 0 ]; // for data collection only!
   optional Launcher launcher = 100;
 }
 
@@ -328,7 +330,7 @@ message TrainTask {
 
   // Minimal score (num SC) of the at the enf of the game needed to include the
   // power into the training set.
-  optional int32 only_with_min_final_score = 26 [default = 7];
+  optional int32 only_with_min_final_score = 26 [ default = 7 ];
 
   // Value head dropout pct.
   optional float value_dropout = 27;
@@ -444,7 +446,8 @@ message ExploitTask {
     optional int32 server_procs_per_gpu = 12 [ default = 1 ];
 
     message Reward {
-      // Required. Name of the score metric from fairdiplomacy.utils.game_scoring.
+      // Required. Name of the score metric from
+      // fairdiplomacy.utils.game_scoring.
       optional string score_name = 1;
 
       // Optional. Penalty for each move to encourage shorter games.
@@ -490,9 +493,10 @@ message ExploitTask {
     // Optional. Save checkpoint every so many iterations.
     optional int32 save_checkpoint_every = 3;
     // Optional. Communicate current ckpt to inference workers every so often.
-    optional int32 save_sync_checkpoint_every = 4 [default = 1];
-    // Optional. Debugging option. Stop updating model after this number of updates.
-    optional int32 max_updates = 5 [default = 0];
+    optional int32 save_sync_checkpoint_every = 4 [ default = 1 ];
+    // Optional. Debugging option. Stop updating model after this number of
+    // updates.
+    optional int32 max_updates = 5 [ default = 0 ];
     // Optional. If set, will train a model being in eval mode.
     optional bool train_as_eval = 6;
     optional bool train_encoder_as_eval = 7;
@@ -505,7 +509,7 @@ message ExploitTask {
   optional Trainer trainer = 6;
 
   // Optional. If positive, will set random seed for torch on the main process.
-  optional int32 seed = 9 [default = -1];
+  optional int32 seed = 9 [ default = -1 ];
 
   // Arbitraty comment. Could use to make a "re" run for the same config and
   // changed code.
@@ -523,7 +527,7 @@ message BuildDbCacheTask {
 
   // Minimal score (num SC) of the at the end of the game needed to include the
   // power into the training set.
-  optional uint32 only_with_min_final_score = 3 [default = 7];
+  optional uint32 only_with_min_final_score = 3 [ default = 7 ];
 
   // Optional. If specified, use this agent's orders instead of the orders in
   // the game.json
@@ -535,7 +539,6 @@ message BuildDbCacheTask {
 
   // Optional, # of parallel encoding processes. Default = #cpu
   optional int32 n_parallel_jobs = 6 [ default = -1 ];
-
 }
 
 // Root config to compare agents.
