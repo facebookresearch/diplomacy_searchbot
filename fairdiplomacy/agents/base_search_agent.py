@@ -320,7 +320,7 @@ class BaseSearchAgent(BaseAgent):
                 ],
             )
         )
-        logging.debug(
+        logging.getLogger("timings").debug(
             "Timings[avg.do_rollout, n={}*{}, len={}] {}".format(
                 len(set_orders_dicts),
                 average_n_rollouts,

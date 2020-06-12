@@ -101,6 +101,13 @@ def situation_check(cfg):
     run_situation_check(meta, agent)
 
 
+@_register
+def benchmark_agent(cfg):
+    import fairdiplomacy.benchmark_agent
+
+    fairdiplomacy.benchmark_agent.run(cfg)
+
+
 @heyhi.save_result_in_cwd
 def main(task, cfg):
     heyhi.setup_logging()

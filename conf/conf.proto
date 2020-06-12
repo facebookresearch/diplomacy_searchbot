@@ -549,6 +549,17 @@ message SituationCheckTask {
   optional string selection = 4;
   optional Launcher launcher = 100;
 }
+
+message BenchmarkAgent {
+  optional Agent agent = 1;
+  // Game json to test on. If not set, initial state is used.
+  repeated string game_jsons = 2;
+  optional int32 seed = 3 [ default = 0 ];
+  optional int32 repeats = 4;
+
+  optional Launcher launcher = 100;
+}
+
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -575,6 +586,7 @@ message MetaCfg {
     ExploitTask exploit = 104;
     BuildDbCacheTask build_db_cache = 105;
     SituationCheckTask situation_check = 106;
+    BenchmarkAgent benchmark_agent = 107;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

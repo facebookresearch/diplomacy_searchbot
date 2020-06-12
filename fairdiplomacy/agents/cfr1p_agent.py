@@ -7,7 +7,7 @@ from typing import List, Tuple, Dict
 
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.utils.timing_ctx import TimingCtx
+from fairdiplomacy.selfplay.metrics import MultiStopWatchTimer
 from fairdiplomacy.utils.sampling import sample_p_dict
 
 
@@ -137,9 +137,11 @@ class CFR1PAgent(BaseSearchAgent):
                 }
             }
 
-        timings = TimingCtx()
+        timing_logger = logging.getLogger("timing")
+        timings = MultiStopWatchTimer()
         iter_weight = 0.0
         for cfr_iter in range(self.n_rollouts):
+            timings.start("start")
 
             if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 4):
                 for pwr, actions in power_plausible_orders.items():
@@ -199,6 +201,7 @@ class CFR1PAgent(BaseSearchAgent):
                     self.cum_regrets[(pwr, action)] *= discount_factor
                     self.cum_sigma[(pwr, action)] *= discount_factor
 
+            timings.start("query_policy")
             # get policy probs for all powers
             power_action_cfr = {
                 pwr: self.strategy(pwr, actions) for (pwr, actions) in power_plausible_orders.items()
@@ -211,6 +214,7 @@ class CFR1PAgent(BaseSearchAgent):
                 )
                 for (pwr, actions) in power_plausible_orders.items()
             }
+            timings.start("apply_orders")
             # sample policy for all powers
             idxs = {
                 pwr: np.random.choice(range(len(action_ps)), p=action_ps)
@@ -236,16 +240,17 @@ class CFR1PAgent(BaseSearchAgent):
 
             # run rollouts or get from cache
             def on_miss():
-                with timings("distribute_rollouts"):
-                    return self.distribute_rollouts(
-                        game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
-                    )
+                return self.distribute_rollouts(
+                    game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
+                )
 
+            timings.start("distribute_rollouts")
             all_rollout_results = (
                 rollout_results_cache.get(set_orders_dicts, on_miss)
                 if self.cache_rollout_results
                 else on_miss()
             )
+            timings.start("update")
             if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
                 logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] Power sampled orders:")
                 for power, (orders, _) in power_sampled_orders.items():
@@ -315,13 +320,11 @@ class CFR1PAgent(BaseSearchAgent):
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
 
-            logging.debug(
-                f"Timing[cfr_iter {cfr_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
-            )
-            timings.clear()
-
             if self.cache_rollout_results and (cfr_iter + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
+        timing_logger.debug(
+            f"Timing[cfr_iter {cfr_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
+        )
 
         # return prob. distributions for each power
         ret = {}

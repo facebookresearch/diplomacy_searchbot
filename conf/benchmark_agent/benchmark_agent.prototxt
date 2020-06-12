@@ -1,0 +1,5 @@
+includes { path: "agents/cfr1p"; mount: "agent"; }
+benchmark_agent {
+    seed: 0
+    repeats: 1
+}

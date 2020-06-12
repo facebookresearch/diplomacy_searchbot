@@ -96,6 +96,16 @@ class MultiStopWatchTimer:
             self.start(self._name)
         return self._timings
 
+    def items(self):
+        return self.timings.items()
+
+    def __repr__(self):
+        timings = self.timings
+        return dict(
+            total=sum(timings.values()),
+            **dict(sorted(timings.items(), key=lambda kv: kv[1], reverse=True)),
+        ).__repr__()
+
 
 class FractionCounter:
     def __init__(self):
