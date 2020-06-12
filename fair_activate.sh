@@ -4,8 +4,10 @@
 if hostname | grep -q fair; then
     # Fair cluster, not needed/supported for AWS.
     module load anaconda3/5.0.1
-    module load cudnn/v7.3-cuda.9.2
-    module load cuda/9.2
+    #module load cudnn/v7.3-cuda.9.2
+    module load cudnn/v7.6.5.32-cuda.10.1
+    #module load cuda/9.2
+    module load cuda/10.1
     module load singularity/3.4.1/gcc.7.3.0
 fi
 
