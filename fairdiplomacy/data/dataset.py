@@ -21,6 +21,7 @@ from fairdiplomacy.utils.sampling import sample_p_dict
 
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULARY)}
+LOC_IDX = {loc: idx for idx, loc in enumerate(LOCS)}
 MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
@@ -102,7 +103,7 @@ class Dataset(torch.utils.data.Dataset):
 
         cum_games = torch.LongTensor([0] + [d.num_games for d in datasets]).cumsum(dim=0)
         cum_phases = torch.LongTensor([0] + [d.num_phases for d in datasets]).cumsum(dim=0)
-        cum_elements = torch.LongTensor([0] + [d.num_elements for d in datasets]).cumsum(dim=0)
+        # cum_elements = torch.LongTensor([0] + [d.num_elements for d in datasets]).cumsum(dim=0)
 
         r = Dataset([], n_jobs=1, n_cf_agent_samples=datasets[0].n_cf_agent_samples)
         r.n_cf_agent_samples = datasets[0].n_cf_agent_samples
@@ -168,6 +169,8 @@ class Dataset(torch.utils.data.Dataset):
 
         # cast fields
         for i in range(len(fields) - 4):
+            if i == 2:  # prev_order indexes
+                continue
             fields[i] = fields[i].to(torch.float32)
         for i in [8, 10]:
             fields[i] = fields[i].to(torch.long)
@@ -197,7 +200,7 @@ def encode_game(
     L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
     [0] board_state: shape=(L, 81, 35)
     [1] prev_state: shape=(L, 81, 35)
-    [2] prev_orders: shape=(L, 81, 40)
+    [2] prev_orders: shape=(L, 2, 100), dtype=long
     [3] power: shape=(L, 7, 7)
     [4] season: shape=(L, 3)
     [5] in_adj_phase: shape=(L, 1)
@@ -254,7 +257,7 @@ def encode_phase(
     Return: tuple of tensors
     - board_state: shape=(81, 35)
     - prev_state: shape=(81, 35)
-    - prev_orders: shape=(81, 40)
+    - prev_orders: shape=(2, 100)
     - power: shape=(7, 7)
     - season: shape=(3,)
     - in_adj_phase: shape=(1,)
@@ -273,20 +276,36 @@ def encode_phase(
     x_board_state = torch.from_numpy(x_board_state).to(bool)
 
     # encode prev movement orders
-    prev_move_phases = [
-        p
-        for i, p in enumerate(game.get_phase_history())
-        if i < phase_idx and str(p.name).endswith("M")
-    ]
-    if len(prev_move_phases) > 0:
-        move_phase = prev_move_phases[-1]
-        x_prev_state = board_state_to_np(move_phase.state)
-        x_prev_state = torch.from_numpy(x_prev_state).to(bool)
-        x_prev_orders = prev_orders_to_np(move_phase)
-        x_prev_orders = torch.from_numpy(x_prev_orders).to(bool)
+    # prev_move_phases = [
+    #     p
+    #     for i, p in enumerate(game.get_phase_history())
+    #     if i < phase_idx and str(p.name).endswith("M")
+    # ]
+    prev_phases = []
+    phase_history = game.get_phase_history()
+    for i in range(phase_idx - 1, -1, -1):
+        p = phase_history[i]
+        prev_phases.append(p)
+        if p.name.endswith("M"):
+            break
+
+    # print('LOCS0', LOCS[0])
+    x_prev_orders = torch.zeros(2, 100, dtype=torch.long)
+    # print(phase_name, 'prev_phases', len(prev_phases))
+
+    if len(prev_phases) > 0:
+        prev_orders, prev_order_locs = [], []
+        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1].state)).to(bool)
+        for phase in prev_phases:
+            # print(phase.name, phase.orders)
+            for pwr in phase.orders:
+                prev_orders += [ORDER_VOCABULARY_TO_IDX[o] for o in phase.orders[pwr] if o in ORDER_VOCABULARY_TO_IDX]
+                prev_order_locs += [LOC_IDX[o.split()[1]] for o in phase.orders[pwr] if o in ORDER_VOCABULARY_TO_IDX]
+        num_orders = len(prev_orders)
+        x_prev_orders[0, :num_orders] = torch.tensor(prev_orders, dtype=torch.long)
+        x_prev_orders[1, :num_orders] = torch.tensor(prev_order_locs, dtype=torch.long)
     else:
         x_prev_state = torch.zeros(81, 35, dtype=torch.bool)
-        x_prev_orders = torch.zeros(81, 40, dtype=torch.bool)
 
     # encode powers one-hot
     x_power = torch.eye(len(POWERS), dtype=torch.bool)
