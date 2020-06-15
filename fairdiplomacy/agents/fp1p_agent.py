@@ -36,7 +36,7 @@ class FP1PAgent(BaseSearchAgent):
         n_rollout_procs,
         max_actions_units_ratio=None,
         plausible_orders_req_size=None,
-        bp_iters=0,
+        bp_iters=10,
         bp_prob=0,
         **kwargs,
     ):
@@ -261,9 +261,9 @@ class FP1PAgent(BaseSearchAgent):
                 #     else:
                 #         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
 
-            # if self.enable_compute_nash_conv and fp_iter in (24, 49, 99, 199, 399, self.n_rollouts - 1):
-            #     logging.info(f"Computing nash conv for iter {fp_iter}")
-            #     self.compute_nash_conv(fp_iter, game, power_plausible_orders)
+            if self.enable_compute_nash_conv and fp_iter in (24, 49, 99, 199, 399, self.n_rollouts - 1):
+                logging.info(f"Computing nash conv for iter {fp_iter}")
+                self.compute_nash_conv(fp_iter, game, power_plausible_orders)
 
             logging.debug(
                 f"Timing[fp_iter {fp_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
@@ -287,13 +287,13 @@ class FP1PAgent(BaseSearchAgent):
     #     except KeyError:
     #         return [1.0 / len(actions) for _ in actions]
 
-    # def avg_strategy(self, power, actions) -> List[float]:
-    #     sigmas = [self.cum_sigma[(power, a)] for a in actions]
-    #     sum_sigmas = sum(sigmas)
-    #     if sum_sigmas == 0:
-    #         return [1 / len(actions) for _ in actions]
-    #     else:
-    #         return [s / sum_sigmas for s in sigmas]
+    def avg_strategy(self, power, actions) -> List[float]:
+        sigmas = [self.cum_sigma[(power, a)] for a in actions]
+        sum_sigmas = sum(sigmas)
+        if sum_sigmas == 0:
+            return [1 / len(actions) for _ in actions]
+        else:
+            return [s / sum_sigmas for s in sigmas]
 
     # def bp_strategy(self, power, actions) -> List[float]:
     #     sigmas = [self.bp_sigma[(power, a)] for a in actions]
@@ -301,114 +301,114 @@ class FP1PAgent(BaseSearchAgent):
     #     assert len(actions) == 0 or sum_sigmas > 0, f"{actions} {self.bp_sigma}"
     #     return [s / sum_sigmas for s in sigmas]
 
-    # def compute_nash_conv(self, fp_iter, game, power_plausible_orders):
-    #     """For each power, compute EV of each action assuming opponent ave policies"""
+    def compute_nash_conv(self, fp_iter, game, power_plausible_orders):
+        """For each power, compute EV of each action assuming opponent ave policies"""
 
-    #     # get policy probs for all powers
-    #     power_action_ps: Dict[Power, List[float]] = {
-    #         pwr: self.avg_strategy(pwr, actions)
-    #         for (pwr, actions) in power_plausible_orders.items()
-    #     }
-    #     logging.info("Policies: {}".format(power_action_ps))
+        # get policy probs for all powers
+        power_action_ps: Dict[Power, List[float]] = {
+            pwr: self.avg_strategy(pwr, actions)
+            for (pwr, actions) in power_plausible_orders.items()
+        }
+        logging.info("Policies: {}".format(power_action_ps))
 
-    #     total_action_utilities: Dict[Tuple[Power, Action], float] = defaultdict(float)
-    #     temp_action_utilities: Dict[Tuple[Power, Action], float] = defaultdict(float)
-    #     total_state_utility: Dict[Power, float] = defaultdict(float)
-    #     max_state_utility: Dict[Power, float] = defaultdict(float)
-    #     for pwr, actions in power_plausible_orders.items():
-    #         total_state_utility[pwr] = 0
-    #         max_state_utility[pwr] = 0
-    #     # total_state_utility = [0 for u in idxs]
-    #     nash_conv = 0
-    #     br_iters = 100
-    #     for _ in range(br_iters):
-    #         # sample policy for all powers
-    #         idxs = {
-    #             pwr: np.random.choice(range(len(action_ps)), p=action_ps)
-    #             for pwr, action_ps in power_action_ps.items()
-    #             if len(action_ps) > 0
-    #         }
-    #         power_sampled_orders: Dict[Power, Tuple[Action, float]] = {
-    #             pwr: (
-    #                 (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
-    #                 if pwr in idxs
-    #                 else ((), 1.0)
-    #             )
-    #             for pwr, action_ps in power_action_ps.items()
-    #         }
+        total_action_utilities: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        temp_action_utilities: Dict[Tuple[Power, Action], float] = defaultdict(float)
+        total_state_utility: Dict[Power, float] = defaultdict(float)
+        max_state_utility: Dict[Power, float] = defaultdict(float)
+        for pwr, actions in power_plausible_orders.items():
+            total_state_utility[pwr] = 0
+            max_state_utility[pwr] = 0
+        # total_state_utility = [0 for u in idxs]
+        nash_conv = 0
+        br_iters = 100
+        for _ in range(br_iters):
+            # sample policy for all powers
+            idxs = {
+                pwr: np.random.choice(range(len(action_ps)), p=action_ps)
+                for pwr, action_ps in power_action_ps.items()
+                if len(action_ps) > 0
+            }
+            power_sampled_orders: Dict[Power, Tuple[Action, float]] = {
+                pwr: (
+                    (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
+                    if pwr in idxs
+                    else ((), 1.0)
+                )
+                for pwr, action_ps in power_action_ps.items()
+            }
 
-    #         # for each power: compare all actions against sampled opponent action
-    #         set_orders_dicts = [
-    #             {**{p: a for p, (a, _) in power_sampled_orders.items()}, pwr: action}
-    #             for pwr, actions in power_plausible_orders.items()
-    #             for action in actions
-    #         ]
-    #         all_rollout_results = self.distribute_rollouts(
-    #             game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
-    #         )
+            # for each power: compare all actions against sampled opponent action
+            set_orders_dicts = [
+                {**{p: a for p, (a, _) in power_sampled_orders.items()}, pwr: action}
+                for pwr, actions in power_plausible_orders.items()
+                for action in actions
+            ]
+            all_rollout_results = self.distribute_rollouts(
+                game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
+            )
 
-    #         for pwr, actions in power_plausible_orders.items():
-    #             if len(actions) == 0:
-    #                 continue
+            for pwr, actions in power_plausible_orders.items():
+                if len(actions) == 0:
+                    continue
 
-    #             # pop this power's results
-    #             results, all_rollout_results = (
-    #                 all_rollout_results[: len(actions)],
-    #                 all_rollout_results[len(actions) :],
-    #             )
+                # pop this power's results
+                results, all_rollout_results = (
+                    all_rollout_results[: len(actions)],
+                    all_rollout_results[len(actions) :],
+                )
 
-    #             for r in results:
-    #                 action = r[0][pwr]
-    #                 val = r[1][pwr]
-    #                 temp_action_utilities[(pwr, action)] = val
-    #                 total_action_utilities[(pwr, action)] += val
-    #             # logging.info("results for power={}".format(pwr))
-    #             # for i in range(len(power_plausible_orders[pwr])):
-    #             #     action = power_plausible_orders[pwr][i]
-    #             #     util = action_utilities[i]
-    #             #     logging.info("{} {} = {}".format(pwr,action,util))
+                for r in results:
+                    action = r[0][pwr]
+                    val = r[1][pwr]
+                    temp_action_utilities[(pwr, action)] = val
+                    total_action_utilities[(pwr, action)] += val
+                # logging.info("results for power={}".format(pwr))
+                # for i in range(len(power_plausible_orders[pwr])):
+                #     action = power_plausible_orders[pwr][i]
+                #     util = action_utilities[i]
+                #     logging.info("{} {} = {}".format(pwr,action,util))
 
-    #             # for action in power_plausible_orders[pwr]:
-    #             #     logging.info("{} {} = {}".format(pwr,action,action_utilities))
-    #             # logging.info("action utilities={}".format(action_utilities))
-    #             # logging.info("Results={}".format(results))
-    #             # state_utility = np.dot(power_action_ps[pwr], action_utilities)
-    #             # action_regrets = [(u - state_utility) for u in action_utilities]
-    #             # logging.info("Action utilities={}".format(temp_action_utilities))
-    #             # for action in actions:
-    #             #     total_action_utilities[(pwr,action)] += temp_action_utilities[(pwr,action)]
-    #             # logging.info("Total action utilities={}".format(total_action_utilities))
-    #             # total_state_utility[pwr] += state_utility
-    #     # total_state_utility[:] = [x / 100 for x in total_state_utility]
-    #     for pwr, actions in power_plausible_orders.items():
-    #         # ps = self.avg_strategy(pwr, power_plausible_orders[pwr])
-    #         for i in range(len(actions)):
-    #             action = actions[i]
-    #             total_action_utilities[(pwr, action)] /= br_iters
-    #             if total_action_utilities[(pwr, action)] > max_state_utility[pwr]:
-    #                 max_state_utility[pwr] = total_action_utilities[(pwr, action)]
-    #             total_state_utility[pwr] += (
-    #                 total_action_utilities[(pwr, action)] * power_action_ps[pwr][i]
-    #             )
+                # for action in power_plausible_orders[pwr]:
+                #     logging.info("{} {} = {}".format(pwr,action,action_utilities))
+                # logging.info("action utilities={}".format(action_utilities))
+                # logging.info("Results={}".format(results))
+                # state_utility = np.dot(power_action_ps[pwr], action_utilities)
+                # action_regrets = [(u - state_utility) for u in action_utilities]
+                # logging.info("Action utilities={}".format(temp_action_utilities))
+                # for action in actions:
+                #     total_action_utilities[(pwr,action)] += temp_action_utilities[(pwr,action)]
+                # logging.info("Total action utilities={}".format(total_action_utilities))
+                # total_state_utility[pwr] += state_utility
+        # total_state_utility[:] = [x / 100 for x in total_state_utility]
+        for pwr, actions in power_plausible_orders.items():
+            # ps = self.avg_strategy(pwr, power_plausible_orders[pwr])
+            for i in range(len(actions)):
+                action = actions[i]
+                total_action_utilities[(pwr, action)] /= br_iters
+                if total_action_utilities[(pwr, action)] > max_state_utility[pwr]:
+                    max_state_utility[pwr] = total_action_utilities[(pwr, action)]
+                total_state_utility[pwr] += (
+                    total_action_utilities[(pwr, action)] * power_action_ps[pwr][i]
+                )
 
-    #     for pwr, actions in power_plausible_orders.items():
-    #         logging.info(
-    #             "results for power={} value={} diff={}".format(
-    #                 pwr,
-    #                 total_state_utility[pwr],
-    #                 (max_state_utility[pwr] - total_state_utility[pwr]),
-    #             )
-    #         )
-    #         nash_conv += max_state_utility[pwr] - total_state_utility[pwr]
-    #         for i in range(len(actions)):
-    #             action = actions[i]
-    #             logging.info(
-    #                 "{} {} = {} (prob {})".format(
-    #                     pwr, action, total_action_utilities[(pwr, action)], power_action_ps[pwr][i]
-    #                 )
-    #             )
+        for pwr, actions in power_plausible_orders.items():
+            logging.info(
+                "results for power={} value={} diff={}".format(
+                    pwr,
+                    total_state_utility[pwr],
+                    (max_state_utility[pwr] - total_state_utility[pwr]),
+                )
+            )
+            nash_conv += max_state_utility[pwr] - total_state_utility[pwr]
+            for i in range(len(actions)):
+                action = actions[i]
+                logging.info(
+                    "{} {} = {} (prob {})".format(
+                        pwr, action, total_action_utilities[(pwr, action)], power_action_ps[pwr][i]
+                    )
+                )
 
-    #     logging.info(f"Nash conv for iter {fp_iter} = {nash_conv}")
+        logging.info(f"Nash conv for iter {fp_iter} = {nash_conv}")
 
 
 def _map2(N1, N2, F):
