@@ -71,17 +71,17 @@ def make_ratings_table(db):
 
     def make_stats_dict(user_id):
         return {
-            **user_stats[u],
-            "trueskill_mean": ratings[u].mu,
-            "trueskill_std": ratings[u].sigma,
+            **user_stats[user_id],
+            "trueskill_mean": ratings[user_id].mu,
+            "trueskill_std": ratings[user_id].sigma,
         }
-
+    WIN_STATI = ('Won', 'Drawn')
     game_stats = {}
     for ii, game_id in enumerate(good_games):
-        if ii & (ii + 1) == 0:
+        if ii & (ii - 1) == 0:
             print(f"Done {ii} / {len(good_games)} games")
         # FIXME: correct for power?
-        user_ids, ranks = [], []
+        user_ids, ranks, winners = [], [], []
         for country_id in range(1, 7 + 1):
             k = (game_id, country_id)
             if k in member_dict:
@@ -91,9 +91,14 @@ def make_ratings_table(db):
                 if member_row.status not in STATUS_TO_RANK:
                     continue
                 this_user_stats[member_row.status] += 1
-
+                if member_row.status in WIN_STATI:
+                    winners.append(this_user_stats)
                 user_ids.append(member_dict[k].user)
                 ranks.append(STATUS_TO_RANK[member_dict[k].status])
+
+        # allot points to winners
+        for winner in winners:
+            winner["points"] += 1. / len(winners)
 
         # each user is on their own team
         if len(user_ids) > 1:
@@ -116,6 +121,7 @@ def make_ratings_table(db):
                 this_game_stats[pwr] = {
                     "id": u,
                     "cur": make_stats_dict(u),
+                    "points": 1. / len(winners) if member_row.status in WIN_STATI else 0,
                     "status": member_row.status,
                 }
             else:
@@ -136,7 +142,8 @@ def make_ratings_table(db):
                 u = member_row.user
                 this_game_stats[pwr]['final'] = make_stats_dict(u)
 
-    return game_stats
+    user_stats = [{**make_stats_dict(u), "id": u} for u in range(max_userid) if user_stats[u]['total'] > 0]
+    return game_stats, user_stats
 
 
 if __name__ == "__main__":
@@ -151,7 +158,14 @@ if __name__ == "__main__":
 
     db = sqlite3.connect(args.db_path)
 
-    game_stats = make_ratings_table(db)
+    game_stats, user_stats = make_ratings_table(db)
 
     with open(args.out, "w") as f:
         json.dump(game_stats, f)
+
+    with open(os.path.dirname(args.out) + '/user_stats.json', "w") as f:
+        json.dump(user_stats, f)
+        # keys = list(user_stats[0].keys())
+        # f.write(" ".join(keys) + "\n")
+        # for user in user_stats:
+        #     f.write(" ".join(str(user[k]) if k in user else '0' for k in keys) + "\n")

@@ -42,9 +42,17 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     assert p_teacher_force == 1
     device = next(net.parameters()).device
 
-    x_state, x_orders, x_power, x_season, x_in_adj_phase, y_final_scores, x_possible_actions, x_loc_idxs, y_actions = (
-        batch
-    )
+    (
+        x_state,
+        x_orders,
+        x_power,
+        x_season,
+        x_in_adj_phase,
+        y_final_scores,
+        x_possible_actions,
+        x_loc_idxs,
+        y_actions,
+    ) = batch
 
     # forward pass
     teacher_force_orders = (
@@ -330,7 +338,14 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            valid_loss, valid_p_loss, valid_v_loss, valid_p_accuracy, valid_v_accuracy, split_pcts = validate(
+            (
+                valid_loss,
+                valid_p_loss,
+                valid_v_loss,
+                valid_p_accuracy,
+                valid_v_accuracy,
+                split_pcts,
+            ) = validate(
                 net,
                 val_set,
                 policy_loss_fn,
@@ -399,21 +414,35 @@ def run_with_cfg(args):
         logger.info(f"Found dataset cache at {args.data_cache}")
         train_dataset, val_dataset = torch.load(args.data_cache)
     else:
+        assert args.metadata_path is not None
         assert args.data_dir is not None
-        game_jsons = glob.glob(os.path.join(args.data_dir, "**/*.json"), recursive=True)
-        assert len(game_jsons) > 0
-        logger.info(f"Found dataset of {len(game_jsons)} games...")
-        val_game_jsons = random.sample(game_jsons, max(1, int(len(game_jsons) * args.val_set_pct)))
-        train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
+        with open(args.metadata_path) as meta_f:
+            game_metadata = json.load(meta_f)
+
+        # convert to int game keys
+        game_metadata = {int(k): v for k, v in game_metadata.items()}
+        game_ids = list(game_metadata.keys())
+
+        if args.max_games > 0:
+            game_ids = game_ids[:args.max_games]
+
+        assert len(game_ids) > 0
+        logger.info(f"Found dataset of {len(game_ids)} games...")
+        val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * args.val_set_pct)))
+        train_game_ids = list(set(game_ids) - set(val_game_ids))
 
         train_dataset = Dataset(
-            train_game_jsons,
+            game_ids=train_game_ids,
+            data_dir=args.data_dir,
+            game_metadata=game_metadata,
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
         )
         val_dataset = Dataset(
-            val_game_jsons,
+            game_ids=val_game_ids,
+            data_dir=args.data_dir,
+            game_metadata=game_metadata,
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,

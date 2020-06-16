@@ -425,6 +425,12 @@ message TrainTask {
   // Factor used in exponential weighted average of sum of squares scores
   optional float value_decay_alpha = 28 [ default = 1.0 ];
 
+  // Path to file containing game metadata.
+  optional string metadata_path = 29;
+
+  // Max gamesto include in dataset (for testing only)
+  optional int32 max_games = 30 [default = -1];
+
   optional Launcher launcher = 1000;
 }
 

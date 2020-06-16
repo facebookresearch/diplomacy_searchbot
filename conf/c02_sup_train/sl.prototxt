@@ -1,6 +1,8 @@
 train {
-    data_dir: "/checkpoint/jsgray/diplomacy/mila_dataset/data";
-    data_cache: "/checkpoint/jsgray/diplomacy/data_cache_candidx_expw.9.pt",
+    data_dir: "/checkpoint/alerer/fairdiplomacy/facebook_notext/games";
+    data_cache: "/checkpoint/alerer/fairdiplomacy/facebook_notext/data_cache1.pt";
+    metadata_path: "/checkpoint/alerer/fairdiplomacy/facebook_notext/metadata.json";
+
     num_dataloader_workers: 20;
     batch_size: 2500;
     lr: 0.001;

@@ -2,9 +2,10 @@ import diplomacy
 import joblib
 import json
 import logging
+import os
 import torch
 from itertools import combinations, product
-from typing import Union, List, Optional, Tuple
+from typing import Any, Dict, Union, List, Optional, Tuple
 
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
@@ -27,7 +28,10 @@ MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        game_json_paths: List[str],
+        *,
+        game_ids: List[int],
+        data_dir: str,
+        game_metadata: Dict[int, Any],
         debug_only_opening_phase=False,
         only_with_min_final_score=7,
         n_jobs=20,
@@ -35,26 +39,32 @@ class Dataset(torch.utils.data.Dataset):
         cf_agent=None,
         n_cf_agent_samples=1,
     ):
-        self.game_json_paths = game_json_paths
+        self.game_ids = game_ids
+        self.data_dir = data_dir
+        self.game_metadata = game_metadata
         self.n_cf_agent_samples = n_cf_agent_samples
         assert not debug_only_opening_phase, "FIXME"
 
         logging.info(
-            f"Building dataset from {len(game_json_paths)} games, only_with_min_final_score={only_with_min_final_score} value_decay_alpha={value_decay_alpha} cf_agent={cf_agent}"
+            f"Building dataset from {len(game_ids)} games, only_with_min_final_score={only_with_min_final_score} value_decay_alpha={value_decay_alpha} cf_agent={cf_agent}"
         )
 
         torch.set_num_threads(1)
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(encode_game)(
-                p,
+                f"{data_dir}/game_{game_id}.json",
                 only_with_min_final_score=only_with_min_final_score,
                 cf_agent=cf_agent,
                 n_cf_agent_samples=n_cf_agent_samples,
                 value_decay_alpha=value_decay_alpha,
             )
-            for p in game_json_paths
+            for game_id in game_ids
         )
-        logging.info(f"Got {len(encoded_games)} games")
+        encoded_games = [
+            g for g in encoded_games if g is not None
+        ]  # remove "empty" games (e.g. json didn't exist)
+
+        logging.info(f"Found datafor {len(encoded_games)} / {len(game_ids)} games")
 
         encoded_games = [g for g in encoded_games if g[-1][0].any()]
         logging.info(f"{len(encoded_games)} games had data for at least one power")
@@ -102,7 +112,7 @@ class Dataset(torch.utils.data.Dataset):
 
         cum_games = torch.LongTensor([0] + [d.num_games for d in datasets]).cumsum(dim=0)
         cum_phases = torch.LongTensor([0] + [d.num_phases for d in datasets]).cumsum(dim=0)
-        cum_elements = torch.LongTensor([0] + [d.num_elements for d in datasets]).cumsum(dim=0)
+        # cum_elements = torch.LongTensor([0] + [d.num_elements for d in datasets]).cumsum(dim=0)
 
         r = Dataset([], n_jobs=1, n_cf_agent_samples=datasets[0].n_cf_agent_samples)
         r.n_cf_agent_samples = datasets[0].n_cf_agent_samples
@@ -209,9 +219,13 @@ def encode_game(
 
     torch.set_num_threads(1)
     if isinstance(game, str):
-        with open(game) as f:
-            j = json.load(f)
-        game = Game.from_saved_game_format(j)
+        try:
+            with open(game) as f:
+                j = json.load(f)
+            game = Game.from_saved_game_format(j)
+        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+            print(f"Error while loading game at {game}: {e}")
+            return None
 
     num_phases = len(game.state_history)
     logging.info(f"Encoding {game.game_id} with {num_phases} phases")

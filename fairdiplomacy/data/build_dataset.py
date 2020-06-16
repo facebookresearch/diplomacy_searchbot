@@ -177,7 +177,7 @@ def is_good_game(db, game_id):
 
 def find_good_games(db, press_type=None):
     """Yields game ids for games that meet QA criteria"""
-    query = f"SELECT hashed_id FROM {TABLE_GAMES} WHERE variantID=1 AND phase='Finished'"
+    query = f"SELECT hashed_id FROM {TABLE_GAMES} WHERE variantID=1 AND phase='Finished' AND playerTypes='Members'"
     if press_type is not None:
         query += f" AND pressType = '{press_type}"
     for (game_id,) in db.execute(query):
