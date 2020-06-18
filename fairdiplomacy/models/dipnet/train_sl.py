@@ -12,6 +12,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset
 from fairdiplomacy.models.dipnet.load_model import new_model
+from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
@@ -423,8 +424,25 @@ def run_with_cfg(args):
         game_metadata = {int(k): v for k, v in game_metadata.items()}
         game_ids = list(game_metadata.keys())
 
+        # compute min rating
+        if args.min_rating_percentile > 0:
+            ratings = torch.tensor(
+                [
+                    game[pwr]["logit_rating"]
+                    for game in game_metadata.values()
+                    for pwr in POWERS
+                    if pwr in game
+                ]
+            )
+            min_rating = ratings.sort()[0][int(len(ratings) * args.min_rating_percentile)]
+            print(
+                f"Only training on games with min rating of {min_rating} ({args.min_rating_percentile * 100} percentile)"
+            )
+        else:
+            min_rating = -1e9
+
         if args.max_games > 0:
-            game_ids = game_ids[:args.max_games]
+            game_ids = game_ids[: args.max_games]
 
         assert len(game_ids) > 0
         logger.info(f"Found dataset of {len(game_ids)} games...")
@@ -438,6 +456,7 @@ def run_with_cfg(args):
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
+            min_rating=min_rating,
         )
         val_dataset = Dataset(
             game_ids=val_game_ids,
@@ -446,6 +465,7 @@ def run_with_cfg(args):
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
+            min_rating=min_rating,
         )
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")

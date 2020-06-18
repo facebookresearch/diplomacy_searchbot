@@ -38,11 +38,13 @@ class Dataset(torch.utils.data.Dataset):
         value_decay_alpha=1.0,
         cf_agent=None,
         n_cf_agent_samples=1,
+        min_rating=None,
     ):
         self.game_ids = game_ids
         self.data_dir = data_dir
         self.game_metadata = game_metadata
         self.n_cf_agent_samples = n_cf_agent_samples
+        self.min_rating = min_rating
         assert not debug_only_opening_phase, "FIXME"
 
         logging.info(
@@ -57,6 +59,7 @@ class Dataset(torch.utils.data.Dataset):
                 cf_agent=cf_agent,
                 n_cf_agent_samples=n_cf_agent_samples,
                 value_decay_alpha=value_decay_alpha,
+                input_valid_power_idxs=self.get_valid_power_idxs(game_id),
             )
             for game_id in game_ids
         )
@@ -98,6 +101,11 @@ class Dataset(torch.utils.data.Dataset):
                 assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
             else:
                 assert len(e) == self.num_phases
+
+    def get_valid_power_idxs(self, game_id):
+        return [
+            self.game_metadata[game_id][pwr]["logit_rating"] >= self.min_rating for pwr in POWERS
+        ]
 
     @classmethod
     def from_merge(cls, datasets: List["Dataset"]) -> "Dataset":
@@ -194,6 +202,7 @@ def encode_game(
     *,
     cf_agent=None,
     n_cf_agent_samples=1,
+    input_valid_power_idxs,
     value_decay_alpha,
 ):
     """
@@ -202,6 +211,8 @@ def encode_game(
     - only_with_min_final_score: if specified, only encode for powers who
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
+    - input_valid_power_idxs: bool tensor, true if power should a priori be included in
+      the dataset based on e.g. player rating)
 
     Return: tuple of tensors
     L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
@@ -237,6 +248,7 @@ def encode_game(
             cf_agent=cf_agent,
             n_cf_agent_samples=n_cf_agent_samples,
             value_decay_alpha=value_decay_alpha,
+            input_valid_power_idxs=input_valid_power_idxs,
         )
         for phase_idx in range(num_phases)
     ]
@@ -254,6 +266,7 @@ def encode_phase(
     cf_agent=None,
     n_cf_agent_samples=1,
     value_decay_alpha,
+    input_valid_power_idxs,
 ):
     """
     Arguments:
@@ -326,7 +339,8 @@ def encode_phase(
     ]
 
     # encode actions
-    valid_power_idxs = torch.ones(len(POWERS), dtype=torch.bool)
+    valid_power_idxs = torch.tensor(input_valid_power_idxs, dtype=torch.bool)
+    # print('valid_power_idxs', valid_power_idxs)
     y_actions_lst = []
     power_orders_samples = (
         {power: [game.order_history[phase_name].get(power, [])] for power in POWERS}

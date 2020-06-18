@@ -431,6 +431,8 @@ message TrainTask {
   // Max gamesto include in dataset (for testing only)
   optional int32 max_games = 30 [default = -1];
 
+  optional float min_rating_percentile = 31 [default = 0];
+
   optional Launcher launcher = 1000;
 }
 
