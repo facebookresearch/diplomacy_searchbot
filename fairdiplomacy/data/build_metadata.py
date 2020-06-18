@@ -1,18 +1,15 @@
-from pprint import pformat, pprint
 from collections import defaultdict, namedtuple
 import argparse
 import logging
 import os
 import sqlite3
-import time
 import json
 
-import diplomacy
-import joblib
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 from fairdiplomacy.data.build_dataset import find_good_games
-
-from trueskill import Rating, rate
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s]: %(message)s")
 
@@ -37,11 +34,59 @@ COUNTRY_ID_TO_POWER = {
     7: "RUSSIA",
 }
 
-# GameRow = namedtuple('GameRow', 'id pressType')
+
 MemberRow = namedtuple("MemberRow", "user game country status")
-# class UserStats:
-#     def __init__(self):
-#         self.total, self.won, self.draw, self.survived, self.lost = 0, 0, 0, 0, 0
+
+
+def compute_logit_ratings(game_stats, wd=0.1):
+    # 1. construct dataset
+    
+    # 1a. find all u1 > u2 pairs from the game stats
+    dataset = []
+    POWERS = COUNTRY_ID_TO_POWER.values()
+    for game in game_stats.values():
+        for pwr0 in POWERS:
+            p0 = game[pwr0]['points']  
+            id0 = game[pwr0]['id']
+            for pwr1 in POWERS:
+                p1 = game[pwr1]['points']
+                id1 = game[pwr1]['id']
+                if pwr0 == pwr1:
+                    continue
+                if p0 > p1:
+                    dataset.append((id0, id1))
+                if p0 < p1:
+                    dataset.append((id1, id0))
+
+    # 1b. shuffle
+    dataset = torch.tensor(dataset, dtype=torch.long)
+    dataset = dataset[torch.randperm(len(dataset))]
+
+    # 1c. split into train and val
+    N_val = int(len(dataset) * 0.05)
+    val_dataset = dataset[:N_val]
+    train_dataset = dataset[N_val:]
+
+    num_users = dataset.max() + 1
+    user_scores = nn.Parameter(torch.zeros(num_users))
+    optimizer = optim.Adagrad([user_scores], lr=1e0)
+    
+    # cross entropy loss where P(win) = softmax(score0, score1)
+    def L(dataset):
+        return -user_scores[dataset].log_softmax(-1)[:, 0].mean()
+
+    # run gradient descent to optimize the loss
+    for epoch in range(100):
+        optimizer.zero_grad()
+        train_loss = L(train_dataset) + wd * (user_scores**2).mean()
+        train_loss.backward()
+        optimizer.step()
+        with torch.no_grad():
+            val_loss = L(val_dataset)
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch}: Train Loss: {train_loss:.5f}  Val Loss: {val_loss:.5f} Mean: {user_scores.abs().mean():.5f} ( {user_scores.min():.5f} - {user_scores.max():.5f} ) ")
+
+    return user_scores.tolist()
 
 
 def make_ratings_table(db):
@@ -54,34 +99,24 @@ def make_ratings_table(db):
     press_type = {game_id: press_type for game_id, press_type in db.execute(
         f"SELECT hashed_id, pressType from redacted_games"
     ).fetchall()}
+
     user_ids = list(set(r.user for r in member_rows))
 
     max_userid = max(user_ids)
-    ratings = [Rating() for _ in range(max_userid + 1)]  # FIXME: prior?
     user_stats = [defaultdict(float) for _ in range(max_userid + 1)]
 
     member_dict = {(r.game, r.country): r for r in member_rows}
     good_games = list(find_good_games(db))
-    # print(good_games)
 
     print(f"Found {len(good_games)} good games.")
 
-    # randomly shuffle the rows
-    # shuffled_games = [shuffled_games[i] for i in torch.randperm(len(shuffled_games))]
-
-    def make_stats_dict(user_id):
-        return {
-            **user_stats[user_id],
-            "trueskill_mean": ratings[user_id].mu,
-            "trueskill_std": ratings[user_id].sigma,
-        }
     WIN_STATI = ('Won', 'Drawn')
     game_stats = {}
     for ii, game_id in enumerate(good_games):
         if ii & (ii - 1) == 0:
             print(f"Done {ii} / {len(good_games)} games")
-        # FIXME: correct for power?
-        user_ids, ranks, winners = [], [], []
+
+        user_ids, winners = [], []
         for country_id in range(1, 7 + 1):
             k = (game_id, country_id)
             if k in member_dict:
@@ -94,19 +129,10 @@ def make_ratings_table(db):
                 if member_row.status in WIN_STATI:
                     winners.append(this_user_stats)
                 user_ids.append(member_dict[k].user)
-                ranks.append(STATUS_TO_RANK[member_dict[k].status])
 
         # allot points to winners
         for winner in winners:
-            winner["points"] += 1. / len(winners)
-
-        # each user is on their own team
-        if len(user_ids) > 1:
-            new_ratings = rate([(ratings[u],) for u in user_ids], ranks=ranks)
-            # print('new_ratings', new_ratings)
-            # print('ranks', ranks)
-            for u, new_rating in zip(user_ids, new_ratings):
-                ratings[u] = new_rating[0]
+            winner["total_points"] += 1. / len(winners)
 
         this_game_stats = {
             'id': game_id,
@@ -120,14 +146,18 @@ def make_ratings_table(db):
                 u = member_row.user
                 this_game_stats[pwr] = {
                     "id": u,
-                    "cur": make_stats_dict(u),
                     "points": 1. / len(winners) if member_row.status in WIN_STATI else 0,
                     "status": member_row.status,
                 }
             else:
                 this_game_stats[pwr] = None
-        # pprint(this_game_stats)
+
         game_stats[game_id] = this_game_stats
+
+    print("Computing logit scores")
+    ratings = compute_logit_ratings(game_stats)
+    for i in range(len(user_stats)):
+        user_stats[i]['logit_rating'] = ratings[i]
 
     print("Adding final stats")
     for ii, game_id in enumerate(good_games):
@@ -138,11 +168,9 @@ def make_ratings_table(db):
             pwr = COUNTRY_ID_TO_POWER[country_id]
             k = (game_id, country_id)
             if k in member_dict:
-                member_row = member_dict[k]
-                u = member_row.user
-                this_game_stats[pwr]['final'] = make_stats_dict(u)
+                this_game_stats[pwr].update(**user_stats[member_dict[k].user])
 
-    user_stats = [{**make_stats_dict(u), "id": u} for u in range(max_userid) if user_stats[u]['total'] > 0]
+    user_stats = [{**user_stats[u], "id": u} for u in range(max_userid) if user_stats[u]['total'] > 0]
     return game_stats, user_stats
 
 
