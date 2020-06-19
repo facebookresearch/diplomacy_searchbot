@@ -22,6 +22,7 @@ from fairdiplomacy.utils.sampling import sample_p_dict
 
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(ORDER_VOCABULARY)}
+LOC_IDX = {loc: idx for idx, loc in enumerate(LOCS)}
 MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
@@ -76,7 +77,7 @@ class Dataset(torch.utils.data.Dataset):
         x_idx = 0
         for game_idx, encoded_game in enumerate(encoded_games):
             for phase_idx, valid_power_idxs in enumerate(encoded_game[-1]):
-                assert valid_power_idxs.nelement() == 7
+                assert valid_power_idxs.nelement() == len(POWERS)
                 for power_idx in valid_power_idxs.nonzero()[:, 0]:
                     game_idxs.append(game_idx)
                     phase_idxs.append(phase_idx)
@@ -163,31 +164,33 @@ class Dataset(torch.utils.data.Dataset):
         possible_actions_idx = ((x_idx * len(POWERS) + power_idx) * MAX_SEQ_LEN).unsqueeze(
             1
         ) + torch.arange(MAX_SEQ_LEN).unsqueeze(0)
-        x_possible_actions = self.encoded_games[6][possible_actions_idx.view(-1)]
+        x_possible_actions = self.encoded_games[8][possible_actions_idx.view(-1)]
         x_possible_actions_padded = x_possible_actions.to_padded(
             total_length=MAX_VALID_LEN, padding_value=EOS_IDX
         )
-        fields[6] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
+        fields[8] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
 
         assert (
-            len(fields) == 9
+            len(fields) == 11
         ), "If you've changed the fields, make sure to fix all the changed indices"
 
         # for these fields we need to select out the correct power
-        for f in [2, 7, 8]:
+        for f in [3, 9, 10]:
             fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
 
         # for y_actions, select out the correct sample
-        fields[8] = (
-            fields[8]
-            .gather(1, sample_idxs.view(-1, 1, 1).repeat((1, 1, fields[8].shape[2])))
+        fields[10] = (
+            fields[10]
+            .gather(1, sample_idxs.view(-1, 1, 1).repeat((1, 1, fields[10].shape[2])))
             .squeeze(1)
         )
 
         # cast fields
         for i in range(len(fields) - 4):
+            if i == 2:  # prev_order indexes
+                continue
             fields[i] = fields[i].to(torch.float32)
-        for i in [6, 8]:
+        for i in [8, 10]:
             fields[i] = fields[i].to(torch.long)
 
         return fields
@@ -217,15 +220,17 @@ def encode_game(
     Return: tuple of tensors
     L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
     [0] board_state: shape=(L, 81, 35)
-    [1] prev_orders: shape=(L, 81, 40)
-    [2] power: shape=(L, 7, 7)
-    [3] season: shape=(L, 3)
-    [4] in_adj_phase: shape=(L, 1)
-    [5] final_scores: shape=(L, 7)
-    [6] possible_actions: TensorList shape=(L x 7, 17 x 469)
-    [7] loc_idxs: shape=(L, 7, 81), int8
-    [8] actions: shape=(L, 7, N, 17) int order idxs, N=n_cf_agent_samples
-    [9] valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
+    [1] prev_state: shape=(L, 81, 35)
+    [2] prev_orders: shape=(L, 2, 100), dtype=long
+    [3] power: shape=(L, 7, 7)
+    [4] season: shape=(L, 3)
+    [5] in_adj_phase: shape=(L, 1)
+    [6] build_numbers: shape=(L, 7)
+    [7] final_scores: shape=(L, 7)
+    [8] possible_actions: TensorList shape=(L x 7, 17 x 469)
+    [9] loc_idxs: shape=(L, 7, 81), int8
+    [10] actions: shape=(L, 7, N, 17) int order idxs, N=n_cf_agent_samples
+    [11] valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
     """
 
     torch.set_num_threads(1)
@@ -278,10 +283,12 @@ def encode_phase(
 
     Return: tuple of tensors
     - board_state: shape=(81, 35)
-    - prev_orders: shape=(81, 40)
+    - prev_state: shape=(81, 35)
+    - prev_orders: shape=(2, 100)
     - power: shape=(7, 7)
     - season: shape=(3,)
     - in_adj_phase: shape=(1,)
+    - build_numbers: shape=(7,)
     - final_scores: shape=(7,) int8
     - possible_actions: Tensorlist shape=(7 x 17, 469)
     - loc_idxs: shape=(7, 81), int8
@@ -296,17 +303,36 @@ def encode_phase(
     x_board_state = torch.from_numpy(x_board_state).to(bool)
 
     # encode prev movement orders
-    prev_move_phases = [
-        p
-        for i, p in enumerate(game.get_phase_history())
-        if i < phase_idx and str(p.name).endswith("M")
-    ]
-    if len(prev_move_phases) > 0:
-        move_phase = prev_move_phases[-1]
-        x_prev_orders = prev_orders_to_np(move_phase)
-        x_prev_orders = torch.from_numpy(x_prev_orders).to(bool)
+    # prev_move_phases = [
+    #     p
+    #     for i, p in enumerate(game.get_phase_history())
+    #     if i < phase_idx and str(p.name).endswith("M")
+    # ]
+    prev_phases = []
+    phase_history = game.get_phase_history()
+    for i in range(phase_idx - 1, -1, -1):
+        p = phase_history[i]
+        prev_phases.append(p)
+        if p.name.endswith("M"):
+            break
+
+    # print('LOCS0', LOCS[0])
+    x_prev_orders = torch.zeros(2, 100, dtype=torch.long)
+    # print(phase_name, 'prev_phases', len(prev_phases))
+
+    if len(prev_phases) > 0:
+        prev_orders, prev_order_locs = [], []
+        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1].state)).to(bool)
+        for phase in prev_phases:
+            # print(phase.name, phase.orders)
+            for pwr in phase.orders:
+                prev_orders += [ORDER_VOCABULARY_TO_IDX[o] for o in phase.orders[pwr] if o in ORDER_VOCABULARY_TO_IDX]
+                prev_order_locs += [LOC_IDX[o.split()[1]] for o in phase.orders[pwr] if o in ORDER_VOCABULARY_TO_IDX]
+        num_orders = len(prev_orders)
+        x_prev_orders[0, :num_orders] = torch.tensor(prev_orders, dtype=torch.long)
+        x_prev_orders[1, :num_orders] = torch.tensor(prev_order_locs, dtype=torch.long)
     else:
-        x_prev_orders = torch.zeros(81, 40, dtype=torch.bool)
+        x_prev_state = torch.zeros(81, 35, dtype=torch.bool)
 
     # encode powers one-hot
     x_power = torch.eye(len(POWERS), dtype=torch.bool)
@@ -318,6 +344,10 @@ def encode_phase(
 
     # encode adjustment phase
     x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(phase_name[-1] == "A")
+
+    # encode build numbers
+    builds = phase_state['builds']
+    x_build_numbers = torch.tensor([builds[p]['count'] if p in builds else 0 for p in POWERS], dtype=torch.int8)
 
     # encode final scores
     y_final_scores = encode_weighted_sos_scores(game, phase_idx, value_decay_alpha)
@@ -386,10 +416,12 @@ def encode_phase(
 
     return (
         x_board_state,
+        x_prev_state,
         x_prev_orders,
         x_power,
         x_season,
         x_in_adj_phase,
+        x_build_numbers,
         y_final_scores,
         x_possible_actions,
         x_loc_idxs,

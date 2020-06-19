@@ -45,10 +45,12 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
 
     (
         x_state,
+        x_prev_state,
         x_orders,
         x_power,
         x_season,
         x_in_adj_phase,
+        x_build_numbers,
         y_final_scores,
         x_possible_actions,
         x_loc_idxs,
@@ -63,9 +65,11 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     )
     order_idxs, sampled_idxs, logits, final_sos = net(
         x_state,
+        x_prev_state,
         x_orders,
         x_season,
         x_in_adj_phase,
+        x_build_numbers,
         x_loc_idxs,
         x_possible_actions,
         temperature=temperature,
@@ -174,7 +178,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
         for batch_idxs in torch.arange(len(val_set)).split(batch_size):
             batch = val_set[batch_idxs]
             batch = [x.to(net_device) for x in batch]
-            y_final_scores, y_actions = batch[5], batch[-1]
+            y_final_scores, y_actions = batch[7], batch[-1]
             if y_actions.shape[0] == 0:
                 logger.warning(
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)

@@ -12,12 +12,14 @@ SEASON_EMB_SIZE = 20
 NUM_ENCODER_BLOCKS = 16
 LSTM_SIZE = 200
 ORDER_EMB_SIZE = 80
+PREV_ORDER_EMB_SIZE = 20
 
 
 def new_model(args):
     return DipNet(
         board_state_size=BOARD_STATE_SIZE,
-        prev_orders_size=PREV_ORDERS_SIZE,
+        # prev_orders_size=PREV_ORDERS_SIZE,
+        prev_order_emb_size=PREV_ORDER_EMB_SIZE,
         inter_emb_size=INTER_EMB_SIZE,
         power_emb_size=POWER_EMB_SIZE,
         season_emb_size=SEASON_EMB_SIZE,

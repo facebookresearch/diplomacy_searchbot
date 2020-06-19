@@ -57,12 +57,13 @@ def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
+    build_numbers: shape=(7,)
     loc_idxs: shape=[1, 7, 81], dtype=long, -1, -2, or between 0 and 17
     valid_orders: shape=[1, 7, S, 469] dtype=long, 0 < S <= 17
     """
     if game_state is None:
         game_state = encode_state(game)
-    x_board_state, x_prev_orders, x_season, x_in_adj_phase = game_state
+    x_board_state, x_prev_state, x_prev_orders, x_season, x_in_adj_phase, x_build_numbers = game_state
 
     valid_orders_lst, loc_idxs_lst = [], []
     max_seq_len = 0
@@ -79,9 +80,11 @@ def encode_inputs(game, *, all_possible_orders=None, game_state=None):
 
     return (
         x_board_state,
+        x_prev_state,
         x_prev_orders,
         x_season,
         x_in_adj_phase,
+        x_build_numbers,
         torch.stack(loc_idxs_lst, dim=1),
         torch.stack(valid_orders_lst, dim=1)[:, :, :max_seq_len],
     )
@@ -91,9 +94,11 @@ def encode_state(game):
     """Returns a 3-tuple of tensors:
 
     x_board_state: shape=(1, 81, 35)
+    x_prev_state: shape=(1, 81, 35)
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
+    x_build_numbers: shape=7,)
     """
     state = game.get_state()
     current_phase_sort_key = sort_phase_key(state["name"])
@@ -107,16 +112,21 @@ def encode_state(game):
             if str(phase.name).endswith("M")
             and sort_phase_key(phase.name) < current_phase_sort_key
         ][-1]
+        x_prev_state = torch.from_numpy(board_state_to_np(last_move_phase.state)).unsqueeze(0)
         x_prev_orders = torch.from_numpy(prev_orders_to_np(last_move_phase)).unsqueeze(0)
     except IndexError:
         x_prev_orders = torch.zeros(1, 81, 40)
+        x_prev_state = torch.zeros(1, 81, 35)
 
     x_season = torch.zeros(1, 3)
     x_season[0, SEASONS.index(game.phase.split()[0])] = 1
 
     x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(state["name"][-1] == "A")
 
-    return x_board_state, x_prev_orders, x_season, x_in_adj_phase
+    builds = state['builds']
+    x_build_numbers = torch.tensor([builds[p]['count'] if p in builds else 0 for p in POWERS], dtype=torch.int8)
+
+    return x_board_state, x_prev_state, x_prev_orders, x_season, x_in_adj_phase, x_build_numbers
 
 
 def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_locations=None):
