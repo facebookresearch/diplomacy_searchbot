@@ -49,17 +49,9 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
         else None
     )
     order_idxs, sampled_idxs, logits, final_sos = net(
-        batch["x_board_state"],
-        batch["x_prev_state"],
-        batch["x_prev_orders"],
-        batch["x_season"],
-        batch["x_in_adj_phase"],
-        batch["x_build_numbers"],
-        batch["x_loc_idxs"],
-        batch["x_possible_actions"],
+        **{k: v for k, v in batch.items() if k.startswith("x_")},
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
-        x_power=batch["x_power"].view(-1, 7),
     )
 
     # x_possible_actions = batch['x_possible_actions'].to(device)
@@ -80,7 +72,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     if observed_logits.min() < -1e7:
         min_score, min_idx = observed_logits.min(0)
         logger.warning(
-            f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!"
+            f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!"
         )
 
     # calculate policy loss

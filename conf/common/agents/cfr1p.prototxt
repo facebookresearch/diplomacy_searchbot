@@ -1,7 +1,7 @@
 cfr1p {
   max_batch_size: 700
   max_rollout_length: 5
-  model_path: "/checkpoint/alerer/fairdiplomacy/sl_value5_alpha0.9_nosm_vlw0.9/checkpoint.pth.best"
+  model_path: "/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best"
   n_gpu: 1
   n_plausible_orders: 8
   n_rollout_procs: 56

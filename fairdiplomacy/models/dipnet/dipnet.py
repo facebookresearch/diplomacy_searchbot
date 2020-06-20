@@ -40,11 +40,12 @@ class DipNet(nn.Module):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
         self.encoder = DipNetEncoder(
-            board_state_size=board_state_size + len(POWERS) + season_emb_size,
+            board_state_size=board_state_size + len(POWERS) + season_emb_size + 1,
             prev_orders_size=board_state_size
             + prev_order_emb_size
             + len(POWERS)
-            + season_emb_size,
+            + season_emb_size
+            + 1,
             inter_emb_size=inter_emb_size,
             num_blocks=num_blocks,
             A=A,
@@ -78,18 +79,20 @@ class DipNet(nn.Module):
 
     def forward(
         self,
-        x_bo,
-        x_bp,
-        x_po,
-        x_season_1h,
-        in_adj_phase,
+        *,
+        x_board_state,
+        x_prev_state,
+        x_prev_orders,
+        x_season,
+        x_in_adj_phase,
         x_build_numbers,
-        loc_idxs,
-        cand_idxs,
+        x_loc_idxs,
+        x_possible_actions,
         temperature,
         top_p=1.0,
         teacher_force_orders=None,
         x_power=None,
+        x_has_press=None,
     ):
         """
         Arguments:
@@ -107,6 +110,7 @@ class DipNet(nn.Module):
           be either a float or a tensor of [B, 1]
         - teacher_force_orders: [B, S] long or None, ORDER idxs, NOT candidate idxs, 0-padded
         - x_power: [B, 7] or None
+        - x_has_press: [B, 1] or None
 
         if x_power is None, the model will decode for all 7 powers.
             - loc_idxs, all_cand_idxs, and teacher_force_orders must have an
@@ -127,49 +131,68 @@ class DipNet(nn.Module):
         """
 
         # following https://arxiv.org/pdf/2006.04635.pdf , Appendix C
-        B, NUM_LOCS, _ = x_bo.shape
+        B, NUM_LOCS, _ = x_board_state.shape
 
         # A. get season and prev order embs
-        x_season_emb = self.season_lin(x_season_1h)
-        x_prev_order_emb = self.prev_order_embedding(x_po[:, 0])
+        x_season_emb = self.season_lin(x_season)
+        x_prev_order_emb = self.prev_order_embedding(x_prev_orders[:, 0])
 
         # B. insert the prev orders into the correct board location (which is in the second column of x_po)
-        x_prev_order = torch.zeros((B, NUM_LOCS, self.prev_order_emb_size), device=x_bo.device)
-        prev_order_loc_idxs = torch.arange(B, device=x_bo.device).repeat_interleave(
-            x_po.shape[-1]
-        ) * NUM_LOCS + x_po[:, 1].reshape(-1)
-        x_prev_order.view(-1, self.prev_order_emb_size).index_add_(
+        x_prev_order_exp = torch.zeros(
+            (B, NUM_LOCS, self.prev_order_emb_size), device=x_board_state.device
+        )
+        prev_order_loc_idxs = torch.arange(B, device=x_board_state.device).repeat_interleave(
+            x_prev_orders.shape[-1]
+        ) * NUM_LOCS + x_prev_orders[:, 1].reshape(-1)
+        x_prev_order_exp.view(-1, self.prev_order_emb_size).index_add_(
             0, prev_order_loc_idxs, x_prev_order_emb.view(-1, self.prev_order_emb_size)
         )
 
         # concatenate the subcomponents into board state and prev state, following the paper
         x_build_numbers_exp = x_build_numbers[:, None].expand(-1, NUM_LOCS, -1)
         x_season_emb_exp = x_season_emb[:, None].expand(-1, NUM_LOCS, -1)
-        x_bo_hat = torch.cat((x_bo, x_build_numbers_exp, x_season_emb_exp), dim=-1)
-        x_po_hat = torch.cat((x_bp, x_prev_order, x_build_numbers_exp, x_season_emb_exp), dim=-1)
+        if x_has_press is not None:
+            x_has_press_exp = x_has_press[:, None].expand(-1, NUM_LOCS, 1)
+        else:
+            x_has_press_exp = torch.zeros((B, NUM_LOCS, 1), device=x_board_state.device)
+        x_bo_hat = torch.cat(
+            (x_board_state, x_build_numbers_exp, x_season_emb_exp, x_has_press_exp), dim=-1
+        )
+        x_po_hat = torch.cat(
+            (
+                x_prev_state,
+                x_prev_order_exp,
+                x_build_numbers_exp,
+                x_season_emb_exp,
+                x_has_press_exp,
+            ),
+            dim=-1,
+        )
 
         if x_power is None:
             return self.forward_all_powers(
                 x_bo=x_bo_hat,
                 x_po=x_po_hat,
-                in_adj_phase=in_adj_phase,
-                loc_idxs=loc_idxs,
-                cand_idxs=cand_idxs,
+                in_adj_phase=x_in_adj_phase,
+                loc_idxs=x_loc_idxs,
+                cand_idxs=x_possible_actions,
                 temperature=temperature,
                 top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
+                x_has_press=x_has_press,
             )
         else:
             return self.forward_one_power(
                 x_bo=x_bo_hat,
                 x_po=x_po_hat,
-                in_adj_phase=in_adj_phase,
-                loc_idxs=loc_idxs,
-                cand_idxs=cand_idxs,
+                in_adj_phase=x_in_adj_phase,
+                loc_idxs=x_loc_idxs,
+                cand_idxs=x_possible_actions,
                 temperature=temperature,
                 top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
                 x_power=x_power,
+                x_has_press=x_has_press,
             )
 
     def forward_one_power(
@@ -184,6 +207,7 @@ class DipNet(nn.Module):
         temperature,
         top_p,
         teacher_force_orders,
+        x_has_press,
     ):
         assert len(loc_idxs.shape) == 2
         assert len(cand_idxs.shape) == 3
@@ -213,6 +237,7 @@ class DipNet(nn.Module):
         temperature,
         teacher_force_orders,
         top_p,
+        x_has_press,
         log_timings=False,
     ):
         timings = TimingCtx()

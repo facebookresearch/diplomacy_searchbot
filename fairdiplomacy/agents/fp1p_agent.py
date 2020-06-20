@@ -36,7 +36,7 @@ class FP1PAgent(BaseSearchAgent):
         n_rollout_procs,
         max_actions_units_ratio=None,
         plausible_orders_req_size=None,
-        bp_iters=10,
+        bp_iters=0,
         bp_prob=0,
         **kwargs,
     ):
