@@ -26,6 +26,25 @@ LOC_IDX = {loc: idx for idx, loc in enumerate(LOCS)}
 MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
+class DataFields(dict):
+    def select(self, idx):
+        return DataFields({k: v[idx] for k, v in self.items()})
+
+    @classmethod
+    def stack(cls, L: list):
+        if len(L) > 0:
+            return cls({k: _stack([x[k] for x in L]) for k in L[0]})
+        else:
+            return cls()
+
+    @classmethod
+    def cat(cls, L: list):
+        if len(L) > 0:
+            return cls({k: _cat([x[k] for x in L]) for k in L[0]})
+        else:
+            return cls()
+
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -70,13 +89,13 @@ class Dataset(torch.utils.data.Dataset):
 
         logging.info(f"Found datafor {len(encoded_games)} / {len(game_ids)} games")
 
-        encoded_games = [g for g in encoded_games if g[-1][0].any()]
+        encoded_games = [g for g in encoded_games if g["valid_power_idxs"][0].any()]
         logging.info(f"{len(encoded_games)} games had data for at least one power")
 
         game_idxs, phase_idxs, power_idxs, x_idxs = [], [], [], []
         x_idx = 0
         for game_idx, encoded_game in enumerate(encoded_games):
-            for phase_idx, valid_power_idxs in enumerate(encoded_game[-1]):
+            for phase_idx, valid_power_idxs in enumerate(encoded_game["valid_power_idxs"]):
                 assert valid_power_idxs.nelement() == len(POWERS)
                 for power_idx in valid_power_idxs.nonzero()[:, 0]:
                     game_idxs.append(game_idx)
@@ -91,13 +110,13 @@ class Dataset(torch.utils.data.Dataset):
         self.x_idxs = torch.tensor(x_idxs, dtype=torch.long)
 
         # now collate the data into giant tensors!
-        self.encoded_games = [_cat(x) for x in zip(*encoded_games)]
+        self.encoded_games = DataFields.cat(encoded_games)
 
         self.num_games = len(encoded_games)
-        self.num_phases = len(self.encoded_games[0]) if self.encoded_games else 0
+        self.num_phases = len(self.encoded_games["x_board_state"]) if self.encoded_games else 0
         self.num_elements = len(self.x_idxs)
 
-        for i, e in enumerate(self.encoded_games):
+        for i, e in enumerate(self.encoded_games.values()):
             if isinstance(e, TensorList):
                 assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
             else:
@@ -107,40 +126,6 @@ class Dataset(torch.utils.data.Dataset):
         return [
             self.game_metadata[game_id][pwr]["logit_rating"] >= self.min_rating for pwr in POWERS
         ]
-
-    @classmethod
-    def from_merge(cls, datasets: List["Dataset"]) -> "Dataset":
-        if len(datasets) == 0:
-            raise ValueError("Trying to merge empty list of datasets")
-
-        n_cf_set = {d.n_cf_agent_samples for d in datasets}
-        if len(n_cf_set) != 1:
-            raise ValueError(
-                f"all datasets must have the same n_cf_agent_samples, got: {n_cf_set}"
-            )
-
-        cum_games = torch.LongTensor([0] + [d.num_games for d in datasets]).cumsum(dim=0)
-        cum_phases = torch.LongTensor([0] + [d.num_phases for d in datasets]).cumsum(dim=0)
-        # cum_elements = torch.LongTensor([0] + [d.num_elements for d in datasets]).cumsum(dim=0)
-
-        r = Dataset([], n_jobs=1, n_cf_agent_samples=datasets[0].n_cf_agent_samples)
-        r.n_cf_agent_samples = datasets[0].n_cf_agent_samples
-        r.encoded_games = [_cat(x) for x in zip(*[d.encoded_games for d in datasets])]
-        r.game_idxs = torch.cat([d.game_idxs + off for d, off in zip(datasets, cum_games)])
-        r.phase_idxs = torch.cat([d.phase_idxs for d in datasets])
-        r.power_idxs = torch.cat([d.power_idxs for d in datasets])
-        r.x_idxs = torch.cat([d.x_idxs + off for d, off in zip(datasets, cum_phases)])
-        r.num_games = sum(d.num_games for d in datasets)
-        r.num_phases = sum(d.num_phases for d in datasets)
-        r.num_elements = sum(d.num_elements for d in datasets)
-
-        for i, e in enumerate(r.encoded_games):
-            if isinstance(e, TensorList):
-                assert len(e) == r.num_phases * len(POWERS) * MAX_SEQ_LEN
-            else:
-                assert len(e) == r.num_phases
-
-        return r
 
     def stats_str(self):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
@@ -158,40 +143,39 @@ class Dataset(torch.utils.data.Dataset):
         x_idx = self.x_idxs[idx]
         power_idx = self.power_idxs[idx]
 
-        fields = [x[x_idx] for x in self.encoded_games[:-1]]
+        fields = self.encoded_games.select(x_idx)  # [x[x_idx] for x in self.encoded_games[:-1]]
 
-        # unpack the possible_actions, insert it into fields[6]
+        # unpack the possible_actions
         possible_actions_idx = ((x_idx * len(POWERS) + power_idx) * MAX_SEQ_LEN).unsqueeze(
             1
         ) + torch.arange(MAX_SEQ_LEN).unsqueeze(0)
-        x_possible_actions = self.encoded_games[8][possible_actions_idx.view(-1)]
+        x_possible_actions = self.encoded_games["x_possible_actions"][
+            possible_actions_idx.view(-1)
+        ]
         x_possible_actions_padded = x_possible_actions.to_padded(
             total_length=MAX_VALID_LEN, padding_value=EOS_IDX
         )
-        fields[8] = x_possible_actions_padded.view(len(idx), MAX_SEQ_LEN, MAX_VALID_LEN)
-
-        assert (
-            len(fields) == 11
-        ), "If you've changed the fields, make sure to fix all the changed indices"
+        fields["x_possible_actions"] = x_possible_actions_padded.view(
+            len(idx), MAX_SEQ_LEN, MAX_VALID_LEN
+        )
 
         # for these fields we need to select out the correct power
-        for f in [3, 9, 10]:
+        for f in ("x_power", "x_loc_idxs", "y_actions"):
             fields[f] = fields[f][torch.arange(len(fields[f])), power_idx]
 
-        # for y_actions, select out the correct sample
-        fields[10] = (
-            fields[10]
-            .gather(1, sample_idxs.view(-1, 1, 1).repeat((1, 1, fields[10].shape[2])))
+        # for y_actions, select out the correct power
+        fields["y_actions"] = (
+            fields["y_actions"]
+            .gather(1, sample_idxs.view(-1, 1, 1).repeat((1, 1, fields["y_actions"].shape[2])))
             .squeeze(1)
         )
 
         # cast fields
-        for i in range(len(fields) - 4):
-            if i == 2:  # prev_order indexes
-                continue
-            fields[i] = fields[i].to(torch.float32)
-        for i in [8, 10]:
-            fields[i] = fields[i].to(torch.long)
+        for k in fields:
+            if k in ("x_possible_actions", "y_actions", "x_prev_orders"):
+                fields[k] = fields[k].to(torch.long)
+            elif k != "prev_orders":
+                fields[k] = fields[k].to(torch.float32)
 
         return fields
 
@@ -217,7 +201,7 @@ def encode_game(
     - input_valid_power_idxs: bool tensor, true if power should a priori be included in
       the dataset based on e.g. player rating)
 
-    Return: tuple of tensors
+    Return: DataFields dict of tensors
     L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
     [0] board_state: shape=(L, 81, 35)
     [1] prev_state: shape=(L, 81, 35)
@@ -258,7 +242,7 @@ def encode_game(
         for phase_idx in range(num_phases)
     ]
 
-    stacked_encodings = [_stack(x) for x in zip(*phase_encodings)]
+    stacked_encodings = DataFields.stack(phase_encodings)
 
     return stacked_encodings
 
@@ -281,7 +265,7 @@ def encode_phase(
       finish the game with some # of supply centers (i.e. only learn from
       winners). MILA uses 7.
 
-    Return: tuple of tensors
+    Return: DataFields dict of tensors
     - board_state: shape=(81, 35)
     - prev_state: shape=(81, 35)
     - prev_orders: shape=(2, 100)
@@ -326,8 +310,16 @@ def encode_phase(
         for phase in prev_phases:
             # print(phase.name, phase.orders)
             for pwr in phase.orders:
-                prev_orders += [ORDER_VOCABULARY_TO_IDX[o] for o in phase.orders[pwr] if o in ORDER_VOCABULARY_TO_IDX]
-                prev_order_locs += [LOC_IDX[o.split()[1]] for o in phase.orders[pwr] if o in ORDER_VOCABULARY_TO_IDX]
+                prev_orders += [
+                    ORDER_VOCABULARY_TO_IDX[o]
+                    for o in phase.orders[pwr]
+                    if o in ORDER_VOCABULARY_TO_IDX
+                ]
+                prev_order_locs += [
+                    LOC_IDX[o.split()[1]]
+                    for o in phase.orders[pwr]
+                    if o in ORDER_VOCABULARY_TO_IDX
+                ]
         num_orders = len(prev_orders)
         x_prev_orders[0, :num_orders] = torch.tensor(prev_orders, dtype=torch.long)
         x_prev_orders[1, :num_orders] = torch.tensor(prev_order_locs, dtype=torch.long)
@@ -346,8 +338,10 @@ def encode_phase(
     x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(phase_name[-1] == "A")
 
     # encode build numbers
-    builds = phase_state['builds']
-    x_build_numbers = torch.tensor([builds[p]['count'] if p in builds else 0 for p in POWERS], dtype=torch.int8)
+    builds = phase_state["builds"]
+    x_build_numbers = torch.tensor(
+        [builds[p]["count"] if p in builds else 0 for p in POWERS], dtype=torch.int8
+    )
 
     # encode final scores
     y_final_scores = encode_weighted_sos_scores(game, phase_idx, value_decay_alpha)
@@ -414,19 +408,19 @@ def encode_phase(
         x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN), padding_value=EOS_IDX
     )
 
-    return (
-        x_board_state,
-        x_prev_state,
-        x_prev_orders,
-        x_power,
-        x_season,
-        x_in_adj_phase,
-        x_build_numbers,
-        y_final_scores,
-        x_possible_actions,
-        x_loc_idxs,
-        y_actions,
-        valid_power_idxs,
+    return DataFields(
+        x_board_state=x_board_state,
+        x_prev_state=x_prev_state,
+        x_prev_orders=x_prev_orders,
+        x_power=x_power,
+        x_season=x_season,
+        x_in_adj_phase=x_in_adj_phase,
+        x_build_numbers=x_build_numbers,
+        y_final_scores=y_final_scores,
+        x_possible_actions=x_possible_actions,
+        x_loc_idxs=x_loc_idxs,
+        y_actions=y_actions,
+        valid_power_idxs=valid_power_idxs,
     )
 
 

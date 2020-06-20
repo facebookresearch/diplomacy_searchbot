@@ -41,7 +41,10 @@ class DipNet(nn.Module):
         self.orders_vocab_size = orders_vocab_size
         self.encoder = DipNetEncoder(
             board_state_size=board_state_size + len(POWERS) + season_emb_size,
-            prev_orders_size=board_state_size + prev_order_emb_size + len(POWERS) + season_emb_size,
+            prev_orders_size=board_state_size
+            + prev_order_emb_size
+            + len(POWERS)
+            + season_emb_size,
             inter_emb_size=inter_emb_size,
             num_blocks=num_blocks,
             A=A,
@@ -68,7 +71,9 @@ class DipNet(nn.Module):
         )
 
         self.season_lin = nn.Linear(3, season_emb_size)
-        self.prev_order_embedding = nn.Embedding(orders_vocab_size, prev_order_emb_size, padding_idx=0)
+        self.prev_order_embedding = nn.Embedding(
+            orders_vocab_size, prev_order_emb_size, padding_idx=0
+        )
         self.prev_order_emb_size = prev_order_emb_size
 
     def forward(
@@ -123,22 +128,21 @@ class DipNet(nn.Module):
 
         # following https://arxiv.org/pdf/2006.04635.pdf , Appendix C
         B, NUM_LOCS, _ = x_bo.shape
-        # print('x_po')
-        # print(x_po[0])
+
+        # A. get season and prev order embs
         x_season_emb = self.season_lin(x_season_1h)
         x_prev_order_emb = self.prev_order_embedding(x_po[:, 0])
-        x_prev_order = torch.zeros((B, NUM_LOCS, self.prev_order_emb_size), device=x_bo.device)
-        # print('x_po0', x_po[0])
 
-        prev_order_loc_idxs = torch.arange(B, device=x_bo.device).repeat_interleave(x_po.shape[-1]) * NUM_LOCS + x_po[:, 1].reshape(-1)
-        # print(prev_order_loc_idxs)
-        # print(x_prev_order_emb.view(-1, self.prev_order_emb_size)[:, 0])
-        x_prev_order.view(-1, self.prev_order_emb_size).index_add_(0, prev_order_loc_idxs, x_prev_order_emb.view(-1, self.prev_order_emb_size))
-        #     torch.arange(B).repeat_interleave(x_po.shape[-1]),
-        #     x_po[:, 1].reshape(-1)
-        # ] = x_prev_order_emb.view(-1, self.prev_order_emb_size)  # [torch.randperm(100 * B)]
-        # print('x_prev_order', x_prev_order.shape)
-        # print(x_prev_order[0, :, 0])
+        # B. insert the prev orders into the correct board location (which is in the second column of x_po)
+        x_prev_order = torch.zeros((B, NUM_LOCS, self.prev_order_emb_size), device=x_bo.device)
+        prev_order_loc_idxs = torch.arange(B, device=x_bo.device).repeat_interleave(
+            x_po.shape[-1]
+        ) * NUM_LOCS + x_po[:, 1].reshape(-1)
+        x_prev_order.view(-1, self.prev_order_emb_size).index_add_(
+            0, prev_order_loc_idxs, x_prev_order_emb.view(-1, self.prev_order_emb_size)
+        )
+
+        # concatenate the subcomponents into board state and prev state, following the paper
         x_build_numbers_exp = x_build_numbers[:, None].expand(-1, NUM_LOCS, -1)
         x_season_emb_exp = x_season_emb[:, None].expand(-1, NUM_LOCS, -1)
         x_bo_hat = torch.cat((x_bo, x_build_numbers_exp, x_season_emb_exp), dim=-1)
@@ -607,9 +611,7 @@ class DipNetEncoder(nn.Module):
 
 
 class DipNetBlock(nn.Module):
-    def __init__(
-        self, *, in_size, out_size, A, dropout, residual=True, learnable_A=False
-    ):
+    def __init__(self, *, in_size, out_size, A, dropout, residual=True, learnable_A=False):
         super().__init__()
         self.graph_conv = GraphConv(in_size, out_size, A, learnable_A=learnable_A)
         self.batch_norm = nn.BatchNorm1d(A.shape[0])

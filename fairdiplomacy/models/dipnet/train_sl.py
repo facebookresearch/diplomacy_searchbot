@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import atexit
-import glob
 import json
 import logging
 import os
@@ -10,7 +9,7 @@ from collections import Counter
 from functools import reduce
 from torch.utils.data.distributed import DistributedSampler
 
-from fairdiplomacy.data.dataset import Dataset
+from fairdiplomacy.data.dataset import Dataset, DataFields
 from fairdiplomacy.models.dipnet.load_model import new_model
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.models.dipnet.order_vocabulary import (
@@ -43,42 +42,28 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     assert p_teacher_force == 1
     device = next(net.parameters()).device
 
-    (
-        x_state,
-        x_prev_state,
-        x_orders,
-        x_power,
-        x_season,
-        x_in_adj_phase,
-        x_build_numbers,
-        y_final_scores,
-        x_possible_actions,
-        x_loc_idxs,
-        y_actions,
-    ) = batch
-
     # forward pass
     teacher_force_orders = (
-        cand_idxs_to_order_idxs(y_actions, x_possible_actions, pad_out=0)
+        cand_idxs_to_order_idxs(batch["y_actions"], batch["x_possible_actions"], pad_out=0)
         if torch.rand(1) < p_teacher_force
         else None
     )
     order_idxs, sampled_idxs, logits, final_sos = net(
-        x_state,
-        x_prev_state,
-        x_orders,
-        x_season,
-        x_in_adj_phase,
-        x_build_numbers,
-        x_loc_idxs,
-        x_possible_actions,
+        batch["x_board_state"],
+        batch["x_prev_state"],
+        batch["x_prev_orders"],
+        batch["x_season"],
+        batch["x_in_adj_phase"],
+        batch["x_build_numbers"],
+        batch["x_loc_idxs"],
+        batch["x_possible_actions"],
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
-        x_power=x_power.view(-1, 7),
+        x_power=batch["x_power"].view(-1, 7),
     )
 
-    x_possible_actions = x_possible_actions.to(device)
-    y_actions = y_actions.to(device)
+    # x_possible_actions = batch['x_possible_actions'].to(device)
+    y_actions = batch["y_actions"].to(device)
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions[:, : logits.shape[1]].reshape(-1)  # [B * S]
@@ -102,7 +87,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     policy_loss = policy_loss_fn(logits, y_actions)
 
     # calculate sum-of-squares value loss
-    y_final_scores = y_final_scores.to(device).float().squeeze(1)
+    y_final_scores = batch["y_final_scores"].to(device).float().squeeze(1)
     value_loss = value_loss_fn(final_sos, y_final_scores)
 
     return policy_loss, value_loss, sampled_idxs, final_sos
@@ -177,8 +162,8 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
 
         for batch_idxs in torch.arange(len(val_set)).split(batch_size):
             batch = val_set[batch_idxs]
-            batch = [x.to(net_device) for x in batch]
-            y_final_scores, y_actions = batch[7], batch[-1]
+            batch = DataFields({k: v.to(net_device) for k, v in batch.items()})
+            y_actions = batch["y_actions"]
             if y_actions.shape[0] == 0:
                 logger.warning(
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
@@ -189,7 +174,9 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
             )
             batch_losses.append((policy_losses, value_losses))
             batch_accuracies.append(calculate_accuracy(sampled_idxs, y_actions))
-            batch_value_accuracies.append(calculate_value_accuracy(final_sos, y_final_scores))
+            batch_value_accuracies.append(
+                calculate_value_accuracy(final_sos, batch["y_final_scores"])
+            )
             batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, y_actions))
         net.train()
 
@@ -297,7 +284,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             logger.debug(f"Zero grad {batch_i} ...")
 
             # check batch is not empty
-            if (batch[-1] == EOS_IDX).all():
+            if (batch["y_actions"] == EOS_IDX).all():
                 logger.warning("Skipping empty epoch {} batch {}".format(epoch, batch_i))
                 continue
 
