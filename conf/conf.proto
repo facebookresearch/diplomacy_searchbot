@@ -643,6 +643,13 @@ message SituationCheckTask {
   optional string selection = 4;
   optional Launcher launcher = 100;
 }
+
+message PlayWebdipTask {
+  optional Agent agent = 1;
+  optional string api_key = 2;
+  optional uint64 game_id = 3;
+}
+
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -669,6 +676,7 @@ message MetaCfg {
     ExploitTask exploit = 104;
     BuildDbCacheTask build_db_cache = 105;
     SituationCheckTask situation_check = 106;
+    PlayWebdipTask play_webdip = 107;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

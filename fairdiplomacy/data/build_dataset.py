@@ -20,6 +20,7 @@ TABLE_MOVES = "redacted_movesarchive"
 #     for (terr_id, full_name) in db.execute("SELECT id, name FROM wD_Territories WHERE mapID=1")
 # }
 TERR_ID_TO_LOC = {
+    0: "",
     1: "CLY",
     2: "EDI",
     3: "LVP",
@@ -103,6 +104,8 @@ TERR_ID_TO_LOC = {
     81: "BUL/SC",
 }
 
+LOC_TO_TERR_ID = {v: k for k, v in TERR_ID_TO_LOC.items()}
+
 COUNTRY_ID_TO_POWER = {
     1: "ENGLAND",
     2: "FRANCE",
@@ -112,6 +115,8 @@ COUNTRY_ID_TO_POWER = {
     6: "TURKEY",
     7: "RUSSIA",
 }
+
+COUNTRY_POWER_TO_ID = {v: k for k, v in COUNTRY_ID_TO_POWER.items()}
 
 # these are the 22 supply centers that should have units on turn 0
 PROPER_START_TERR_IDS = {
