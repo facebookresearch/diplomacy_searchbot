@@ -112,6 +112,8 @@ def play_webdip(cfg):
         api_key=cfg.api_key,
         game_id=cfg.game_id,
         agent=agent,
+        check_phase=cfg.check_phase,
+        json_out=cfg.json_out,
     )
 
 

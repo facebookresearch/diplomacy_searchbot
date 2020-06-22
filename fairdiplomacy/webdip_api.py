@@ -13,7 +13,7 @@ from fairdiplomacy.data.build_dataset import (
     LOC_TO_TERR_ID,
     COUNTRY_ID_TO_POWER,
     COUNTRY_POWER_TO_ID,
-    get_valid_coastal_variant
+    get_valid_coastal_variant,
 )
 from fairdiplomacy.models.consts import POWERS
 
@@ -29,17 +29,21 @@ POST_ORDERS_ROUTE = "game/orders"
 logger = logging.getLogger("webdip")
 
 
-def webdip_state_to_game(webdip_state_json):
+def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
     game = Game()
     for phase in webdip_state_json["phases"]:
         # print(phase)
         terr_to_unit = {}
         for j in phase["units"]:
+            if j["unitType"] == "":
+                continue
             terr_to_unit[TERR_ID_TO_LOC[j["terrID"]]] = j["unitType"][0]
 
         orders = phase["orders"]
         power_to_orders = defaultdict(list)
         for order_json in phase["orders"]:
+            if game.phase == stop_at_phase:
+                break
 
             # 1. extract the data
             power = COUNTRY_ID_TO_POWER[order_json["countryID"]]
@@ -66,7 +70,7 @@ def webdip_state_to_game(webdip_state_json):
             else:
                 # note: default to Fleet in secondary location because sometimes
                 # we get confused with NC / SC
-                secondary_unit = terr_to_unit.get(to_loc, 'F') + " " if order_type == "S" else ""
+                secondary_unit = terr_to_unit.get(to_loc, "F") + " " if order_type == "S" else ""
                 order_str = f"{unit} {loc} {order_type} {secondary_unit}{to_loc} {via}".strip()
 
             possible_orders = game.get_all_possible_orders()[loc]
@@ -75,10 +79,13 @@ def webdip_state_to_game(webdip_state_json):
             # happens when a unit is dislodged and has nowhere to
             # retreat -- there will be a disband in the db, but the
             # Game object disbands it automatically.
-            if phase["phase"] == "Retreats" and order_str.split()[-1] == "D" and \
-                (order_str not in possible_orders or not game.phase.endswith("RETREATS")):  # two cases: retreat phase with this order skipped; or retreat phase skipped entirely
+            if (
+                phase["phase"] == "Retreats"
+                and order_str.split()[-1] == "D"
+                and (order_str not in possible_orders or not game.phase.endswith("RETREATS"))
+            ):  # two cases: retreat phase with this order skipped; or retreat phase skipped entirely
                 continue
-            
+
             if order_str not in possible_orders:
                 # if order is not valid, try location coastal variants, since
                 # some orders are coming out of the db without the proper
@@ -164,27 +171,31 @@ def webdip_state_to_game(webdip_state_json):
 #     return j
 
 
-def play_webdip(api_key: str, game_id=0, agent=None):
+def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=None):
     api_header = {"Authorization": f"Bearer {api_key}"}
 
     while True:
         logging.info("========================================================================")
-        missing_orders_resp = requests.get(
-            API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header,
-        )
-        missing_orders_json = json.loads(missing_orders_resp.content)
-        logger.debug(f"len before: {len(missing_orders_json)}")
-        logger.info(missing_orders_json)
-        if game_id != 0:
-            missing_orders_json = [x for x in missing_orders_json if x["gameID"] == game_id]
-        logger.debug(f"len after: {len(missing_orders_json)}")
-        logger.info(missing_orders_json)
-        if len(missing_orders_json) == 0:
-            logger.info("No games to provide orders. Sleeping for 2 seconds.")
-            time.sleep(2)
-            continue
+        if not check_phase:
+            missing_orders_resp = requests.get(
+                API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header,
+            )
+            missing_orders_json = json.loads(missing_orders_resp.content)
+            logger.debug(f"len before: {len(missing_orders_json)}")
+            logger.info(missing_orders_json)
+            if game_id != 0:
+                missing_orders_json = [x for x in missing_orders_json if x["gameID"] == game_id]
+            logger.debug(f"len after: {len(missing_orders_json)}")
+            logger.info(missing_orders_json)
+            if len(missing_orders_json) == 0:
+                logger.info("No games to provide orders. Sleeping for 2 seconds.")
+                time.sleep(2)
+                continue
 
-        next_game = missing_orders_json[0]
+            next_game = missing_orders_json[0]
+        else:
+            next_game = {"gameID": game_id, "countryID": 1}
+
         power = COUNTRY_ID_TO_POWER[next_game["countryID"]]
         status_resp = requests.get(
             API_URL,
@@ -201,7 +212,12 @@ def play_webdip(api_key: str, game_id=0, agent=None):
         # working out ofthebox for some reason
         # game, power = state_dict_to_game_and_power(status_json, next_game["countryID"])#, max_phases=max_phases)
         # game = Game.clone_from(game)
-        game = webdip_state_to_game(status_json)
+        game = webdip_state_to_game(status_json, stop_at_phase=check_phase)
+
+        if json_out:
+            game_json = game.to_saved_game_format()
+            with open(json_out, 'w') as jf:
+                json.dump(game_json, jf)
 
         if agent is None:
             return
@@ -211,12 +227,23 @@ def play_webdip(api_key: str, game_id=0, agent=None):
         agent_orders = agent.get_orders(game, power)
         logging.info(f"Power: {power}, Orders: {agent_orders}")
 
+        if check_phase:
+            break
+
         agent_orders_json = {
             "gameID": next_game["gameID"],
-            "turn": status_json['phases'][-1]['turn'] if status_json['phases'] else 0, #len(game.get_phase_history()) - 1, # status_json["phases"]),
-            "phase": "Builds" if game.phase.startswith("W") else "Retreats" if game.phase.endswith("RETREATS") else "Diplomacy",
+            "turn": status_json["phases"][-1]["turn"]
+            if status_json["phases"]
+            else 0,  # len(game.get_phase_history()) - 1, # status_json["phases"]),
+            "phase": "Builds"
+            if game.phase.startswith("W")
+            else "Retreats"
+            if game.phase.endswith("RETREATS")
+            else "Diplomacy",
             "countryID": next_game["countryID"],
-            "orders": [WebdipOrder(order, game=game).to_dict() for order in agent_orders], # [order_to_json(order.split(), game.phase) for order in agent_orders],
+            "orders": [
+                WebdipOrder(order, game=game).to_dict() for order in agent_orders
+            ],  # [order_to_json(order.split(), game.phase) for order in agent_orders],
             "ready": "Yes",
         }
         print(game.phase)
@@ -224,17 +251,22 @@ def play_webdip(api_key: str, game_id=0, agent=None):
         # print([p['turn'] for p in status_json['phases']])
         logging.info(f"JSON: {pformat(agent_orders_json)}")
         orders_resp = requests.post(
-            API_URL, 
+            API_URL,
             params={"route": POST_ORDERS_ROUTE},
             headers=api_header,
-            json=agent_orders_json
+            json=agent_orders_json,
         )
+
+        ###############################################################################
+        # After this it's all sanity checks and corner cases
+        ###############################################################################
 
         if (
             orders_resp.status_code == 400
-            and orders_resp.content.startswith(b"Invalid phase, expected `Retreats`, got ") 
-            and len(game.get_state()['units'][power]) < len(game.get_phase_history()[-1].state['units'][power])
-            and game.get_phase_history()[-1].name.endswith('M')
+            and orders_resp.content.startswith(b"Invalid phase, expected `Retreats`, got ")
+            and len(game.get_state()["units"][power])
+            < len(game.get_phase_history()[-1].state["units"][power])
+            and game.get_phase_history()[-1].name.endswith("M")
         ):
             # This sometimes happens when a unit is dislodged and has nowhere to
             # retreat -- webdip expects a disband, but the
@@ -246,36 +278,45 @@ def play_webdip(api_key: str, game_id=0, agent=None):
                 orders=[],  # just provide empty orders; webdip will process the disband automatically
             )
             orders_resp = requests.post(
-                API_URL,
-                params={"route": POST_ORDERS_ROUTE},
-                headers=api_header,
-                json=retreat_json
+                API_URL, params={"route": POST_ORDERS_ROUTE}, headers=api_header, json=retreat_json
             )
-            orders_resp = requests.post(
-                API_URL, 
-                params={"route": POST_ORDERS_ROUTE},
-                headers=api_header,
-                json=agent_orders_json
-            )
+            # orders_resp = requests.post(
+            #     API_URL,
+            #     params={"route": POST_ORDERS_ROUTE},
+            #     headers=api_header,
+            #     json=agent_orders_json,
+            # )
+            # if orders_resp.status_code == 400 and "Finished" in str(orders_resp.content):
+            #     continue
 
         if orders_resp.status_code != 200:
             # logging.error(f"Error {orders_resp.status_code}; Response: {orders_resp.content}")
-            raise RuntimeError(f"Error {orders_resp.status_code}; Response: {str(orders_resp.content)}")
+            raise RuntimeError(
+                f"Error {orders_resp.status_code}; Response: {str(orders_resp.content)}"
+            )
 
         # logger.info(orders_resp.content)
         orders_resp_json = json.loads(orders_resp.content)
-        logger.info(pformat(orders_resp_json))
-        
+        logger.info(f"Response: {pformat(orders_resp_json)}")
+
         # sanity check that the orders were processed correctly
-        order_req_by_unit = {x['terrID'] if x['terrID'] != '' else x['toTerrID']: x for x in agent_orders_json["orders"]}
-        order_resp_by_unit = {x['terrID'] if x['terrID'] is not None else x['toTerrID']: x for x in orders_resp_json}
+        order_req_by_unit = {
+            x["terrID"] if x["terrID"] != "" else x["toTerrID"]: x
+            for x in agent_orders_json["orders"]
+        }
+        order_resp_by_unit = {
+            x["terrID"] if x["terrID"] is not None else x["toTerrID"]: x for x in orders_resp_json
+        }
         if len(order_req_by_unit) > len(order_resp_by_unit):
             raise RuntimeError(f"{order_req_by_unit} != {order_resp_by_unit}")
         if len(order_req_by_unit) < len(order_resp_by_unit) and game.phase.endswith("MOVEMENT"):
             raise RuntimeError(f"{order_req_by_unit} != {order_resp_by_unit}")
         for terr in order_req_by_unit:
             if order_req_by_unit[terr]["type"] != order_resp_by_unit[terr]["type"]:
-                if order_req_by_unit[terr]["type"] == "Destroy" and order_resp_by_unit[terr]["type"] == "Retreat":
+                if (
+                    order_req_by_unit[terr]["type"] == "Destroy"
+                    and order_resp_by_unit[terr]["type"] == "Retreat"
+                ):
                     continue
                 raise RuntimeError(f"{order_req_by_unit[terr]} != {order_resp_by_unit[terr]}")
         time.sleep(2)
