@@ -101,8 +101,8 @@ DEFAULT_INPUTS = encode_inputs(Game())
 
 def zero_inputs():
     """Return empty input encodings"""
-    r = [torch.zeros_like(x) for x in DEFAULT_INPUTS]
-    r[-2].fill_(-1)
+    r = {k: torch.zeros_like(v) for k, v in DEFAULT_INPUTS.items()}
+    r["x_loc_idxs"].fill_(-1)
     return r
 
 
