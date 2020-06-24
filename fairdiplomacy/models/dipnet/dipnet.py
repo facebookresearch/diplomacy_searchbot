@@ -36,6 +36,7 @@ class DipNet(nn.Module):
         learnable_alignments=False,
         avg_embedding=False,
         value_decoder_init_scale=1.0,
+        graph_decoder=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -63,6 +64,8 @@ class DipNet(nn.Module):
             learnable_alignments=learnable_alignments,
             avg_embedding=avg_embedding,
             power_emb_size=power_emb_size,
+            A=A,
+            graph_decoder=graph_decoder
         )
 
         self.value_decoder = ValueDecoder(
@@ -304,6 +307,18 @@ class DipNet(nn.Module):
         return order_idxs, sampled_idxs, logits, final_sos
 
 
+def compute_alignments(loc_idxs, step, A):
+    alignments = torch.matmul(
+        ((loc_idxs == step) | (loc_idxs == -2)).float(), A
+    )
+    alignments /= torch.sum(alignments, dim=1, keepdim=True) + 1e-5
+    # alignments = torch.where(
+    #     torch.isnan(alignments), torch.zeros_like(alignments), alignments
+    # )
+
+    return alignments
+
+
 class LSTMDipNetDecoder(nn.Module):
     def __init__(
         self,
@@ -317,6 +332,8 @@ class LSTMDipNetDecoder(nn.Module):
         learnable_alignments=False,
         avg_embedding=False,
         power_emb_size,
+        A=None,
+        graph_decoder=False,
     ):
         super().__init__()
         self.lstm_size = lstm_size
@@ -328,12 +345,19 @@ class LSTMDipNetDecoder(nn.Module):
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
         self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
-        self.lstm = nn.LSTM(
-            2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True
-        )
+        
+        self.graph_decoder = graph_decoder
+        if graph_decoder:
+            self.decoder_A = nn.Parameter(A.clone())  # maybe A@A ?
+            self.decoder_lin = nn.Linear(2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size)
+            # self.decoder_lin2 = nn.Linear(lstm_size, lstm_size)
+        else:
+            self.lstm = nn.LSTM(
+                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True
+            )
 
         # if avg_embedding is True, alignments are not used, and pytorch
-        # complains about unused parameters, so only set self.master_alignments
+        # `comp`lains about unused parameters, so only set self.master_alignments
         # when avg_embedding is False
         if not avg_embedding:
             self.master_alignments = nn.Parameter(master_alignments).requires_grad_(
@@ -366,12 +390,6 @@ class LSTMDipNetDecoder(nn.Module):
                     torch.zeros(*all_cand_idxs.shape, device=device),
                 )
 
-            self.lstm.flatten_parameters()
-
-            hidden = (
-                torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
-                torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
-            )
 
             # embedding for the last decoded order
             order_emb = torch.zeros(enc.shape[0], self.order_emb_size).to(device)
@@ -385,6 +403,16 @@ class LSTMDipNetDecoder(nn.Module):
             all_sampled_idxs = []
             all_logits = []
 
+            if self.graph_decoder:
+                B = enc.shape[0]
+                order_enc = torch.zeros(B, 81, self.order_emb_size, device=enc.device)
+            else:
+                self.lstm.flatten_parameters()
+                hidden = (
+                    torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
+                    torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
+                )
+            
             # reuse same dropout weights for all steps
             dropout_in = (
                 torch.zeros(
@@ -419,23 +447,37 @@ class LSTMDipNetDecoder(nn.Module):
                     # do static attention; set alignments to:
                     # - master_alignments for the right loc_idx when not in_adj_phase
                     in_adj_phase = in_adj_phase.view(-1, 1)
-                    alignments = torch.matmul(
-                        ((loc_idxs == step) | (loc_idxs == -2)).float(), self.master_alignments
-                    )
-                    alignments /= torch.sum(alignments, dim=1, keepdim=True)
-                    alignments = torch.where(
-                        torch.isnan(alignments), torch.zeros_like(alignments), alignments
-                    )
+                    alignments = compute_alignments(loc_idxs, step, self.master_alignments)
+                    # print('alignments', alignments.mean(), alignments.std())
                     loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             with timings("dec.lstm"):
-                lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
-                if self.training and self.lstm_dropout < 1.0:
-                    lstm_input = lstm_input * dropout_in
+                if self.graph_decoder:
+                    order_alignments = compute_alignments(loc_idxs, step, self.decoder_A)
+                    # print('decoder_A', self.decoder_A.mean(), self.decoder_A.std())
+                    # print(self.decoder_A)
+                    # print('order_alignments', order_alignments.mean(), order_alignments.std())
+                    # print('order_enc', order_enc.mean(), order_enc.std())
+                    aggr_order_enc = torch.matmul(order_alignments.unsqueeze(1), order_enc).squeeze(1)
+                    # print('aggr', step, float(aggr_order_enc.mean()), float(aggr_order_enc.std()))
+                    # aggr_order_enc *= 0
+                    dec_input = torch.cat((loc_enc, aggr_order_enc, power_emb), dim=1).unsqueeze(1)
 
-                out, hidden = self.lstm(lstm_input, hidden)
-                if self.training and self.lstm_dropout < 1.0:
-                    out = out * dropout_out
+                    if self.training and self.lstm_dropout > 0.0:
+                        dec_input = dec_input * dropout_in
+
+                    out = self.decoder_lin(dec_input)
+
+                    if self.training and self.lstm_dropout > 0.0:
+                        out = out * dropout_out
+                else:
+                    lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
+                    if self.training and self.lstm_dropout > 0.0:
+                        lstm_input = lstm_input * dropout_in
+
+                    out, hidden = self.lstm(lstm_input, hidden)
+                    if self.training and self.lstm_dropout > 0.0:
+                        out = out * dropout_out
 
                 out = out.squeeze(1).unsqueeze(2)
 
@@ -507,6 +549,9 @@ class LSTMDipNetDecoder(nn.Module):
                             order_idxs,
                         )
                     ).squeeze(1)
+                
+                if self.graph_decoder:
+                    order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]
 
         with timings("dec.fin"):
             stacked_order_idxs = torch.stack(all_order_idxs, dim=1)
