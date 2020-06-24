@@ -30,6 +30,7 @@ class DipNet(nn.Module):
         order_emb_size,  # 80
         prev_order_emb_size,  # 20
         lstm_dropout=0,
+        lstm_layers=1,
         encoder_dropout=0,
         value_dropout,
         learnable_A=False,
@@ -60,6 +61,7 @@ class DipNet(nn.Module):
             lstm_size=lstm_size,
             order_emb_size=order_emb_size,
             lstm_dropout=lstm_dropout,
+            lstm_layers=lstm_layers,
             master_alignments=master_alignments,
             learnable_alignments=learnable_alignments,
             avg_embedding=avg_embedding,
@@ -328,6 +330,7 @@ class LSTMDipNetDecoder(nn.Module):
         lstm_size,
         order_emb_size,
         lstm_dropout,
+        lstm_layers,
         master_alignments,
         learnable_alignments=False,
         avg_embedding=False,
@@ -337,6 +340,7 @@ class LSTMDipNetDecoder(nn.Module):
     ):
         super().__init__()
         self.lstm_size = lstm_size
+        self.lstm_layers = lstm_layers
         self.order_emb_size = order_emb_size
         self.lstm_dropout = lstm_dropout
         self.avg_embedding = avg_embedding
@@ -353,7 +357,7 @@ class LSTMDipNetDecoder(nn.Module):
             # self.decoder_lin2 = nn.Linear(lstm_size, lstm_size)
         else:
             self.lstm = nn.LSTM(
-                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True
+                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True, num_layers=self.lstm_layers,
             )
 
         # if avg_embedding is True, alignments are not used, and pytorch
@@ -409,8 +413,8 @@ class LSTMDipNetDecoder(nn.Module):
             else:
                 self.lstm.flatten_parameters()
                 hidden = (
-                    torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
-                    torch.zeros(1, enc.shape[0], self.lstm_size).to(device),
+                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
+                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
                 )
             
             # reuse same dropout weights for all steps

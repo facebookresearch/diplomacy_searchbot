@@ -433,6 +433,12 @@ message TrainTask {
 
   optional float min_rating_percentile = 31 [default = 0];
 
+  optional bool graph_decoder = 32 [default = false];
+
+  optional int32 lstm_size = 33 [default = 200];
+
+  optional int32 lstm_layers = 34 [default = 1];
+
   optional Launcher launcher = 1000;
 }
 
