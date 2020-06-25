@@ -11,6 +11,63 @@ from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
 from fairdiplomacy.utils.padded_embedding import PaddedEmbedding
 from fairdiplomacy.utils.timing_ctx import TimingCtx
+from fairdiplomacy.models.consts import LOCS
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
+
+EOS_TOKEN = get_order_vocabulary()[EOS_IDX]
+
+# def make_onehot(X, k):
+#     """Converts a list of indices X, 0 <= X < k, into a one-hot tensor.
+#     """
+
+#     ret = torch.zeros((len(X), k))
+#     idx = torch.tensor(X, dtype=torch.long).unsqueeze(-1)
+#     ret.scatter_(1, idx, 1)
+#     return ret
+
+
+def compute_order_features():
+    """Returns a [13k x D] tensor where each row contains (one-hot) features for one order in the vocabulary.
+    """
+
+    order_vocabulary = get_order_vocabulary()
+    # assert order_vocabulary[0] == EOS_TOKEN
+    # order_vocabulary = order_vocabulary[1:]  # we'll fix this up at the end
+    order_split = [o.split() for o in order_vocabulary]
+
+    # fixup strange stuff in the dataset
+    for s in order_split:
+        # fixup "A SIL S A PRU"
+        if len(s) == 5 and s[2] == 'S':
+            s.append('H')
+        # fixup "A SMY - ROM VIA"
+        if len(s) == 5 and s[-1] == 'VIA':
+            s.pop()
+
+    loc_idx = {loc: i for i, loc in enumerate(LOCS)}
+    unit_idx = {'A': 0, 'F': 1}
+    order_type_idx = {t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))}
+
+    feats = []
+    for o in order_split:
+        u = o[3:] if len(o) >= 6 else o
+        srcT = torch.zeros(len(loc_idx))
+        dstT = torch.zeros(len(loc_idx))
+        unitT = torch.zeros(len(unit_idx))
+        orderT = torch.zeros(len(order_type_idx))
+        underlyingT = torch.zeros(len(order_type_idx))
+
+        if not o[2].startswith('B'):  # lets ignore the concatenated builds, they're tricky
+            srcT[loc_idx[u[1]]] = 1
+            dstT[loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]] = 1
+            unitT[unit_idx[o[0]]] = 1
+            orderT[order_type_idx[o[2]]] = 1
+            underlyingT[order_type_idx[u[2]]] = 1
+
+        feats.append(torch.cat((srcT, dstT, unitT, orderT, underlyingT), dim=-1))
+
+    feats = torch.stack(feats, dim=0)
+    return feats
 
 
 class DipNet(nn.Module):
@@ -38,6 +95,7 @@ class DipNet(nn.Module):
         avg_embedding=False,
         value_decoder_init_scale=1.0,
         graph_decoder=False,
+        featurize_output=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -67,7 +125,8 @@ class DipNet(nn.Module):
             avg_embedding=avg_embedding,
             power_emb_size=power_emb_size,
             A=A,
-            graph_decoder=graph_decoder
+            graph_decoder=graph_decoder,
+            featurize_output=featurize_output,
         )
 
         self.value_decoder = ValueDecoder(
@@ -337,6 +396,7 @@ class LSTMDipNetDecoder(nn.Module):
         power_emb_size,
         A=None,
         graph_decoder=False,
+        featurize_output=False,
     ):
         super().__init__()
         self.lstm_size = lstm_size
@@ -367,6 +427,13 @@ class LSTMDipNetDecoder(nn.Module):
             self.master_alignments = nn.Parameter(master_alignments).requires_grad_(
                 learnable_alignments
             )
+
+        self.featurize_output = featurize_output
+        if featurize_output:
+            self.register_buffer('order_feats', compute_order_features())
+            self.order_feat_lin = nn.Linear(self.order_feats.shape[1], order_emb_size)
+            self.order_decoder_w = nn.Linear(self.order_feats.shape[1], lstm_size)  # FIXME
+            self.order_decoder_b = nn.Linear(self.order_feats.shape[1], 1)
 
     def forward(
         self,
@@ -487,9 +554,17 @@ class LSTMDipNetDecoder(nn.Module):
 
             with timings("dec.cand_emb"):
                 cand_emb = self.cand_embedding(cand_idxs)
+                
 
             with timings("dec.logits"):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
+                
+                if self.featurize_output:
+                    cand_order_feats = self.order_feats[cand_idxs]
+                    order_w = self.order_decoder_w(cand_order_feats)
+                    order_b = self.order_decoder_b(cand_order_feats)
+                    order_scores_featurized = torch.bmm(order_w, out) + order_b
+                    logits += order_scores_featurized.squeeze(-1)
 
             with timings("dec.invalid_mask"):
                 # unmask where there are no actions or the sampling will crash. The
@@ -542,17 +617,11 @@ class LSTMDipNetDecoder(nn.Module):
                 all_order_idxs.append(order_idxs)
 
             with timings("dec.order_emb"):
-                if teacher_force_orders is not None:
-                    order_emb = self.order_embedding(teacher_force_orders[:, step])
-                else:
-                    order_emb = self.order_embedding(
-                        # nn.Embedding does not like negative padding
-                        torch.where(
-                            order_idxs == EOS_IDX,
-                            torch.zeros_like(order_idxs, requires_grad=False),
-                            order_idxs,
-                        )
-                    ).squeeze(1)
+                order_input = teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs.masked_fill(order_idxs == EOS_IDX, 0)
+                
+                order_emb = self.order_embedding(order_input)
+                if self.featurize_output:
+                    order_emb += self.order_feat_lin(self.order_feats[order_input])
                 
                 if self.graph_decoder:
                     order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]

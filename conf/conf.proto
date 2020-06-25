@@ -439,6 +439,8 @@ message TrainTask {
 
   optional int32 lstm_layers = 34 [default = 1];
 
+  optional bool featurize_output = 35 [default = false];
+
   optional Launcher launcher = 1000;
 }
 
