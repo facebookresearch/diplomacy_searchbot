@@ -181,15 +181,13 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
                 API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header,
             )
             missing_orders_json = json.loads(missing_orders_resp.content)
-            logger.debug(f"len before: {len(missing_orders_json)}")
             logger.info(missing_orders_json)
             if game_id != 0:
                 missing_orders_json = [x for x in missing_orders_json if x["gameID"] == game_id]
-            logger.debug(f"len after: {len(missing_orders_json)}")
             logger.info(missing_orders_json)
             if len(missing_orders_json) == 0:
                 logger.info("No games to provide orders. Sleeping for 2 seconds.")
-                time.sleep(2)
+                time.sleep(5)
                 continue
 
             next_game = missing_orders_json[0]
@@ -280,6 +278,7 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
             orders_resp = requests.post(
                 API_URL, params={"route": POST_ORDERS_ROUTE}, headers=api_header, json=retreat_json
             )
+            continue
             # orders_resp = requests.post(
             #     API_URL,
             #     params={"route": POST_ORDERS_ROUTE},

@@ -302,7 +302,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             optim.step()
 
             # log diagnostics
-            if rank == 0:
+            if rank == 0 and batch_i % 10 == 0:
                 scalars = dict(
                     epoch=epoch,
                     batch=batch_i,

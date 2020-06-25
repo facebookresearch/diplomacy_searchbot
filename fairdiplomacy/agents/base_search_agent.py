@@ -214,6 +214,7 @@ class BaseSearchAgent(BaseAgent):
         # non-trivial return case: query model
         counters = {p: Counter() for p in POWERS}
         x = [encode_inputs(game)] * n
+        orders_to_logprobs = {}
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
             batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
             batch_orders, batch_order_logprobs, _ = self.do_model_request(
@@ -225,7 +226,6 @@ class BaseSearchAgent(BaseAgent):
                 counters[power].update(batch_orders[p])
 
             # slow and steady
-            orders_to_logprobs = {}
             for power_orders, power_scores in zip(batch_orders, batch_order_logprobs):
                 for order, score in zip(power_orders, power_scores):
                     if order not in orders_to_logprobs:
@@ -233,6 +233,7 @@ class BaseSearchAgent(BaseAgent):
                     assert (
                         abs(orders_to_logprobs[order] - score) < 1e-2
                     ), f"{order} : {orders_to_logprobs[order]} != {score}"
+
         logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
                 n, temperature, list(map(len, counters.values())), limits
@@ -247,11 +248,16 @@ class BaseSearchAgent(BaseAgent):
             for (power, counter), limit in zip(counters.items(), limits)
         }
 
-        # choose most common
         most_common = {
-            power: counter.most_common(limit)
+            power: sorted(counter.most_common(), key=lambda o: -orders_to_logprobs[o[0]])[:limit]
             for (power, counter), limit in zip(counters.items(), limits)
         }
+
+        # # choose most common
+        # most_common = {
+        #     power: counter.most_common(limit)
+        #     for (power, counter), limit in zip(counters.items(), limits)
+        # }
 
         try:
             logging.info(
@@ -274,7 +280,7 @@ class BaseSearchAgent(BaseAgent):
             logging.info(f"    {power}")
             for orders, count in orders_and_counts:
                 logging.info(
-                    f"        {count:5d} {count/n:8.3f} {np.exp(orders_to_logprobs[orders]):8.3f}  {orders}"
+                    f"        {count:5d} {count/n:10.5f} {np.exp(orders_to_logprobs[orders]):10.5f}  {orders}"
                 )
 
         return {
