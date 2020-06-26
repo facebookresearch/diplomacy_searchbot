@@ -295,7 +295,14 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
             )
 
         # logger.info(orders_resp.content)
-        orders_resp_json = json.loads(orders_resp.content)
+        try:
+            orders_resp_json = json.loads(orders_resp.content)
+        except json.decoder.JSONDecodeError as e:
+            logger.info("GOT ERROR DECODING ORDER RESPONSE!")
+            logger.info(orders_resp.content)
+            logger.info(e)
+            continue
+
         logger.info(f"Response: {pformat(orders_resp_json)}")
 
         # sanity check that the orders were processed correctly

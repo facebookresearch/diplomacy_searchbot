@@ -205,7 +205,7 @@ class FP1PAgent(BaseSearchAgent):
                 if self.cache_rollout_results
                 else on_miss()
             )
-            if fp_iter & (fp_iter + 1) == 0:  # 2^n-1
+            if fp_iter & (fp_iter + 1) == 0 or fp_iter == self.n_rollouts - 1:  # 2^n-1
                 logging.info(f"[{fp_iter+1}/{self.n_rollouts}] Power sampled orders:")
                 for power, orders in cur_policy.items():
                     logging.info(f"    {power:10s}  {orders}")
