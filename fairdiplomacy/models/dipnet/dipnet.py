@@ -48,26 +48,37 @@ def compute_order_features():
     unit_idx = {'A': 0, 'F': 1}
     order_type_idx = {t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))}
 
+    num_locs = len(loc_idx)
     feats = []
+    srcs, dsts = [], []
     for o in order_split:
         u = o[3:] if len(o) >= 6 else o
-        srcT = torch.zeros(len(loc_idx))
-        dstT = torch.zeros(len(loc_idx))
+        srcT = torch.zeros(num_locs)
+        dstT = torch.zeros(num_locs)
         unitT = torch.zeros(len(unit_idx))
         orderT = torch.zeros(len(order_type_idx))
         underlyingT = torch.zeros(len(order_type_idx))
 
         if not o[2].startswith('B'):  # lets ignore the concatenated builds, they're tricky
-            srcT[loc_idx[u[1]]] = 1
-            dstT[loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]] = 1
-            unitT[unit_idx[o[0]]] = 1
+            src_loc = loc_idx[u[1]]
+            dst_loc = loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]
+            srcT[src_loc] = 1
+            dstT[dst_loc] = 1
+            unitT[unit_idx[o[0]]] = 1  # FIXME: this is wrong! should be u[0]. But too late for backwards compatibility
             orderT[order_type_idx[o[2]]] = 1
             underlyingT[order_type_idx[u[2]]] = 1
+            srcs.append(src_loc)
+            dsts.append(dst_loc)
+        else:
+            srcs.append(-1)
+            dsts.append(-1)
 
         feats.append(torch.cat((srcT, dstT, unitT, orderT, underlyingT), dim=-1))
 
     feats = torch.stack(feats, dim=0)
-    return feats
+    # FIXME: this could be done better
+    
+    return feats, torch.tensor(srcs, dtype=torch.long), torch.tensor(dsts, dtype=torch.long)
 
 
 class DipNet(nn.Module):
@@ -430,10 +441,22 @@ class LSTMDipNetDecoder(nn.Module):
 
         self.featurize_output = featurize_output
         if featurize_output:
-            self.register_buffer('order_feats', compute_order_features())
+            order_feats, srcs, dsts = compute_order_features()
+            self.register_buffer('order_feats', order_feats)
+            self.register_buffer('order_srcs', srcs)
+            self.register_buffer('order_dsts', dsts)
+            order_decoder_input_sz = self.order_feats.shape[1] + 2 * 2 * inter_emb_size
             self.order_feat_lin = nn.Linear(self.order_feats.shape[1], order_emb_size)
-            self.order_decoder_w = nn.Linear(self.order_feats.shape[1], lstm_size)  # FIXME
-            self.order_decoder_b = nn.Linear(self.order_feats.shape[1], 1)
+            self.order_decoder_w = nn.Linear(order_decoder_input_sz, lstm_size)  # FIXME
+            self.order_decoder_b = nn.Linear(order_decoder_input_sz, 1)
+
+    def get_order_loc_feats(self, order_locs, cand_idxs, enc):
+        cand_order_locs = order_locs[cand_idxs]
+        valid = cand_order_locs > 0  # B x O
+        cand_order_locs = cand_order_locs.clamp(min=0)
+        order_feats = enc.gather(1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc.shape[-1]))
+        order_feats *= valid.unsqueeze(-1)  # B x O x D
+        return order_feats
 
     def forward(
         self,
@@ -559,7 +582,10 @@ class LSTMDipNetDecoder(nn.Module):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
                 
                 if self.featurize_output:
-                    cand_order_feats = self.order_feats[cand_idxs]
+                    cand_simple_order_feats = self.order_feats[cand_idxs]
+                    src_order_feats = self.get_order_loc_feats(self.order_srcs, cand_idxs, enc)
+                    dst_order_feats = self.get_order_loc_feats(self.order_dsts, cand_idxs, enc)
+                    cand_order_feats = torch.cat((cand_simple_order_feats, src_order_feats, dst_order_feats), dim=-1)
                     order_w = self.order_decoder_w(cand_order_feats)
                     order_b = self.order_decoder_b(cand_order_feats)
                     order_scores_featurized = torch.bmm(order_w, out) + order_b
@@ -768,6 +794,16 @@ class DipNetBlock(nn.Module):
         if self.residual:
             y += x
         return y
+
+    # GCN+
+    # def forward(self, x):
+    #     y = self.batch_norm(x)
+    #     y = F.relu(y)
+    #     y = self.graph_conv(y)
+    #     y = self.dropout(y)
+    #     if self.residual:
+    #         y += x
+    #     return y
 
 
 def he_init(shape):
