@@ -51,5 +51,15 @@
         "tests": {
             "GER should retreat to Kie" : "lambda r: order_prob(r, 'A HOL R KIE') > 0.9"
         }
+    },
+    "turkey_ally_italy_1": {
+        "game_path": "/checkpoint/alerer/diplomacy_json/bob_turkey_307344.json",
+        "phase": "F1907M",
+        "powers": ["TURKEY"],
+        "tests": {
+            "AEG should not threaten ITA in ION" : "lambda r: order_prob(r, 'F AEG - ION') < 0.1",
+            "TUR kill pesky SYR unit" : "lambda r: order_prob(r, 'A ARM - SYR') + order_prb(r, 'F SMY - SYR') > 0.9",
+            "Repeat ITA support TUR into TRI should be considered" : "lambda r: order_prob(r, 'A VEN S A SER - TRI') > 0"
+        }
     }
 }
