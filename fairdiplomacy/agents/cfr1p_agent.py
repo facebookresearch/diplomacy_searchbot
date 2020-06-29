@@ -250,11 +250,10 @@ class CFR1PAgent(BaseSearchAgent):
                 if self.cache_rollout_results
                 else on_miss()
             )
-            timings.start("update")
-            if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
-                logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] Power sampled orders:")
-                for power, (orders, _) in power_sampled_orders.items():
-                    logging.info(f"    {power:10s}  {orders}")
+            # if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
+            #     logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] Power sampled orders:")
+            #     for power, (orders, _) in power_sampled_orders.items():
+            #         logging.info(f"    {power:10s}  {orders}")
 
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
@@ -272,14 +271,9 @@ class CFR1PAgent(BaseSearchAgent):
                 action_regrets = [(u - state_utility) for u in action_utilities]
 
                 # log some action values
-                # if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
-                if cfr_iter == self.n_rollouts - 1:
-                    logging.info(
-                        f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
-                    )
-                    logging.info(
-                        f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
-                    )
+                if (cfr_iter & (cfr_iter + 1) == 0 and cfr_iter > self.n_rollouts / 8) or cfr_iter == self.n_rollouts - 1:
+                    logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}")
+                    logging.info(f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
                     action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])
                     bp_probs: List[float] = self.bp_strategy(pwr, power_plausible_orders[pwr])
                     avg_utilities = [

@@ -40,7 +40,7 @@ message CFR1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -125,7 +125,7 @@ message BRSearchAgent {
   // Number of rollouts per plausible order
   optional uint32 rollouts_per_plausible_order = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -158,7 +158,7 @@ message CE1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -191,7 +191,7 @@ message FP1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -442,6 +442,7 @@ message TrainTask {
   optional int32 lstm_layers = 34 [default = 1];
 
   optional bool featurize_output = 35 [default = false];
+
 
   optional Launcher launcher = 1000;
 }

@@ -13,7 +13,7 @@ import postman
 import torch
 import torch.multiprocessing as mp
 
-from fairdiplomacy.game import Game
+from fairdiplomacy.game import Game, sort_phase_key
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
@@ -69,7 +69,7 @@ class BaseSearchAgent(BaseAgent):
         *,
         model_path,
         max_batch_size,
-        max_rollout_length,
+        max_rollout_length=3,
         rollout_temperature,
         rollout_top_p=1.0,
         n_server_procs=1,
@@ -171,7 +171,7 @@ class BaseSearchAgent(BaseAgent):
                 )
             )
             raise
-
+        assert x["x_board_state"].shape[0] == final_scores.shape[0], (x["x_board_state"].shape[0], final_scores.shape[0])
         if hasattr(final_scores, "numpy"):
             final_scores = final_scores.numpy()
 
@@ -406,17 +406,23 @@ class BaseSearchAgent(BaseAgent):
             other_powers = [p for p in POWERS if p not in set_orders_dict]
 
         remaining_score_weight = 1.0
-        for turn_idx in range(max_rollout_length + 1):
+        rollout_start_phase = games[0].current_short_phase
+        rollout_end_phase = n_move_phases_later(rollout_start_phase, max_rollout_length)
+        while True:
+            # step games together at the pace of the slowest game, e.g. process
+            # games with retreat phases alone before moving on to the next move phase
+            min_phase = min([game.current_short_phase for game in games], key=sort_phase_key)
             with timings("prep"):
                 batch_data = []
                 for game in games:
-                    if game.is_game_done:
-                        inputs = zero_inputs()
-                    else:
+                    if not game.is_game_done and game.current_short_phase == min_phase:
                         inputs = encode_inputs(
                             game, all_possible_orders=game.get_all_possible_orders(),  # expensive
                         )
-                    batch_data.append((game, inputs))
+                        batch_data.append((game, inputs))
+
+                if len(batch_data) == 0:
+                    break
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
@@ -428,7 +434,7 @@ class BaseSearchAgent(BaseAgent):
                         rollout_value_frac == 0
                     ), "If separate value model, you can't add in value each step (slow)"
 
-                cur_client = value_client if turn_idx == max_rollout_length else client
+                cur_client = value_client if min_phase == rollout_end_phase else client
 
                 batch_orders, _, batch_est_final_scores = cls.do_model_request(
                     cur_client, batch_inputs, temperature, top_p
@@ -438,15 +444,15 @@ class BaseSearchAgent(BaseAgent):
                     max_rollout_length > 0
                 ), "max_rollout_length = 0 doesn't even execute the orders..."
                 score_weight = remaining_score_weight
-                if turn_idx == 0:  # don't accumulate score on turn 0 when we haven't moved
+                if min_phase == rollout_start_phase:  # don't accumulate score on turn 0 when we haven't moved
                     score_weight = 0
-                if turn_idx < max_rollout_length:
+                if min_phase != rollout_end_phase:
                     score_weight *= rollout_value_frac
                 remaining_score_weight *= 1 - score_weight
 
-                assert batch_est_final_scores.shape[0] == len(games), batch_est_final_scores.shape
+                assert batch_est_final_scores.shape[0] == len(batch_data)
                 assert batch_est_final_scores.shape[1] == len(POWERS)
-                for game_idx, game in enumerate(games):
+                for game_idx, (game, _) in enumerate(batch_data):
                     cur_score_est = (
                         batch_est_final_scores[game_idx]
                         if not game.is_game_done
@@ -454,13 +460,14 @@ class BaseSearchAgent(BaseAgent):
                     )
                     # print('is_done', game.is_game_done, 'cur_score_est', cur_score_est, 'weight', score_weight, 'est_final', est_final_scores[game.game_id])
                     est_final_scores[game.game_id] += np.array(cur_score_est) * score_weight
-
+                    # print(min_phase, cur_score_est, score_weight, est_final_scores)
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
                     len(batch_data), len(batch_orders)
                 )
 
                 # set_orders and process
+                assert len(batch_data) == len(batch_orders)
                 for (game, _), power_orders in zip(batch_data, batch_orders):
                     if game.is_game_done:
                         continue
@@ -468,11 +475,13 @@ class BaseSearchAgent(BaseAgent):
                     for other_power in other_powers:
                         game.set_orders(other_power, list(power_orders[other_power]))
 
-                for game in games:
-                    if not game.is_game_done:
-                        game.process()
+                    assert game.current_short_phase == min_phase
+                    game.process()
 
             other_powers = POWERS  # no set orders on subsequent turns
+  
+            if sort_phase_key(min_phase) >= sort_phase_key(rollout_end_phase):
+                break
 
         with timings("final_scores"):
             # get GameScores objects for current game state
@@ -627,7 +636,7 @@ def server_handler(
     logging.info("SERVER DONE")
 
 
-def cat_pad_inputs(xs: List[DataFields]):
+def cat_pad_inputs(xs: List[DataFields]) -> Tuple[DataFields, List[int]]:
     batch = DataFields({k: [x[k] for x in xs] for k in xs[0].keys()})
     for k, v in batch.items():
         if k == "x_possible_actions":
@@ -741,3 +750,12 @@ def safe_idx(seq, idx, default=None):
         return seq[idx]
     except IndexError:
         return default
+
+def n_move_phases_later(from_phase, n):
+    year_idx = int(from_phase[1:-1]) - 1901
+    season = from_phase[0]
+    from_move_phase_idx = 2 * year_idx + (1 if season in "FW" else 0)
+    to_move_phase_idx = from_move_phase_idx + n
+    to_move_phase_year = to_move_phase_idx // 2 + 1901
+    to_move_phase_season = "S" if to_move_phase_idx % 2 == 0 else "F"
+    return f"{to_move_phase_season}{to_move_phase_year}M"
