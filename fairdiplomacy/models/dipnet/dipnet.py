@@ -464,9 +464,23 @@ class LSTMDipNetDecoder(nn.Module):
             self.order_relfeat_dst_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size)
             self.order_relfeat_dst_decoder_b = nn.Linear(order_relfeat_input_sz, 1)
 
+            self.order_emb_relfeat_src_decoder_w = nn.Linear(order_emb_size, lstm_size)
+            self.order_emb_relfeat_src_decoder_b = nn.Linear(order_emb_size, 1)
+            self.order_emb_relfeat_dst_decoder_w = nn.Linear(order_emb_size, lstm_size)
+            self.order_emb_relfeat_dst_decoder_b = nn.Linear(order_emb_size, 1)
+
     def get_order_loc_feats(self, cand_order_locs, enc_w, enc_b):
         valid = cand_order_locs > 0  # B x O
         cand_order_locs = cand_order_locs.clamp(min=0)
+        out_w = enc_w.gather(1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_w.shape[-1])) * valid.unsqueeze(-1)
+        out_b = enc_b.gather(1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_b.shape[-1])) * valid.unsqueeze(-1)
+        return out_w, out_b
+
+    def get_order_emb_loc_feats(self, cand_order_locs, enc, enc_w_lin, enc_b_lin):
+        valid = cand_order_locs > 0  # B x O
+        cand_order_locs = cand_order_locs.clamp(min=0)
+        enc_w = enc_w_lin(enc)
+        enc_b = enc_b_lin(enc)
         out_w = enc_w.gather(1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_w.shape[-1])) * valid.unsqueeze(-1)
         out_b = enc_b.gather(1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_b.shape[-1])) * valid.unsqueeze(-1)
         return out_w, out_b
@@ -509,10 +523,8 @@ class LSTMDipNetDecoder(nn.Module):
             all_sampled_idxs = []
             all_logits = []
 
-            if self.graph_decoder:
-                B = enc.shape[0]
-                order_enc = torch.zeros(B, 81, self.order_emb_size, device=enc.device)
-            else:
+            order_enc = torch.zeros(enc.shape[0], 81, self.order_emb_size, device=enc.device)
+            if not self.graph_decoder:
                 self.lstm.flatten_parameters()
                 hidden = (
                     torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
@@ -605,11 +617,26 @@ class LSTMDipNetDecoder(nn.Module):
                     order_b = self.order_decoder_b(cand_order_feats)
 
                     if self.relfeat_output:
-                        src_order_w, src_order_b = self.get_order_loc_feats(self.order_srcs[cand_idxs], src_relfeat_w, src_relfeat_b)
-                        dst_order_w, dst_order_b = self.get_order_loc_feats(self.order_dsts[cand_idxs], dst_relfeat_w, dst_relfeat_b)
-                        # print(src_relfeat_w.std(), dst_relfeat_w.std(), src_order_w.std(), dst_order_w.std())
-                        order_w += src_order_w + dst_order_w
-                        order_b += src_order_b + dst_order_b
+                        cand_srcs = self.order_srcs[cand_idxs]
+                        cand_dsts = self.order_dsts[cand_idxs]
+                        src_order_w, src_order_b = self.get_order_loc_feats(cand_srcs, src_relfeat_w, src_relfeat_b)
+                        dst_order_w, dst_order_b = self.get_order_loc_feats(cand_dsts, dst_relfeat_w, dst_relfeat_b)
+                        
+                        src_order_emb_w, src_order_emb_b = self.get_order_emb_loc_feats(
+                            cand_srcs,
+                            order_enc,
+                            self.order_emb_relfeat_src_decoder_w,
+                            self.order_emb_relfeat_src_decoder_b,
+                        )
+                        dst_order_emb_w, dst_order_emb_b = self.get_order_emb_loc_feats(
+                            cand_dsts,
+                            order_enc,
+                            self.order_emb_relfeat_dst_decoder_w,
+                            self.order_emb_relfeat_dst_decoder_b,
+                        )
+                        
+                        order_w += src_order_w + dst_order_w + src_order_emb_w + dst_order_emb_w
+                        order_b += src_order_b + dst_order_b + src_order_emb_b + dst_order_emb_b
 
                     order_scores_featurized = torch.bmm(order_w, out) + order_b
                     logits += order_scores_featurized.squeeze(-1)
@@ -671,7 +698,7 @@ class LSTMDipNetDecoder(nn.Module):
                 if self.featurize_output:
                     order_emb += self.order_feat_lin(self.order_feats[order_input])
                 
-                if self.graph_decoder:
+                if self.graph_decoder or self.relfeat_output:
                     order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]
 
         with timings("dec.fin"):
