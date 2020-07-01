@@ -77,7 +77,7 @@ def compute_order_features():
 
     feats = torch.stack(feats, dim=0)
     # FIXME: this could be done better
-    
+
     return feats, torch.tensor(srcs, dtype=torch.long), torch.tensor(dsts, dtype=torch.long)
 
 
@@ -423,7 +423,7 @@ class LSTMDipNetDecoder(nn.Module):
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
         self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
-        
+
         self.graph_decoder = graph_decoder
         if graph_decoder:
             self.decoder_A = nn.Parameter(A.clone())  # maybe A@A ?
@@ -527,10 +527,9 @@ class LSTMDipNetDecoder(nn.Module):
             if not self.graph_decoder:
                 self.lstm.flatten_parameters()
                 hidden = (
-                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
-                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
+                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size, device=device),
+                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size, device=device),
                 )
-            
             # reuse same dropout weights for all steps
             dropout_in = (
                 torch.zeros(
@@ -607,10 +606,10 @@ class LSTMDipNetDecoder(nn.Module):
 
             with timings("dec.cand_emb"):
                 cand_emb = self.cand_embedding(cand_idxs)
-                
+
             with timings("dec.logits"):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
-                
+
                 if self.featurize_output:
                     cand_order_feats = self.order_feats[cand_idxs]
                     order_w = self.order_decoder_w(cand_order_feats)
@@ -621,7 +620,7 @@ class LSTMDipNetDecoder(nn.Module):
                         cand_dsts = self.order_dsts[cand_idxs]
                         src_order_w, src_order_b = self.get_order_loc_feats(cand_srcs, src_relfeat_w, src_relfeat_b)
                         dst_order_w, dst_order_b = self.get_order_loc_feats(cand_dsts, dst_relfeat_w, dst_relfeat_b)
-                        
+
                         src_order_emb_w, src_order_emb_b = self.get_order_emb_loc_feats(
                             cand_srcs,
                             order_enc,
@@ -634,7 +633,7 @@ class LSTMDipNetDecoder(nn.Module):
                             self.order_emb_relfeat_dst_decoder_w,
                             self.order_emb_relfeat_dst_decoder_b,
                         )
-                        
+
                         order_w += src_order_w + dst_order_w + src_order_emb_w + dst_order_emb_w
                         order_b += src_order_b + dst_order_b + src_order_emb_b + dst_order_emb_b
 
@@ -693,11 +692,11 @@ class LSTMDipNetDecoder(nn.Module):
 
             with timings("dec.order_emb"):
                 order_input = teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs.masked_fill(order_idxs == EOS_IDX, 0)
-                
+
                 order_emb = self.order_embedding(order_input)
                 if self.featurize_output:
                     order_emb += self.order_feat_lin(self.order_feats[order_input])
-                
+
                 if self.graph_decoder or self.relfeat_output:
                     order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]
 

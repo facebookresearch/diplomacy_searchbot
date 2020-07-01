@@ -41,7 +41,6 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     """
     assert p_teacher_force == 1
     device = next(net.parameters()).device
-
     # forward pass
     teacher_force_orders = (
         cand_idxs_to_order_idxs(batch["y_actions"], batch["x_possible_actions"], pad_out=0)
@@ -81,6 +80,11 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     # calculate sum-of-squares value loss
     y_final_scores = batch["y_final_scores"].to(device).float().squeeze(1)
     value_loss = value_loss_fn(final_sos, y_final_scores)
+    
+    # a given state appears multiple times in the dataset for different powers,
+    # but we always compute the value loss for each power. So we need to reweight
+    # the value loss by 1/num_valid_powers
+    value_loss /= batch["valid_power_idxs"].sum(-1, keepdim=True).to(device)
 
     return policy_loss, value_loss, sampled_idxs, final_sos
 
@@ -257,7 +261,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
 
     # create optimizer, from checkpoint if specified
     policy_loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
-    value_loss_fn = torch.nn.SmoothL1Loss(reduction="none")
+    value_loss_fn = torch.nn.MSELoss(reduction="none")
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=1, gamma=args.lr_decay)
     if checkpoint:
