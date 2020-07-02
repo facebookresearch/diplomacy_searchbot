@@ -10,7 +10,6 @@ from typing import List
 from fairdiplomacy.game import Game
 from fairdiplomacy.data.build_dataset import (
     TERR_ID_TO_LOC,
-    LOC_TO_TERR_ID,
     COUNTRY_ID_TO_POWER,
     COUNTRY_POWER_TO_ID,
     get_valid_coastal_variant,
@@ -27,6 +26,19 @@ MISSING_ORDERS_ROUTE = "players/missing_orders"
 POST_ORDERS_ROUTE = "game/orders"
 
 logger = logging.getLogger("webdip")
+
+
+LOC_TO_TERR_ID = {v: k for k, v in TERR_ID_TO_LOC.items()}
+
+
+COAST_ID_TO_LOC_ID = {
+    76: 8,
+    77: 8,
+    78: 32,
+    79: 32,
+    80: 20,
+    81: 20,
+}
 
 
 def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
@@ -186,7 +198,7 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
                 missing_orders_json = [x for x in missing_orders_json if x["gameID"] == game_id]
             logger.info(missing_orders_json)
             if len(missing_orders_json) == 0:
-                logger.info("No games to provide orders. Sleeping for 2 seconds.")
+                logger.info("No games to provide orders. Sleeping for 5 seconds.")
                 time.sleep(5)
                 continue
 
@@ -244,6 +256,11 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
             ],  # [order_to_json(order.split(), game.phase) for order in agent_orders],
             "ready": "Yes",
         }
+
+        for order in agent_orders_json["orders"]:
+            if order["fromTerrID"] in COAST_ID_TO_LOC_ID:
+                order["fromTerrID"] = COAST_ID_TO_LOC_ID[order["fromTerrID"]]
+
         print(game.phase)
         # print([p.name for p in game.get_phase_history()])
         # print([p['turn'] for p in status_json['phases']])

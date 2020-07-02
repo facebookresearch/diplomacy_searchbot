@@ -104,8 +104,6 @@ TERR_ID_TO_LOC = {
     81: "BUL/SC",
 }
 
-LOC_TO_TERR_ID = {v: k for k, v in TERR_ID_TO_LOC.items()}
-
 COUNTRY_ID_TO_POWER = {
     1: "ENGLAND",
     2: "FRANCE",
