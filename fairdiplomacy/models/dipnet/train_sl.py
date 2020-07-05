@@ -444,6 +444,7 @@ def run_with_cfg(args):
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
             min_rating=min_rating,
+            exclude_n_holds=args.exclude_n_holds,
         )
         val_dataset = Dataset(
             game_ids=val_game_ids,
@@ -453,6 +454,7 @@ def run_with_cfg(args):
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
             min_rating=min_rating,
+            exclude_n_holds=args.exclude_n_holds,
         )
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")

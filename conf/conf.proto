@@ -452,6 +452,9 @@ message TrainTask {
   // if true, add "relational" features to output orders in the model
   optional bool relfeat_output = 36 [default = false];
 
+  // exclude actions with >=n units, all holds, from the dataset
+  optional int32 exclude_n_holds = 37 [default = -1];
+
   optional Launcher launcher = 1000;
 }
 

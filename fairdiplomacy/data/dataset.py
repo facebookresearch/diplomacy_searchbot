@@ -67,6 +67,7 @@ class Dataset(torch.utils.data.Dataset):
         cf_agent=None,
         n_cf_agent_samples=1,
         min_rating=None,
+        exclude_n_holds=-1
     ):
         self.game_ids = game_ids
         self.data_dir = data_dir
@@ -89,6 +90,7 @@ class Dataset(torch.utils.data.Dataset):
                 value_decay_alpha=value_decay_alpha,
                 input_valid_power_idxs=self.get_valid_power_idxs(game_id),
                 game_metadata=self.game_metadata[game_id],
+                exclude_n_holds=exclude_n_holds,
             )
             for game_id in game_ids
         )
@@ -204,6 +206,7 @@ def encode_game(
     input_valid_power_idxs,
     value_decay_alpha,
     game_metadata,
+    exclude_n_holds,
 ):
     """
     Arguments:
@@ -252,6 +255,7 @@ def encode_game(
             n_cf_agent_samples=n_cf_agent_samples,
             value_decay_alpha=value_decay_alpha,
             input_valid_power_idxs=input_valid_power_idxs,
+            exclude_n_holds=exclude_n_holds
         )
         for phase_idx in range(num_phases)
     ]
@@ -337,6 +341,7 @@ def encode_phase(
     n_cf_agent_samples=1,
     value_decay_alpha,
     input_valid_power_idxs,
+    exclude_n_holds
 ):
     """
     Arguments:
@@ -408,6 +413,9 @@ def encode_phase(
                 orders, x_possible_actions[power_i]
             )
             encoded_power_actions_lst.append(encoded_power_actions)
+            if exclude_n_holds >= 0 and len(orders) >= exclude_n_holds:
+                if all(o.endswith(' H') for o in orders):
+                    valid = 0
             valid_power_idxs[power_i] &= valid
         y_actions_lst.append(torch.stack(encoded_power_actions_lst, dim=0))  # [N, 17]
 
