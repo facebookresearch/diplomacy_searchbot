@@ -6,9 +6,6 @@ import torch
 from concurrent.futures import ThreadPoolExecutor
 
 from fairdiplomacy.game import Game
-from fairdiplomacy.agents.random_agent import RandomAgent
-from fairdiplomacy.agents.mila_sl_agent import MilaSLAgent
-from fairdiplomacy.agents.dipnet_agent import DipnetAgent
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s")
 logging.getLogger().setLevel(logging.INFO)
@@ -55,7 +52,7 @@ class Env:
                 continue
             t = time.time()
             orders = agent.get_orders(self.game, power)
-            logging.debug(
+            logging.info(
                 "Set orders {} {} {} in {}s".format(
                     self.game._phase_abbr(), power, orders, time.time() - t
                 )

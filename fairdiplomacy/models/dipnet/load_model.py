@@ -12,22 +12,24 @@ SEASON_EMB_SIZE = 20
 NUM_ENCODER_BLOCKS = 16
 LSTM_SIZE = 200
 ORDER_EMB_SIZE = 80
+PREV_ORDER_EMB_SIZE = 20
+LSTM_LAYERS = 1
 
 
 def new_model(args):
     return DipNet(
         board_state_size=BOARD_STATE_SIZE,
-        prev_orders_size=PREV_ORDERS_SIZE,
+        # prev_orders_size=PREV_ORDERS_SIZE,
+        prev_order_emb_size=PREV_ORDER_EMB_SIZE,
         inter_emb_size=INTER_EMB_SIZE,
         power_emb_size=POWER_EMB_SIZE,
         season_emb_size=SEASON_EMB_SIZE,
-        num_blocks=args.num_encoder_blocks
-        if hasattr(args, "num_encoder_blocks")
-        else NUM_ENCODER_BLOCKS,
+        num_blocks=getattr(args, "num_encoder_blocks", NUM_ENCODER_BLOCKS),
         A=torch.from_numpy(ADJACENCY_MATRIX).float(),
         master_alignments=torch.from_numpy(MASTER_ALIGNMENTS).float(),
         orders_vocab_size=len(get_order_vocabulary()),
-        lstm_size=LSTM_SIZE,
+        lstm_size=getattr(args, "lstm_size", LSTM_SIZE),
+        lstm_layers=getattr(args, "lstm_layers", LSTM_LAYERS),
         order_emb_size=ORDER_EMB_SIZE,
         lstm_dropout=args.lstm_dropout,
         encoder_dropout=args.encoder_dropout,
@@ -36,6 +38,8 @@ def new_model(args):
         avg_embedding=args.avg_embedding,
         value_decoder_init_scale=args.value_decoder_init_scale,
         value_dropout=args.value_dropout,
+        graph_decoder=getattr(args, "graph_decoder", False),
+        featurize_output=getattr(args, "featurize_output", False),
     )
 
 

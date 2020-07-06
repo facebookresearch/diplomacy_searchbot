@@ -21,6 +21,7 @@ from fairdiplomacy.agents.dipnet_agent import (
     encode_state,
     decode_order_idxs,
 )
+from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
@@ -145,12 +146,12 @@ class BaseSearchAgent(BaseAgent):
 
     @classmethod
     def do_model_request(
-        cls, client, x, temperature: float, top_p: float
+        cls, client, x: DataFields, temperature: float, top_p: float
     ) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
         """Synchronous request to model server
 
         Arguments:
-        - x: a Tuple of Tensors, where each tensor's dim=0 is the batch dim
+        - x: a DataFields dict of Tensors, where each tensor's dim=0 is the batch dim
         - temperature: model softmax temperature
         - top_p: probability mass to samples from
 
@@ -158,14 +159,16 @@ class BaseSearchAgent(BaseAgent):
         - a list (len = batch size) of lists (len=7) of order-tuples
         - [7] float32 array of estimated final scores
         """
-        temp_array = torch.zeros(x[0].shape[0], 1).fill_(temperature)
-        top_p_array = torch.zeros(x[0].shape[0], 1).fill_(top_p)
-        req = (*x, temp_array, top_p_array)
+        B = x["x_board_state"].shape[0]
+        x["temperature"] = torch.zeros(B, 1).fill_(temperature)
+        x["top_p"] = torch.zeros(B, 1).fill_(top_p)
         try:
-            order_idxs, order_logprobs, final_scores = client.evaluate(req)
+            order_idxs, order_logprobs, final_scores = client.evaluate(x)
         except Exception:
             logging.error(
-                "Caught server error with inputs {}".format([(x.shape, x.dtype) for x in req])
+                "Caught server error with inputs {}".format(
+                    [(k, v.shape, v.dtype) for k, v in x.items()]
+                )
             )
             raise
 
@@ -190,7 +193,7 @@ class BaseSearchAgent(BaseAgent):
         limit: Union[int, Sequence[int]],  # limit, or list of limits per power
         batch_size=500,
         top_p=1.0,
-    ) -> Dict[str, Set[Tuple[str]]]:
+    ) -> Dict[str, Dict[Tuple[str], float]]:
         assert n % batch_size == 0, f"{n}, {batch_size}"
 
         # limits is a list of 7 limits
@@ -211,6 +214,7 @@ class BaseSearchAgent(BaseAgent):
         # non-trivial return case: query model
         counters = {p: Counter() for p in POWERS}
         x = [encode_inputs(game)] * n
+        orders_to_logprobs = {}
         for x_chunk in [x[i : i + batch_size] for i in range(0, n, batch_size)]:
             batch_inputs, seq_lens = cat_pad_inputs(x_chunk)
             batch_orders, batch_order_logprobs, _ = self.do_model_request(
@@ -222,7 +226,6 @@ class BaseSearchAgent(BaseAgent):
                 counters[power].update(batch_orders[p])
 
             # slow and steady
-            orders_to_logprobs = {}
             for power_orders, power_scores in zip(batch_orders, batch_order_logprobs):
                 for order, score in zip(power_orders, power_scores):
                     if order not in orders_to_logprobs:
@@ -230,6 +233,7 @@ class BaseSearchAgent(BaseAgent):
                     assert (
                         abs(orders_to_logprobs[order] - score) < 1e-2
                     ), f"{order} : {orders_to_logprobs[order]} != {score}"
+
         logging.info(
             "get_plausible_orders(n={}, t={}) found {} unique sets, choosing top {}".format(
                 n, temperature, list(map(len, counters.values())), limits
@@ -244,11 +248,16 @@ class BaseSearchAgent(BaseAgent):
             for (power, counter), limit in zip(counters.items(), limits)
         }
 
-        # choose most common
         most_common = {
-            power: counter.most_common(limit)
+            power: sorted(counter.most_common(), key=lambda o: -orders_to_logprobs[o[0]])[:limit]
             for (power, counter), limit in zip(counters.items(), limits)
         }
+
+        # # choose most common
+        # most_common = {
+        #     power: counter.most_common(limit)
+        #     for (power, counter), limit in zip(counters.items(), limits)
+        # }
 
         try:
             logging.info(
@@ -271,7 +280,7 @@ class BaseSearchAgent(BaseAgent):
             logging.info(f"    {power}")
             for orders, count in orders_and_counts:
                 logging.info(
-                    f"        {count:5d} {count/n:8.3f} {np.exp(orders_to_logprobs[orders]):8.3f}  {orders}"
+                    f"        {count:5d} {count/n:10.5f} {np.exp(orders_to_logprobs[orders]):10.5f}  {orders}"
                 )
 
         return {
@@ -405,9 +414,7 @@ class BaseSearchAgent(BaseAgent):
                         inputs = zero_inputs()
                     else:
                         inputs = encode_inputs(
-                            game,
-                            all_possible_orders=game.get_all_possible_orders(),  # expensive
-                            game_state=encode_state(game),
+                            game, all_possible_orders=game.get_all_possible_orders(),  # expensive
                         )
                     batch_data.append((game, inputs))
 
@@ -584,10 +591,10 @@ def server_handler(
                         inputs = batch.get_inputs()[0]
 
                     with timings("to_cuda"):
-                        inputs = tuple(x.to("cuda") for x in inputs)
+                        inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
                     with timings("model"):
-                        y = model(*inputs)
+                        y = model(**inputs)
 
                     with timings("transform"):
                         if output_transform is not None:
@@ -602,7 +609,7 @@ def server_handler(
                     # Do some performance logging here
                     batch_count += 1
                     total_batches += 1
-                    frame_count += inputs[0].shape[0]
+                    frame_count += inputs["x_board_state"].shape[0]
                     if (total_batches & (total_batches - 1)) == 0:
                         delta = time.time() - totaltic
                         logging.debug(
@@ -620,19 +627,17 @@ def server_handler(
     logging.info("SERVER DONE")
 
 
-def cat_pad_inputs(xs):
-    batch = list(zip(*xs))
+def cat_pad_inputs(xs: List[DataFields]):
+    batch = DataFields({k: [x[k] for x in xs] for k in xs[0].keys()})
+    for k, v in batch.items():
+        if k == "x_possible_actions":
+            batch[k] = cat_pad_sequences(v, pad_value=-1, pad_to_len=MAX_SEQ_LEN)[0]
+        elif k == "x_loc_idxs":
+            batch[k], seq_lens = cat_pad_sequences(v, pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN)
+        else:
+            batch[k] = torch.cat(v)
 
-    # first cat_pad_sequences on sequence inputs
-    padded_loc_idxs_seqs, _ = cat_pad_sequences(batch[-2], pad_value=-1, pad_to_len=MAX_SEQ_LEN)
-
-    padded_mask_seqs, seq_lens = cat_pad_sequences(
-        batch[-1], pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN
-    )
-
-    # then cat all tensors
-    batch_inputs = [torch.cat(ts) for ts in batch[:-2]] + [padded_loc_idxs_seqs, padded_mask_seqs]
-    return batch_inputs, seq_lens
+    return batch, seq_lens
 
 
 def compute_sampled_logprobs(sampled_idxs, logits):

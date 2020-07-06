@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import atexit
-import glob
 import json
 import logging
 import os
@@ -10,8 +9,9 @@ from collections import Counter
 from functools import reduce
 from torch.utils.data.distributed import DistributedSampler
 
-from fairdiplomacy.data.dataset import Dataset
+from fairdiplomacy.data.dataset import Dataset, DataFields
 from fairdiplomacy.models.dipnet.load_model import new_model
+from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
@@ -42,30 +42,20 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     assert p_teacher_force == 1
     device = next(net.parameters()).device
 
-    x_state, x_orders, x_power, x_season, x_in_adj_phase, y_final_scores, x_possible_actions, x_loc_idxs, y_actions = (
-        batch
-    )
-
     # forward pass
     teacher_force_orders = (
-        cand_idxs_to_order_idxs(y_actions, x_possible_actions, pad_out=0)
+        cand_idxs_to_order_idxs(batch["y_actions"], batch["x_possible_actions"], pad_out=0)
         if torch.rand(1) < p_teacher_force
         else None
     )
     order_idxs, sampled_idxs, logits, final_sos = net(
-        x_state,
-        x_orders,
-        x_season,
-        x_in_adj_phase,
-        x_loc_idxs,
-        x_possible_actions,
+        **{k: v for k, v in batch.items() if k.startswith("x_")},
         temperature=temperature,
         teacher_force_orders=teacher_force_orders,
-        x_power=x_power.view(-1, 7),
     )
 
-    x_possible_actions = x_possible_actions.to(device)
-    y_actions = y_actions.to(device)
+    # x_possible_actions = batch['x_possible_actions'].to(device)
+    y_actions = batch["y_actions"].to(device)
 
     # reshape and mask out <EOS> tokens from sequences
     y_actions = y_actions[:, : logits.shape[1]].reshape(-1)  # [B * S]
@@ -82,14 +72,14 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     if observed_logits.min() < -1e7:
         min_score, min_idx = observed_logits.min(0)
         logger.warning(
-            f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!!"
+            f"!!! Got masked order for {get_order_vocabulary()[y_actions[min_idx]]} !!!"
         )
 
     # calculate policy loss
     policy_loss = policy_loss_fn(logits, y_actions)
 
     # calculate sum-of-squares value loss
-    y_final_scores = y_final_scores.to(device).float().squeeze(1)
+    y_final_scores = batch["y_final_scores"].to(device).float().squeeze(1)
     value_loss = value_loss_fn(final_sos, y_final_scores)
 
     return policy_loss, value_loss, sampled_idxs, final_sos
@@ -164,8 +154,8 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
 
         for batch_idxs in torch.arange(len(val_set)).split(batch_size):
             batch = val_set[batch_idxs]
-            batch = [x.to(net_device) for x in batch]
-            y_final_scores, y_actions = batch[5], batch[-1]
+            batch = DataFields({k: v.to(net_device) for k, v in batch.items()})
+            y_actions = batch["y_actions"]
             if y_actions.shape[0] == 0:
                 logger.warning(
                     "Got an empty validation batch! y_actions.shape={}".format(y_actions.shape)
@@ -176,7 +166,9 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
             )
             batch_losses.append((policy_losses, value_losses))
             batch_accuracies.append(calculate_accuracy(sampled_idxs, y_actions))
-            batch_value_accuracies.append(calculate_value_accuracy(final_sos, y_final_scores))
+            batch_value_accuracies.append(
+                calculate_value_accuracy(final_sos, batch["y_final_scores"])
+            )
             batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, y_actions))
         net.train()
 
@@ -284,7 +276,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             logger.debug(f"Zero grad {batch_i} ...")
 
             # check batch is not empty
-            if (batch[-1] == EOS_IDX).all():
+            if (batch["y_actions"] == EOS_IDX).all():
                 logger.warning("Skipping empty epoch {} batch {}".format(epoch, batch_i))
                 continue
 
@@ -310,7 +302,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             optim.step()
 
             # log diagnostics
-            if rank == 0:
+            if rank == 0 and batch_i % 10 == 0:
                 scalars = dict(
                     epoch=epoch,
                     batch=batch_i,
@@ -330,7 +322,14 @@ def main_subproc(rank, world_size, args, train_set, val_set):
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
             logger.info("Calculating val loss...")
-            valid_loss, valid_p_loss, valid_v_loss, valid_p_accuracy, valid_v_accuracy, split_pcts = validate(
+            (
+                valid_loss,
+                valid_p_loss,
+                valid_v_loss,
+                valid_p_accuracy,
+                valid_v_accuracy,
+                split_pcts,
+            ) = validate(
                 net,
                 val_set,
                 policy_loss_fn,
@@ -399,24 +398,57 @@ def run_with_cfg(args):
         logger.info(f"Found dataset cache at {args.data_cache}")
         train_dataset, val_dataset = torch.load(args.data_cache)
     else:
+        assert args.metadata_path is not None
         assert args.data_dir is not None
-        game_jsons = glob.glob(os.path.join(args.data_dir, "**/*.json"), recursive=True)
-        assert len(game_jsons) > 0
-        logger.info(f"Found dataset of {len(game_jsons)} games...")
-        val_game_jsons = random.sample(game_jsons, max(1, int(len(game_jsons) * args.val_set_pct)))
-        train_game_jsons = list(set(game_jsons) - set(val_game_jsons))
+        with open(args.metadata_path) as meta_f:
+            game_metadata = json.load(meta_f)
+
+        # convert to int game keys
+        game_metadata = {int(k): v for k, v in game_metadata.items()}
+        game_ids = list(game_metadata.keys())
+
+        # compute min rating
+        if args.min_rating_percentile > 0:
+            ratings = torch.tensor(
+                [
+                    game[pwr]["logit_rating"]
+                    for game in game_metadata.values()
+                    for pwr in POWERS
+                    if pwr in game
+                ]
+            )
+            min_rating = ratings.sort()[0][int(len(ratings) * args.min_rating_percentile)]
+            print(
+                f"Only training on games with min rating of {min_rating} ({args.min_rating_percentile * 100} percentile)"
+            )
+        else:
+            min_rating = -1e9
+
+        if args.max_games > 0:
+            game_ids = game_ids[: args.max_games]
+
+        assert len(game_ids) > 0
+        logger.info(f"Found dataset of {len(game_ids)} games...")
+        val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * args.val_set_pct)))
+        train_game_ids = list(set(game_ids) - set(val_game_ids))
 
         train_dataset = Dataset(
-            train_game_jsons,
+            game_ids=train_game_ids,
+            data_dir=args.data_dir,
+            game_metadata=game_metadata,
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
+            min_rating=min_rating,
         )
         val_dataset = Dataset(
-            val_game_jsons,
+            game_ids=val_game_ids,
+            data_dir=args.data_dir,
+            game_metadata=game_metadata,
             only_with_min_final_score=args.only_with_min_final_score,
             n_jobs=args.num_dataloader_workers,
             value_decay_alpha=args.value_decay_alpha,
+            min_rating=min_rating,
         )
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")

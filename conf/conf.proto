@@ -102,6 +102,8 @@ message CFR1PAgent {
   // model-predicted value as this fraction of the final estimate
   // (i.e. exponentially decaying effect of rollouts of increasing length)
   optional float rollout_value_frac = 25 [ default = 0 ];
+
+  optional bool cache_rollout_results = 26 [ default = false ];
 }
 
 message BRSearchAgent {
@@ -170,6 +172,92 @@ message CE1PAgent {
   optional float rollout_temperature = 10;
 }
 
+message FP1PAgent {
+  // Path to DipNet checkpoint.
+  optional string model_path = 1;
+
+  // Size of rollout process pool
+  optional uint32 n_rollout_procs = 2;
+
+  // Number of postman server processes to launch
+  optional uint32 n_server_procs = 3;
+
+  // Distribute server processes over multiple GPUs
+  optional uint32 n_gpu = 4;
+
+  // Model server maximum batch size
+  optional uint32 max_batch_size = 5;
+
+  // Number of CFR iterations
+  optional uint32 n_rollouts = 6;
+
+  // Maximum rollout length heuristically evaluating the game
+  optional uint32 max_rollout_length = 7;
+
+  // If true, use model predicted final scores in heuristic evalauation
+  // If false, use current SC counts after max_rollout_length steps
+  optional bool use_predicted_final_scores = 8;
+
+  // Number of order-sets (actions) to consider at each step in search code
+  optional uint32 n_plausible_orders = 9;
+
+  // Temperature used for rollouts
+  optional float rollout_temperature = 10;
+
+  // If true, set postman batch size and use wait_till_full
+  optional bool postman_sync_batches = 11;
+
+  // Optional host:port for model server
+  optional string use_server_addr = 12;
+
+  // CUDA device to use, if > 0
+  optional int32 device = 13 [ default = -1 ];
+
+  // Optional float 0 - 1 to mix in raw sum of squares ratio
+  optional float mix_square_ratio_scoring = 14;
+
+  // Optional, # of rollouts to run in parallel for each possible action
+  optional uint32 average_n_rollouts = 15;
+
+  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
+  // smallest subset of actions that has probability at least top_p is
+  // considered. All other actions are never sampled.
+  optional float rollout_top_p = 16;
+
+  // Optional, limit number of actions to consider as a ratio of # units
+  // # plausible actions = min(ceil(max_actions_units_ratio * #units), n_plausible_orders)
+  optional float max_actions_units_ratio = 17 [ default = -1 ];
+
+  // Optional, if True, sample from final iter instead of average iter
+  optional bool use_final_iter = 18 [ default = true ];
+
+  // Optional: separate model path to compute the value function
+  optional string value_model_path = 19;
+
+  // Optional host:port for value model server
+  optional string use_value_server_addr = 20;
+
+  optional uint32 plausible_orders_req_size = 21 [ default = 0 ];
+
+  // Optional, if True, prune actions after 1/4 of the number of iters
+  // optional bool use_pruning = 22 [ default = false ];
+
+  // Optional, if >0 then play BP strategy for this many iters
+  optional int32 bp_iters = 23 [ default = 0 ];
+
+  // Optional, if >0 then play BP strategy for this many iters
+  optional float bp_prob = 24 [ default = 0 ];
+
+  // Optional, if >0, then at each rollout step will use the current
+  // model-predicted value as this fraction of the final estimate
+  // (i.e. exponentially decaying effect of rollouts of increasing length)
+  optional float rollout_value_frac = 25 [ default = 0 ];
+
+  // Optional. If >0 then cache results after averaging results
+  // for a set of orders this many times
+  optional uint32 cache_rollout_results = 26 [ default = 0 ];
+}
+
 message ReproAgent {
   // Required, path to game.json file
   optional string game_path = 1;
@@ -184,6 +272,7 @@ message Agent {
     BRSearchAgent br_search = 5;
     CE1PAgent ce1p = 6;
     ReproAgent repro = 7;
+    FP1PAgent fp1p = 8;
   }
 }
 
@@ -337,6 +426,22 @@ message TrainTask {
 
   // Factor used in exponential weighted average of sum of squares scores
   optional float value_decay_alpha = 28 [ default = 1.0 ];
+
+  // Path to file containing game metadata.
+  optional string metadata_path = 29;
+
+  // Max gamesto include in dataset (for testing only)
+  optional int32 max_games = 30 [default = -1];
+
+  optional float min_rating_percentile = 31 [default = 0];
+
+  optional bool graph_decoder = 32 [default = false];
+
+  optional int32 lstm_size = 33 [default = 200];
+
+  optional int32 lstm_layers = 34 [default = 1];
+
+  optional bool featurize_output = 35 [default = false];
 
   optional Launcher launcher = 1000;
 }
@@ -560,6 +665,14 @@ message BenchmarkAgent {
   optional Launcher launcher = 100;
 }
 
+message PlayWebdipTask {
+  optional Agent agent = 1;
+  optional string api_key = 2;
+  optional uint64 game_id = 3;
+  optional string check_phase = 4;
+  optional string json_out = 5;
+}
+
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -587,6 +700,7 @@ message MetaCfg {
     BuildDbCacheTask build_db_cache = 105;
     SituationCheckTask situation_check = 106;
     BenchmarkAgent benchmark_agent = 107;
+    PlayWebdipTask play_webdip = 108;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

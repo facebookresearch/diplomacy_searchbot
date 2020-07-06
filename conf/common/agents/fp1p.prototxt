@@ -1,4 +1,4 @@
-cfr1p {
+fp1p {
   max_batch_size: 700
   max_rollout_length: 5
   model_path: "/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best"

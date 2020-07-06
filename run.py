@@ -9,6 +9,8 @@ from fairdiplomacy.game import Game
 from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.models.dipnet import train_sl
 from fairdiplomacy.situation_check import run_situation_check
+from fairdiplomacy.webdip_api import play_webdip as play_webdip_impl
+
 import heyhi
 import conf.conf_pb2
 
@@ -106,6 +108,19 @@ def benchmark_agent(cfg):
     import fairdiplomacy.benchmark_agent
 
     fairdiplomacy.benchmark_agent.run(cfg)
+
+
+def play_webdip(cfg):
+
+    agent = build_agent_from_cfg(cfg.agent)
+
+    play_webdip_impl(
+        api_key=cfg.api_key,
+        game_id=cfg.game_id,
+        agent=agent,
+        check_phase=cfg.check_phase,
+        json_out=cfg.json_out,
+    )
 
 
 @heyhi.save_result_in_cwd

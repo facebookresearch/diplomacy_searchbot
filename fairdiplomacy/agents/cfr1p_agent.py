@@ -114,8 +114,8 @@ class CFR1PAgent(BaseSearchAgent):
             n=self.plausible_orders_req_size,
             batch_size=self.plausible_orders_req_size,
         )
-        for p, orders_to_prob in power_plausible_orders.items():
-            for o, prob in orders_to_prob.items():
+        for p, orders_to_logprob in power_plausible_orders.items():
+            for o, prob in orders_to_logprob.items():
                 self.bp_sigma[(p, o)] = float(np.exp(prob))
         power_plausible_orders = {
             p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()
@@ -272,20 +272,22 @@ class CFR1PAgent(BaseSearchAgent):
                 action_regrets = [(u - state_utility) for u in action_utilities]
 
                 # log some action values
-                if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
+                # if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
+                if cfr_iter == self.n_rollouts - 1:
                     logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}")
-                    logging.info(f"    {'probs':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
+                    logging.info(f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
                     action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])
+                    bp_probs: List[float] = self.bp_strategy(pwr, power_plausible_orders[pwr])
                     avg_utilities = [(self.cum_regrets[(pwr, a)] + self.cum_utility[pwr]) / iter_weight for a in actions]
-                    sorted_metrics = sorted(zip(actions, action_probs, avg_utilities, action_utilities), key=lambda ac: -ac[2])
-                    for orders, p, avg_u, cur_u in sorted_metrics:
-                        logging.info(f"    {p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
+                    sorted_metrics = sorted(zip(actions, action_probs, bp_probs, avg_utilities, action_utilities), key=lambda ac: -ac[1])
+                    for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
+                        logging.info(f"    {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
 
-                elif pwr == early_exit_for_power:
-                    u = action_utilities[idxs[pwr]]
-                    logging.info(
-                        f"Sampled action utility={u} exp_utility={state_utility:.5f} regret={u - state_utility:.5f}"
-                    )
+                # elif pwr == early_exit_for_power:
+                #     u = action_utilities[idxs[pwr]]
+                #     logging.info(
+                #         f"Sampled action utility={u} exp_utility={state_utility:.5f} regret={u - state_utility:.5f}"
+                #     )
 
                 # print(f"iter {cfr_iter} {pwr}")
                 # def PP(label, L):

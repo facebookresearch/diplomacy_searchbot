@@ -69,7 +69,7 @@ python $CODE_CHECKPOINT/run.py \
   I.agent_one=agents/$AGENT_ONE \
   I.agent_six=agents/$AGENT_SIX \
   power_one=$POWER \
-  seed=\$SLURM_ARRAY_TASK_ID \
+  seed=\$(echo "(\$SLURM_ARRAY_TASK_ID + 1000 * \$SLURM_ARRAY_JOB_ID) % 67867979" | bc) \
   out=${CHECKPOINT_DIR}/game_${POW}.\$SLURM_ARRAY_TASK_ID.json $@
 
 EOF

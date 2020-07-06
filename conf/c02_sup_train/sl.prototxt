@@ -1,6 +1,7 @@
 train {
-    data_dir: "/checkpoint/jsgray/diplomacy/mila_dataset/data";
-    data_cache: "/checkpoint/jsgray/diplomacy/data_cache_candidx.pth";
+    data_dir: "/checkpoint/alerer/fairdiplomacy/facebook_notext/games";
+    data_cache: "/checkpoint/alerer/fairdiplomacy/facebook_notext/data_cache_fb_minrating0.5.pt";
+    metadata_path: "/checkpoint/alerer/fairdiplomacy/facebook_notext/metadata.json";
     num_dataloader_workers: 20;
     batch_size: 2500;
     lr: 0.001;
@@ -20,8 +21,10 @@ train {
     learnable_alignments: false;
     avg_embedding: false;
     write_jsonl: true;
-    value_loss_weight: 0.3;
     value_decoder_init_scale: 0.01;
     value_decoder_clip_grad_norm: 1e-7;
     value_decay_alpha: 0.9;
+    min_rating_percentile: 0.5;
+    value_loss_weight: 0.9;
+    batch_size: 1000;
 }

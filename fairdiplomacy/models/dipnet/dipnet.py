@@ -11,6 +11,63 @@ from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
 from fairdiplomacy.utils.padded_embedding import PaddedEmbedding
 from fairdiplomacy.utils.timing_ctx import TimingCtx
+from fairdiplomacy.models.consts import LOCS
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
+
+EOS_TOKEN = get_order_vocabulary()[EOS_IDX]
+
+# def make_onehot(X, k):
+#     """Converts a list of indices X, 0 <= X < k, into a one-hot tensor.
+#     """
+
+#     ret = torch.zeros((len(X), k))
+#     idx = torch.tensor(X, dtype=torch.long).unsqueeze(-1)
+#     ret.scatter_(1, idx, 1)
+#     return ret
+
+
+def compute_order_features():
+    """Returns a [13k x D] tensor where each row contains (one-hot) features for one order in the vocabulary.
+    """
+
+    order_vocabulary = get_order_vocabulary()
+    # assert order_vocabulary[0] == EOS_TOKEN
+    # order_vocabulary = order_vocabulary[1:]  # we'll fix this up at the end
+    order_split = [o.split() for o in order_vocabulary]
+
+    # fixup strange stuff in the dataset
+    for s in order_split:
+        # fixup "A SIL S A PRU"
+        if len(s) == 5 and s[2] == 'S':
+            s.append('H')
+        # fixup "A SMY - ROM VIA"
+        if len(s) == 5 and s[-1] == 'VIA':
+            s.pop()
+
+    loc_idx = {loc: i for i, loc in enumerate(LOCS)}
+    unit_idx = {'A': 0, 'F': 1}
+    order_type_idx = {t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))}
+
+    feats = []
+    for o in order_split:
+        u = o[3:] if len(o) >= 6 else o
+        srcT = torch.zeros(len(loc_idx))
+        dstT = torch.zeros(len(loc_idx))
+        unitT = torch.zeros(len(unit_idx))
+        orderT = torch.zeros(len(order_type_idx))
+        underlyingT = torch.zeros(len(order_type_idx))
+
+        if not o[2].startswith('B'):  # lets ignore the concatenated builds, they're tricky
+            srcT[loc_idx[u[1]]] = 1
+            dstT[loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]] = 1
+            unitT[unit_idx[o[0]]] = 1
+            orderT[order_type_idx[o[2]]] = 1
+            underlyingT[order_type_idx[u[2]]] = 1
+
+        feats.append(torch.cat((srcT, dstT, unitT, orderT, underlyingT), dim=-1))
+
+    feats = torch.stack(feats, dim=0)
+    return feats
 
 
 class DipNet(nn.Module):
@@ -18,31 +75,38 @@ class DipNet(nn.Module):
         self,
         *,
         board_state_size,  # 35
-        prev_orders_size,  # 40
+        # prev_orders_size,  # 40
         inter_emb_size,  # 120
         power_emb_size,  # 60
-        season_emb_size,  # 20
+        season_emb_size,  # 20,
         num_blocks,  # 16
         A,  # 81x81
         master_alignments,
         orders_vocab_size,  # 13k
         lstm_size,  # 200
         order_emb_size,  # 80
+        prev_order_emb_size,  # 20
         lstm_dropout=0,
+        lstm_layers=1,
         encoder_dropout=0,
         value_dropout,
         learnable_A=False,
         learnable_alignments=False,
         avg_embedding=False,
         value_decoder_init_scale=1.0,
+        graph_decoder=False,
+        featurize_output=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
         self.encoder = DipNetEncoder(
-            board_state_size=board_state_size,
-            prev_orders_size=prev_orders_size,
+            board_state_size=board_state_size + len(POWERS) + season_emb_size + 1,
+            prev_orders_size=board_state_size
+            + prev_order_emb_size
+            + len(POWERS)
+            + season_emb_size
+            + 1,
             inter_emb_size=inter_emb_size,
-            season_emb_size=season_emb_size,
             num_blocks=num_blocks,
             A=A,
             dropout=encoder_dropout,
@@ -55,10 +119,14 @@ class DipNet(nn.Module):
             lstm_size=lstm_size,
             order_emb_size=order_emb_size,
             lstm_dropout=lstm_dropout,
+            lstm_layers=lstm_layers,
             master_alignments=master_alignments,
             learnable_alignments=learnable_alignments,
             avg_embedding=avg_embedding,
             power_emb_size=power_emb_size,
+            A=A,
+            graph_decoder=graph_decoder,
+            featurize_output=featurize_output,
         )
 
         self.value_decoder = ValueDecoder(
@@ -67,25 +135,37 @@ class DipNet(nn.Module):
             dropout=value_dropout,
         )
 
+        self.season_lin = nn.Linear(3, season_emb_size)
+        self.prev_order_embedding = nn.Embedding(
+            orders_vocab_size, prev_order_emb_size, padding_idx=0
+        )
+        self.prev_order_emb_size = prev_order_emb_size
+
     def forward(
         self,
-        x_bo,
-        x_po,
-        x_season_1h,
-        in_adj_phase,
-        loc_idxs,
-        cand_idxs,
+        *,
+        x_board_state,
+        x_prev_state,
+        x_prev_orders,
+        x_season,
+        x_in_adj_phase,
+        x_build_numbers,
+        x_loc_idxs,
+        x_possible_actions,
         temperature,
         top_p=1.0,
         teacher_force_orders=None,
         x_power=None,
+        x_has_press=None,
     ):
         """
         Arguments:
         - x_bo: [B, 81, 35]
+        - x_pb: [B, 2, 100], long
         - x_po: [B, 81, 40]
         - x_season_1h: [B, 3]
         - in_adj_phase: [B], bool
+        - x_build_numbers: [B, 7]
         - loc_idxs: int8, [B, 81] or [B, 7, 81]
         - all_cand_idxs: long, [B, S, 469] or [B, 7, S, 469]
         - temperature: softmax temp, lower = more deterministic; must be either
@@ -94,6 +174,7 @@ class DipNet(nn.Module):
           be either a float or a tensor of [B, 1]
         - teacher_force_orders: [B, S] long or None, ORDER idxs, NOT candidate idxs, 0-padded
         - x_power: [B, 7] or None
+        - x_has_press: [B, 1] or None
 
         if x_power is None, the model will decode for all 7 powers.
             - loc_idxs, all_cand_idxs, and teacher_force_orders must have an
@@ -112,30 +193,70 @@ class DipNet(nn.Module):
             candidate order, 0 < S <= 17, 0 < C <= 469
           - final_sos [B, 7]: estimated sum of squares share for each power
         """
+
+        # following https://arxiv.org/pdf/2006.04635.pdf , Appendix C
+        B, NUM_LOCS, _ = x_board_state.shape
+
+        # A. get season and prev order embs
+        x_season_emb = self.season_lin(x_season)
+        x_prev_order_emb = self.prev_order_embedding(x_prev_orders[:, 0])
+
+        # B. insert the prev orders into the correct board location (which is in the second column of x_po)
+        x_prev_order_exp = torch.zeros(
+            (B, NUM_LOCS, self.prev_order_emb_size), device=x_board_state.device
+        )
+        prev_order_loc_idxs = torch.arange(B, device=x_board_state.device).repeat_interleave(
+            x_prev_orders.shape[-1]
+        ) * NUM_LOCS + x_prev_orders[:, 1].reshape(-1)
+        x_prev_order_exp.view(-1, self.prev_order_emb_size).index_add_(
+            0, prev_order_loc_idxs, x_prev_order_emb.view(-1, self.prev_order_emb_size)
+        )
+
+        # concatenate the subcomponents into board state and prev state, following the paper
+        x_build_numbers_exp = x_build_numbers[:, None].expand(-1, NUM_LOCS, -1)
+        x_season_emb_exp = x_season_emb[:, None].expand(-1, NUM_LOCS, -1)
+        if x_has_press is not None:
+            x_has_press_exp = x_has_press[:, None].expand(-1, NUM_LOCS, 1)
+        else:
+            x_has_press_exp = torch.zeros((B, NUM_LOCS, 1), device=x_board_state.device)
+        x_bo_hat = torch.cat(
+            (x_board_state, x_build_numbers_exp, x_season_emb_exp, x_has_press_exp), dim=-1
+        )
+        x_po_hat = torch.cat(
+            (
+                x_prev_state,
+                x_prev_order_exp,
+                x_build_numbers_exp,
+                x_season_emb_exp,
+                x_has_press_exp,
+            ),
+            dim=-1,
+        )
+
         if x_power is None:
             return self.forward_all_powers(
-                x_bo=x_bo,
-                x_po=x_po,
-                x_season_1h=x_season_1h,
-                in_adj_phase=in_adj_phase,
-                loc_idxs=loc_idxs,
-                cand_idxs=cand_idxs,
+                x_bo=x_bo_hat,
+                x_po=x_po_hat,
+                in_adj_phase=x_in_adj_phase,
+                loc_idxs=x_loc_idxs,
+                cand_idxs=x_possible_actions,
                 temperature=temperature,
                 top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
+                x_has_press=x_has_press,
             )
         else:
             return self.forward_one_power(
-                x_bo=x_bo,
-                x_po=x_po,
-                x_season_1h=x_season_1h,
-                in_adj_phase=in_adj_phase,
-                loc_idxs=loc_idxs,
-                cand_idxs=cand_idxs,
+                x_bo=x_bo_hat,
+                x_po=x_po_hat,
+                in_adj_phase=x_in_adj_phase,
+                loc_idxs=x_loc_idxs,
+                cand_idxs=x_possible_actions,
                 temperature=temperature,
                 top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
                 x_power=x_power,
+                x_has_press=x_has_press,
             )
 
     def forward_one_power(
@@ -143,7 +264,6 @@ class DipNet(nn.Module):
         *,
         x_bo,
         x_po,
-        x_season_1h,
         in_adj_phase,
         loc_idxs,
         cand_idxs,
@@ -151,11 +271,12 @@ class DipNet(nn.Module):
         temperature,
         top_p,
         teacher_force_orders,
+        x_has_press,
     ):
         assert len(loc_idxs.shape) == 2
         assert len(cand_idxs.shape) == 3
 
-        enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
+        enc = self.encoder(x_bo, x_po)  # [B, 81, 240]
         order_idxs, sampled_idxs, logits = self.policy_decoder(
             enc,
             in_adj_phase,
@@ -174,13 +295,13 @@ class DipNet(nn.Module):
         *,
         x_bo,
         x_po,
-        x_season_1h,
         in_adj_phase,
         loc_idxs,
         cand_idxs,
         temperature,
         teacher_force_orders,
         top_p,
+        x_has_press,
         log_timings=False,
     ):
         timings = TimingCtx()
@@ -189,7 +310,7 @@ class DipNet(nn.Module):
         assert len(cand_idxs.shape) == 4
 
         with timings("enc"):
-            enc = self.encoder(x_bo, x_po, x_season_1h)  # [B, 81, 240]
+            enc = self.encoder(x_bo, x_po)  # [B, 81, 240]
 
         with timings("policy_decoder_prep"):
             enc_repeat = enc.repeat_interleave(7, dim=0)
@@ -247,6 +368,18 @@ class DipNet(nn.Module):
         return order_idxs, sampled_idxs, logits, final_sos
 
 
+def compute_alignments(loc_idxs, step, A):
+    alignments = torch.matmul(
+        ((loc_idxs == step) | (loc_idxs == -2)).float(), A
+    )
+    alignments /= torch.sum(alignments, dim=1, keepdim=True) + 1e-5
+    # alignments = torch.where(
+    #     torch.isnan(alignments), torch.zeros_like(alignments), alignments
+    # )
+
+    return alignments
+
+
 class LSTMDipNetDecoder(nn.Module):
     def __init__(
         self,
@@ -256,13 +389,18 @@ class LSTMDipNetDecoder(nn.Module):
         lstm_size,
         order_emb_size,
         lstm_dropout,
+        lstm_layers,
         master_alignments,
         learnable_alignments=False,
         avg_embedding=False,
         power_emb_size,
+        A=None,
+        graph_decoder=False,
+        featurize_output=False,
     ):
         super().__init__()
         self.lstm_size = lstm_size
+        self.lstm_layers = lstm_layers
         self.order_emb_size = order_emb_size
         self.lstm_dropout = lstm_dropout
         self.avg_embedding = avg_embedding
@@ -271,17 +409,31 @@ class LSTMDipNetDecoder(nn.Module):
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
         self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
-        self.lstm = nn.LSTM(
-            2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True
-        )
+        
+        self.graph_decoder = graph_decoder
+        if graph_decoder:
+            self.decoder_A = nn.Parameter(A.clone())  # maybe A@A ?
+            self.decoder_lin = nn.Linear(2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size)
+            # self.decoder_lin2 = nn.Linear(lstm_size, lstm_size)
+        else:
+            self.lstm = nn.LSTM(
+                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True, num_layers=self.lstm_layers,
+            )
 
         # if avg_embedding is True, alignments are not used, and pytorch
-        # complains about unused parameters, so only set self.master_alignments
+        # `comp`lains about unused parameters, so only set self.master_alignments
         # when avg_embedding is False
         if not avg_embedding:
             self.master_alignments = nn.Parameter(master_alignments).requires_grad_(
                 learnable_alignments
             )
+
+        self.featurize_output = featurize_output
+        if featurize_output:
+            self.register_buffer('order_feats', compute_order_features())
+            self.order_feat_lin = nn.Linear(self.order_feats.shape[1], order_emb_size)
+            self.order_decoder_w = nn.Linear(self.order_feats.shape[1], lstm_size)  # FIXME
+            self.order_decoder_b = nn.Linear(self.order_feats.shape[1], 1)
 
     def forward(
         self,
@@ -309,13 +461,6 @@ class LSTMDipNetDecoder(nn.Module):
                     torch.zeros(*all_cand_idxs.shape, device=device),
                 )
 
-            self.lstm.flatten_parameters()
-
-            hidden = (
-                torch.zeros(1, enc.shape[0], self.lstm_size, device=device),
-                torch.zeros(1, enc.shape[0], self.lstm_size, device=device),
-            )
-
             # embedding for the last decoded order
             order_emb = torch.zeros(enc.shape[0], self.order_emb_size, device=device)
 
@@ -328,6 +473,16 @@ class LSTMDipNetDecoder(nn.Module):
             all_sampled_idxs = []
             all_logits = []
 
+            if self.graph_decoder:
+                B = enc.shape[0]
+                order_enc = torch.zeros(B, 81, self.order_emb_size, device=enc.device)
+            else:
+                self.lstm.flatten_parameters()
+                hidden = (
+                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
+                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
+                )
+            
             # reuse same dropout weights for all steps
             dropout_in = (
                 torch.zeros(
@@ -362,31 +517,53 @@ class LSTMDipNetDecoder(nn.Module):
                     # do static attention; set alignments to:
                     # - master_alignments for the right loc_idx when not in_adj_phase
                     in_adj_phase = in_adj_phase.view(-1, 1)
-                    alignments = torch.matmul(
-                        ((loc_idxs == step) | (loc_idxs == -2)).float(), self.master_alignments
-                    )
-                    alignments /= torch.sum(alignments, dim=1, keepdim=True)
-                    alignments = torch.where(
-                        torch.isnan(alignments), torch.zeros_like(alignments), alignments
-                    )
+                    alignments = compute_alignments(loc_idxs, step, self.master_alignments)
+                    # print('alignments', alignments.mean(), alignments.std())
                     loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             with timings("dec.lstm"):
-                lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
-                if self.training and self.lstm_dropout < 1.0:
-                    lstm_input = lstm_input * dropout_in
+                if self.graph_decoder:
+                    order_alignments = compute_alignments(loc_idxs, step, self.decoder_A)
+                    # print('decoder_A', self.decoder_A.mean(), self.decoder_A.std())
+                    # print(self.decoder_A)
+                    # print('order_alignments', order_alignments.mean(), order_alignments.std())
+                    # print('order_enc', order_enc.mean(), order_enc.std())
+                    aggr_order_enc = torch.matmul(order_alignments.unsqueeze(1), order_enc).squeeze(1)
+                    # print('aggr', step, float(aggr_order_enc.mean()), float(aggr_order_enc.std()))
+                    # aggr_order_enc *= 0
+                    dec_input = torch.cat((loc_enc, aggr_order_enc, power_emb), dim=1).unsqueeze(1)
 
-                out, hidden = self.lstm(lstm_input, hidden)
-                if self.training and self.lstm_dropout < 1.0:
-                    out = out * dropout_out
+                    if self.training and self.lstm_dropout > 0.0:
+                        dec_input = dec_input * dropout_in
+
+                    out = self.decoder_lin(dec_input)
+
+                    if self.training and self.lstm_dropout > 0.0:
+                        out = out * dropout_out
+                else:
+                    lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
+                    if self.training and self.lstm_dropout > 0.0:
+                        lstm_input = lstm_input * dropout_in
+
+                    out, hidden = self.lstm(lstm_input, hidden)
+                    if self.training and self.lstm_dropout > 0.0:
+                        out = out * dropout_out
 
                 out = out.squeeze(1).unsqueeze(2)
 
             with timings("dec.cand_emb"):
                 cand_emb = self.cand_embedding(cand_idxs)
+                
 
             with timings("dec.logits"):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
+                
+                if self.featurize_output:
+                    cand_order_feats = self.order_feats[cand_idxs]
+                    order_w = self.order_decoder_w(cand_order_feats)
+                    order_b = self.order_decoder_b(cand_order_feats)
+                    order_scores_featurized = torch.bmm(order_w, out) + order_b
+                    logits += order_scores_featurized.squeeze(-1)
 
             with timings("dec.invalid_mask"):
                 # unmask where there are no actions or the sampling will crash. The
@@ -439,17 +616,14 @@ class LSTMDipNetDecoder(nn.Module):
                 all_order_idxs.append(order_idxs)
 
             with timings("dec.order_emb"):
-                if teacher_force_orders is not None:
-                    order_emb = self.order_embedding(teacher_force_orders[:, step])
-                else:
-                    order_emb = self.order_embedding(
-                        # nn.Embedding does not like negative padding
-                        torch.where(
-                            order_idxs == EOS_IDX,
-                            torch.zeros_like(order_idxs, requires_grad=False),
-                            order_idxs,
-                        )
-                    ).squeeze(1)
+                order_input = teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs.masked_fill(order_idxs == EOS_IDX, 0)
+                
+                order_emb = self.order_embedding(order_input)
+                if self.featurize_output:
+                    order_emb += self.order_feat_lin(self.order_feats[order_input])
+                
+                if self.graph_decoder:
+                    order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]
 
         with timings("dec.fin"):
             stacked_order_idxs = torch.stack(all_order_idxs, dim=1)
@@ -509,7 +683,6 @@ class DipNetEncoder(nn.Module):
         board_state_size,  # 35
         prev_orders_size,  # 40
         inter_emb_size,  # 120
-        season_emb_size,  # 20
         num_blocks,  # 16
         A,  # 81x81
         dropout,
@@ -517,16 +690,12 @@ class DipNetEncoder(nn.Module):
     ):
         super().__init__()
 
-        # power/season embeddings
-        self.season_lin = nn.Linear(3, season_emb_size)
-
         # board state blocks
         self.board_blocks = nn.ModuleList()
         self.board_blocks.append(
             DipNetBlock(
                 in_size=board_state_size,
                 out_size=inter_emb_size,
-                season_emb_size=season_emb_size,
                 A=A,
                 residual=False,
                 learnable_A=learnable_A,
@@ -538,7 +707,6 @@ class DipNetEncoder(nn.Module):
                 DipNetBlock(
                     in_size=inter_emb_size,
                     out_size=inter_emb_size,
-                    season_emb_size=season_emb_size,
                     A=A,
                     residual=True,
                     learnable_A=learnable_A,
@@ -552,7 +720,6 @@ class DipNetEncoder(nn.Module):
             DipNetBlock(
                 in_size=prev_orders_size,
                 out_size=inter_emb_size,
-                season_emb_size=season_emb_size,
                 A=A,
                 residual=False,
                 learnable_A=learnable_A,
@@ -564,7 +731,6 @@ class DipNetEncoder(nn.Module):
                 DipNetBlock(
                     in_size=inter_emb_size,
                     out_size=inter_emb_size,
-                    season_emb_size=season_emb_size,
                     A=A,
                     residual=True,
                     learnable_A=learnable_A,
@@ -572,36 +738,31 @@ class DipNetEncoder(nn.Module):
                 )
             )
 
-    def forward(self, x_bo, x_po, x_season_1h):
-        season_emb = self.season_lin(x_season_1h)
+    def forward(self, x_bo, x_po):
 
         y_bo = x_bo
         for block in self.board_blocks:
-            y_bo = block(y_bo, season_emb)
+            y_bo = block(y_bo)
 
         y_po = x_po
         for block in self.prev_orders_blocks:
-            y_po = block(y_po, season_emb)
+            y_po = block(y_po)
 
         state_emb = torch.cat([y_bo, y_po], -1)
         return state_emb
 
 
 class DipNetBlock(nn.Module):
-    def __init__(
-        self, *, in_size, out_size, season_emb_size, A, dropout, residual=True, learnable_A=False
-    ):
+    def __init__(self, *, in_size, out_size, A, dropout, residual=True, learnable_A=False):
         super().__init__()
         self.graph_conv = GraphConv(in_size, out_size, A, learnable_A=learnable_A)
         self.batch_norm = nn.BatchNorm1d(A.shape[0])
-        self.film = FiLM(season_emb_size, out_size)
         self.dropout = nn.Dropout(dropout)
         self.residual = residual
 
-    def forward(self, x, season_emb):
+    def forward(self, x):
         y = self.graph_conv(x)
         y = self.batch_norm(y)
-        y = self.film(y, season_emb)
         y = F.relu(y)
         y = self.dropout(y)
         if self.residual:
@@ -641,28 +802,13 @@ class GraphConv(nn.Module):
         return x
 
 
-class FiLM(nn.Module):
-    def __init__(self, season_emb_size, out_size):
-        super().__init__()
-        self.W_gamma = nn.Linear(season_emb_size, out_size)
-        self.W_beta = nn.Linear(season_emb_size, out_size)
-
-    def forward(self, x, season_emb):
-        """Modulate x by gamma/beta calculated from power/season embeddings
-
-        x -> (B, out_size)
-        season_emb -> (B, season_emb_size)
-        """
-        gamma = self.W_gamma(season_emb).unsqueeze(1)
-        beta = self.W_beta(season_emb).unsqueeze(1)
-        return gamma * x + beta
-
-
 class ValueDecoder(nn.Module):
     def __init__(self, *, inter_emb_size, dropout, init_scale=1.0):
         super().__init__()
         emb_flat_size = 81 * inter_emb_size * 2
-        self.lin = nn.Linear(emb_flat_size, len(POWERS))
+        self.prelin = nn.Linear(emb_flat_size, inter_emb_size)
+        self.lin = nn.Linear(inter_emb_size, len(POWERS))
+
         self.dropout = nn.Dropout(dropout)
 
         # scale down init
@@ -673,7 +819,11 @@ class ValueDecoder(nn.Module):
     def forward(self, enc):
         """Returns [B, 7] FloatTensor summing to 1 across dim=1"""
         y = enc.view(enc.shape[0], -1)
-        y = self.lin(y)
+        y = self.prelin(y)
+        y = F.relu(y)
         y = self.dropout(y)
-        y = nn.functional.softmax(y, dim=1)
+        y = self.lin(y)
+        y = y ** 2
+        y = y / y.sum(dim=1, keepdim=True)
+        # y = nn.functional.softmax(y, dim=1)
         return y

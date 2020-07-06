@@ -4,7 +4,7 @@ from typing import List
 
 from fairdiplomacy.game import Game, sort_phase_key
 from fairdiplomacy.agents.base_agent import BaseAgent
-from fairdiplomacy.data.dataset import get_valid_orders_impl
+from fairdiplomacy.data.dataset import get_valid_orders_impl, encode_state, DataFields
 from fairdiplomacy.models.consts import SEASONS, POWERS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
@@ -20,22 +20,18 @@ class DipnetAgent(BaseAgent):
         self.device = device
         self.top_p = top_p
 
-    def get_orders(self, game, power, *, temperature=None, batch_size=1, top_p=None):
+    def get_orders(self, game, power, *, temperature=None, top_p=None):
         if len(game.get_orderable_locations(power)) == 0:
             return []
 
         temperature = temperature if temperature is not None else self.temperature
         top_p = top_p if top_p is not None else self.top_p
         inputs = encode_inputs(game)
-        inputs = [x.to(self.device) for x in inputs]
-
-        if batch_size > 1:
-            # fake a big batch
-            inputs = [x.expand(batch_size, *x.shape[1:]).contiguous() for x in inputs]
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
             order_idxs, cand_idxs, logits, final_scores = self.model(
-                *inputs, temperature=temperature, top_p=top_p
+                **inputs, temperature=temperature, top_p=top_p
             )
 
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
@@ -57,12 +53,12 @@ def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     x_prev_orders: shape=(1, 81, 40)
     x_season: shape=(1, 3)
     x_in_adj_phase: shape=(1,), dtype=bool
+    build_numbers: shape=(7,)
     loc_idxs: shape=[1, 7, 81], dtype=long, -1, -2, or between 0 and 17
     valid_orders: shape=[1, 7, S, 469] dtype=long, 0 < S <= 17
     """
     if game_state is None:
         game_state = encode_state(game)
-    x_board_state, x_prev_orders, x_season, x_in_adj_phase = game_state
 
     valid_orders_lst, loc_idxs_lst = [], []
     max_seq_len = 0
@@ -77,46 +73,9 @@ def encode_inputs(game, *, all_possible_orders=None, game_state=None):
         loc_idxs_lst.append(loc_idxs)
         max_seq_len = max(seq_len, max_seq_len)
 
-    return (
-        x_board_state,
-        x_prev_orders,
-        x_season,
-        x_in_adj_phase,
-        torch.stack(loc_idxs_lst, dim=1),
-        torch.stack(valid_orders_lst, dim=1)[:, :, :max_seq_len],
-    )
-
-
-def encode_state(game):
-    """Returns a 3-tuple of tensors:
-
-    x_board_state: shape=(1, 81, 35)
-    x_prev_orders: shape=(1, 81, 40)
-    x_season: shape=(1, 3)
-    x_in_adj_phase: shape=(1,), dtype=bool
-    """
-    state = game.get_state()
-    current_phase_sort_key = sort_phase_key(state["name"])
-
-    x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
-
-    try:
-        last_move_phase = [
-            phase
-            for phase in game.get_phase_history()
-            if str(phase.name).endswith("M")
-            and sort_phase_key(phase.name) < current_phase_sort_key
-        ][-1]
-        x_prev_orders = torch.from_numpy(prev_orders_to_np(last_move_phase)).unsqueeze(0)
-    except IndexError:
-        x_prev_orders = torch.zeros(1, 81, 40)
-
-    x_season = torch.zeros(1, 3)
-    x_season[0, SEASONS.index(game.phase.split()[0])] = 1
-
-    x_in_adj_phase = torch.zeros(1, dtype=torch.bool).fill_(state["name"][-1] == "A")
-
-    return x_board_state, x_prev_orders, x_season, x_in_adj_phase
+    game_state["x_loc_idxs"] = torch.stack(loc_idxs_lst, dim=1)
+    game_state["x_possible_actions"] = torch.stack(valid_orders_lst, dim=1)[:, :, :max_seq_len]
+    return game_state
 
 
 def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_locations=None):
@@ -142,8 +101,8 @@ DEFAULT_INPUTS = encode_inputs(Game())
 
 def zero_inputs():
     """Return empty input encodings"""
-    r = [torch.zeros_like(x) for x in DEFAULT_INPUTS]
-    r[-2].fill_(-1)
+    r = {k: torch.zeros_like(v) for k, v in DEFAULT_INPUTS.items()}
+    r["x_loc_idxs"].fill_(-1)
     return r
 
 
