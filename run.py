@@ -120,6 +120,8 @@ def play_webdip(cfg):
         agent=agent,
         check_phase=cfg.check_phase,
         json_out=cfg.json_out,
+        force=cfg.force,
+        force_power=cfg.force_power,
     )
 
 

@@ -671,6 +671,8 @@ message PlayWebdipTask {
   optional uint64 game_id = 3;
   optional string check_phase = 4;
   optional string json_out = 5;
+  optional bool force = 6 [ default = false ];
+  optional string force_power = 7 [ default = "ENGLAND" ];
 }
 
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
