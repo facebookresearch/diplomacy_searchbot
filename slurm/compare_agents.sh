@@ -46,7 +46,8 @@ git diff $ROOT > $CHECKPOINT_DIR/gitdiff.inp
 
 cd $CHECKPOINT_DIR
 
-if [ ! -f "conf" ]; then
+
+if [ ! -e "conf" ]; then
   # HeyHi expects to see conf/ in the root folder.
   ln -s code/conf
 fi
