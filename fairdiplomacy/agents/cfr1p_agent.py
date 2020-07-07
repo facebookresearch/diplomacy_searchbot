@@ -275,14 +275,26 @@ class CFR1PAgent(BaseSearchAgent):
                 # log some action values
                 # if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
                 if cfr_iter == self.n_rollouts - 1:
-                    logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}")
-                    logging.info(f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
+                    logging.info(
+                        f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
+                    )
+                    logging.info(
+                        f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
+                    )
                     action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])
                     bp_probs: List[float] = self.bp_strategy(pwr, power_plausible_orders[pwr])
-                    avg_utilities = [(self.cum_regrets[(pwr, a)] + self.cum_utility[pwr]) / iter_weight for a in actions]
-                    sorted_metrics = sorted(zip(actions, action_probs, bp_probs, avg_utilities, action_utilities), key=lambda ac: -ac[1])
+                    avg_utilities = [
+                        (self.cum_regrets[(pwr, a)] + self.cum_utility[pwr]) / iter_weight
+                        for a in actions
+                    ]
+                    sorted_metrics = sorted(
+                        zip(actions, action_probs, bp_probs, avg_utilities, action_utilities),
+                        key=lambda ac: -ac[1],
+                    )
                     for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
-                        logging.info(f"    {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
+                        logging.info(
+                            f"    {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}"
+                        )
 
                 # elif pwr == early_exit_for_power:
                 #     u = action_utilities[idxs[pwr]]
@@ -319,7 +331,14 @@ class CFR1PAgent(BaseSearchAgent):
                     else:
                         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
 
-            if self.enable_compute_nash_conv and cfr_iter in (24, 49, 99, 199, 399, self.n_rollouts - 1):
+            if self.enable_compute_nash_conv and cfr_iter in (
+                24,
+                49,
+                99,
+                199,
+                399,
+                self.n_rollouts - 1,
+            ):
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
                 self.compute_nash_conv(cfr_iter, game, power_plausible_orders)
 
