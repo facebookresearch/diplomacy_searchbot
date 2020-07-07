@@ -25,6 +25,8 @@ PYBIND11_MODULE(pydipcc, m) {
 
   py::class_<PhaseData>(m, "PhaseData")
       .def_property_readonly("name", &PhaseData::get_name)
+      .def_property_readonly("state", &PhaseData::py_get_state)
+      .def_property_readonly("orders", &PhaseData::py_get_orders)
       .def("to_dict", &PhaseData::to_dict);
 
   m.def("encode_board_state", &encode_board_state,

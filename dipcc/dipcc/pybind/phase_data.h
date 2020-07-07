@@ -26,11 +26,15 @@ public:
     orders_ = orders;
   }
 
+  py::dict py_get_state() { return py_state_to_dict(state_); }
+
+  py::dict py_get_orders() { return py_orders_to_dict(orders_); }
+
   py::dict to_dict() {
     py::dict d;
     d["name"] = name_;
-    d["state"] = py_state_to_dict(state_);
-    d["orders"] = py_orders_to_dict(orders_);
+    d["state"] = py_get_state();
+    d["orders"] = py_get_orders();
     return d;
   }
 
