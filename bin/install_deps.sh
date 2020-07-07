@@ -15,5 +15,6 @@ pip install -e ./thirdparty/github/fairinternal/postman/nest/
 pip install -e ./thirdparty/github/fairinternal/postman/postman/
 pip install -e "git+ssh://git@github.com/fairinternal/submitit@master#egg=submitit"
 pip install -e ./thirdparty/github/diplomacy/diplomacy
+pip install -e ./dipcc
 pip install -e . -vv
 bash bin/compile.sh
