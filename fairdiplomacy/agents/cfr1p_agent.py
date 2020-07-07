@@ -537,7 +537,7 @@ if __name__ == "__main__":
     agent = CFR1PAgent(
         n_rollouts=10,
         max_rollout_length=5,
-        model_path="/checkpoint/jsgray/diplomacy/slurm/sl_candidx_B2.5k_vclip1e-7/checkpoint.pth",
+        model_path="/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best",
         postman_sync_batches=False,
         rollout_temperature=0.5,
         n_rollout_procs=24 * 7,
