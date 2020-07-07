@@ -103,6 +103,9 @@ extern const std::unordered_map<std::string, Loc> LOC_FROM_STR;
 // Return true if loc is open water
 bool is_water(Loc);
 
+// Return true if loc is a coastal land loc
+bool is_coast(Loc);
+
 // Return true if loc is a supply center
 bool is_center(Loc);
 

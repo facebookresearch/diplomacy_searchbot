@@ -30,6 +30,8 @@ PYBIND11_MODULE(pydipcc, m) {
       .def_property_readonly("orders", &PhaseData::py_get_orders)
       .def("to_dict", &PhaseData::to_dict);
 
-  m.def("encode_board_state", &encode_board_state,
+  m.def("encode_board_state", &encode_game_board_state,
+        py::return_value_policy::move);
+  m.def("encode_prev_orders", &encode_prev_orders,
         py::return_value_policy::move);
 }

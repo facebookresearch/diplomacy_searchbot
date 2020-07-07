@@ -39,6 +39,10 @@ public:
   }
 
   const std::string get_name() const { return name_; }
+  GameState &get_state() { return state_; }
+  const std::unordered_map<Power, std::vector<Order>> &get_orders() const {
+    return orders_;
+  }
 
 private:
   // Members
