@@ -1,5 +1,6 @@
 import faulthandler
 import logging
+import json
 import os
 import signal
 import time
@@ -14,6 +15,7 @@ import torch
 import torch.multiprocessing as mp
 
 from fairdiplomacy.game import Game, sort_phase_key
+import pydipcc
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
@@ -171,7 +173,10 @@ class BaseSearchAgent(BaseAgent):
                 )
             )
             raise
-        assert x["x_board_state"].shape[0] == final_scores.shape[0], (x["x_board_state"].shape[0], final_scores.shape[0])
+        assert x["x_board_state"].shape[0] == final_scores.shape[0], (
+            x["x_board_state"].shape[0],
+            final_scores.shape[0],
+        )
         if hasattr(final_scores, "numpy"):
             final_scores = final_scores.numpy()
 
@@ -305,7 +310,7 @@ class BaseSearchAgent(BaseAgent):
             -> final_scores: Dict[power, supply count],
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
-        game_json = game.to_saved_game_format()
+        game_json = json.dumps(game.to_saved_game_format())
         # divide up the rollouts among the processes
         all_results, all_timings = zip(
             *self.proc_pool.map(
@@ -363,7 +368,7 @@ class BaseSearchAgent(BaseAgent):
         This method can safely be called in a subprocess
 
         Arguments:
-        - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
+        - game_json: json-formatted game string, e.g. output of to_saved_game_format(game)
         - hostport: string, "{host}:{port}" of model server
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
@@ -393,7 +398,7 @@ class BaseSearchAgent(BaseAgent):
             faulthandler.register(signal.SIGUSR2)
             torch.set_num_threads(1)
 
-            games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
+            games = [pydipcc.Game.from_json(game_json) for _ in range(batch_size)]
             for i in range(len(games)):
                 games[i].game_id += f"_{i}"
             est_final_scores = defaultdict(float)
@@ -417,7 +422,7 @@ class BaseSearchAgent(BaseAgent):
                 for game in games:
                     if not game.is_game_done and game.current_short_phase == min_phase:
                         inputs = encode_inputs(
-                            game, all_possible_orders=game.get_all_possible_orders(),  # expensive
+                            game, all_possible_orders=game.get_all_possible_orders()  # expensive
                         )
                         batch_data.append((game, inputs))
 
@@ -444,7 +449,9 @@ class BaseSearchAgent(BaseAgent):
                     max_rollout_length > 0
                 ), "max_rollout_length = 0 doesn't even execute the orders..."
                 score_weight = remaining_score_weight
-                if min_phase == rollout_start_phase:  # don't accumulate score on turn 0 when we haven't moved
+                if (
+                    min_phase == rollout_start_phase
+                ):  # don't accumulate score on turn 0 when we haven't moved
                     score_weight = 0
                 if min_phase != rollout_end_phase:
                     score_weight *= rollout_value_frac
@@ -479,7 +486,7 @@ class BaseSearchAgent(BaseAgent):
                     game.process()
 
             other_powers = POWERS  # no set orders on subsequent turns
-  
+
             if sort_phase_key(min_phase) >= sort_phase_key(rollout_end_phase):
                 break
 
@@ -750,6 +757,7 @@ def safe_idx(seq, idx, default=None):
         return seq[idx]
     except IndexError:
         return default
+
 
 def n_move_phases_later(from_phase, n):
     year_idx = int(from_phase[1:-1]) - 1901
