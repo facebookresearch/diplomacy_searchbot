@@ -21,7 +21,7 @@ class DipnetAgent(BaseAgent):
         self.top_p = top_p
 
     def get_orders(self, game, power, *, temperature=None, top_p=None):
-        if len(game.get_orderable_locations().get(power, [])) == 0:
+        if len(game.get_orderable_locations(power)) == 0:
             return []
 
         temperature = temperature if temperature is not None else self.temperature

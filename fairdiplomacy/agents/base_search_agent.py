@@ -1,6 +1,5 @@
 import faulthandler
 import logging
-import json
 import os
 import signal
 import time
@@ -14,7 +13,6 @@ import postman
 import torch
 import torch.multiprocessing as mp
 
-import pydipcc
 from fairdiplomacy.game import Game
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import (
@@ -307,7 +305,7 @@ class BaseSearchAgent(BaseAgent):
             -> final_scores: Dict[power, supply count],
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
-        game_json = json.dumps(game.to_saved_game_format())
+        game_json = game.to_saved_game_format()
         # divide up the rollouts among the processes
         all_results, all_timings = zip(
             *self.proc_pool.map(
@@ -365,7 +363,7 @@ class BaseSearchAgent(BaseAgent):
         This method can safely be called in a subprocess
 
         Arguments:
-        - game_json: json-formatted game string, e.g. output of to_saved_game_format(game)
+        - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
         - hostport: string, "{host}:{port}" of model server
         - set_orders_dict: Dict[power, orders] to set for current turn
         - temperature: model softmax temperature for rollout policy
@@ -395,7 +393,7 @@ class BaseSearchAgent(BaseAgent):
             faulthandler.register(signal.SIGUSR2)
             torch.set_num_threads(1)
 
-            games = [pydipcc.Game.from_json(game_json) for _ in range(batch_size)]
+            games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
             for i in range(len(games)):
                 games[i].game_id += f"_{i}"
             est_final_scores = defaultdict(float)

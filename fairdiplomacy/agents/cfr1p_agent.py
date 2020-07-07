@@ -204,8 +204,7 @@ class CFR1PAgent(BaseSearchAgent):
             timings.start("query_policy")
             # get policy probs for all powers
             power_action_cfr = {
-                pwr: self.strategy(pwr, actions)
-                for (pwr, actions) in power_plausible_orders.items()
+                pwr: self.strategy(pwr, actions) for (pwr, actions) in power_plausible_orders.items()
             }
             power_action_ps: Dict[Power, List[float]] = {
                 pwr: (
