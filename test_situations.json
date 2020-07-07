@@ -58,7 +58,7 @@
         "powers": ["TURKEY"],
         "tests": {
             "AEG should not threaten ITA in ION" : "lambda r: order_prob(r, 'F AEG - ION') < 0.1",
-            "TUR kill pesky SYR unit" : "lambda r: order_prob(r, 'A ARM - SYR') + order_prb(r, 'F SMY - SYR') > 0.9",
+            "TUR kill pesky SYR unit" : "lambda r: order_prob(r, 'A ARM - SYR') + order_prob(r, 'F SMY - SYR') > 0.9",
             "Repeat ITA support TUR into TRI should be considered" : "lambda r: order_prob(r, 'A VEN S A SER - TRI') > 0"
         }
     }
