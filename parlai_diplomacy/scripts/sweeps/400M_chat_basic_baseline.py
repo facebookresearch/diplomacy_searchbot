@@ -73,5 +73,5 @@ if __name__ == '__main__':
         volta32=True,
         hashname=True,
         mem_gb=400,
-        copy_env=False,
+        copy_env=True,
     )

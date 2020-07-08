@@ -21,10 +21,10 @@ import sys
 import random
 import hashlib
 
-import parlai
+import parlai_diplomacy.agents as agents
 
-# NOTE: check this
-DEFAULT_PARLAI_PATH = '~/fairdiplomacy/parlai_diplomacy/'
+
+DEFAULT_PARLAI_PATH = os.path.dirname(os.path.dirname(agents.__file__))
 
 BASH_IF_CLAUSE = """
 if [[ "$SLURM_ARRAY_TASK_ID" == "{index}" ]]; then
@@ -316,8 +316,22 @@ def run_grid(
     elif not PARLAI_DOWNPATH:
         PARLAI_DOWNPATH = os.path.join(PARLAI_PATH, 'downloads')
 
-    # NOTE: we are avoiding the copy env call here
-    NEW_PARLAI_PATH = PARLAI_PATH
+    if copy_env:
+        print('[ Copying env... make take up to a minute ]')
+        # Make ParlAI Diplomacy Dir
+        bash('mkdir -p ' + os.path.join(SAVE_ROOT, 'ParlAI_Diplomacy'))
+        folders = ['agents', 'scripts', 'tasks', 'utils']
+        for folder in folders:
+            cmd = (
+                f'rsync -av {PARLAI_PATH}/{folder} {SAVE_ROOT}/ParlAI_Diplomacy '
+                '--exclude .git --exclude "*.ipynb" '
+            )
+            import ipdb; ipdb.set_trace()
+            bash(cmd)
+        NEW_PARLAI_PATH = '{SAVE_ROOT}/ParlAI_Diplomacy'.format(**locals())
+        import ipdb; ipdb.set_trace()
+    else:
+        NEW_PARLAI_PATH = PARLAI_PATH
 
     # Dump grid to grid file
     if not os.path.exists(SAVE_ROOT):
