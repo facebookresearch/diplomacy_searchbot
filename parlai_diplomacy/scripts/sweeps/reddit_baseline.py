@@ -61,7 +61,7 @@ if __name__ == '__main__':
         sweep_name=sweep_name,
         partition='learnfair',
         jobtime=f'{HOURS}:00:00',
-        prefix='python -u -m parlai.scripts.distributed_train',
+        prefix='python -u scripts/distributed_train.py',
         gpus=8,
         nodes=8,
         create_model_file=True,

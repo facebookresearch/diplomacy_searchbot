@@ -23,7 +23,9 @@ import hashlib
 
 import parlai
 
-DEFAULT_PARLAI_PATH = os.path.dirname(os.path.dirname(parlai.__file__))
+# NOTE: check this
+DEFAULT_PARLAI_PATH = '~/fairdiplomacy/parlai_diplomacy/'
+
 BASH_IF_CLAUSE = """
 if [[ "$SLURM_ARRAY_TASK_ID" == "{index}" ]]; then
     # -K kills all subtasks if one particular task crashes. This is necessary for
@@ -315,28 +317,7 @@ def run_grid(
         PARLAI_DOWNPATH = os.path.join(PARLAI_PATH, 'downloads')
 
     # NOTE: we are avoiding the copy env call here
-    # if copy_env:
-    if False:
-        print('[ Copying env... make take up to a minute ]')
-        # Make ParlAI Dir
-        bash('mkdir -p ' + os.path.join(SAVE_ROOT, 'ParlAI'))
-        folders = ['parlai', 'parlai_internal', 'parlai_fb']
-        for folder in folders:
-            bash(
-                f'rsync -av {PARLAI_PATH}/{folder} '
-                f'{SAVE_ROOT}/ParlAI --exclude mturk --exclude .git --exclude "*.ipynb" '
-                f'--exclude messenger --exclude data --exclude heroku-cli-*" '
-            )
-        to_copy = ['setup.py', 'README.md', 'LICENSE', 'requirements.txt']
-        to_copy += copy_dirs
-        for c in to_copy:
-            c_head, c_tail = os.path.split(c)
-            if len(c_head) > 1:
-                bash('mkdir {SAVE_ROOT}/ParlAI/{c_head}'.format(**locals()))
-            bash('cp -r {PARLAI_PATH}/{c} {SAVE_ROOT}/ParlAI/{c}'.format(**locals()))
-        NEW_PARLAI_PATH = '{SAVE_ROOT}/ParlAI'.format(**locals())
-    else:
-        NEW_PARLAI_PATH = PARLAI_PATH
+    NEW_PARLAI_PATH = PARLAI_PATH
 
     # Dump grid to grid file
     if not os.path.exists(SAVE_ROOT):
@@ -416,7 +397,7 @@ def create_job_files(
     requeue=False,
     PARLAI_DATAPATH="~/ParlAI/data",
     PARLAI_DOWNPATH="~/ParlAI/downloads",
-    NEW_PARLAI_PATH="~/ParlAI",
+    NEW_PARLAI_PATH=DEFAULT_PARLAI_PATH,
 ):
     """
     Creates job folders and scripts.
@@ -447,7 +428,7 @@ def submit_array_jobs(
     node_exclude=None,
     partition='learnfair',
     jobtime='01:59:59',
-    PARLAI_PATH="~/ParlAI/",
+    PARLAI_PATH=DEFAULT_PARLAI_PATH,
     mem_gb=64,
     requeue=False,
     comment=None,
@@ -455,7 +436,7 @@ def submit_array_jobs(
     volta32=False,
     PARLAI_DATAPATH="~/ParlAI/data",
     PARLAI_DOWNPATH="~/ParlAI/downloads",
-    NEW_PARLAI_PATH="~/ParlAI",
+    NEW_PARLAI_PATH=DEFAULT_PARLAI_PATH,
     jobs_path=None,
     one_job_per_node=None,
 ):
