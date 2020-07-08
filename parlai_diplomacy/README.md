@@ -69,8 +69,6 @@ Example command for training a model on your devfair that is initialized with we
 python -u scripts/train.py -t dialogue --min-turns 3 -veps 0.1 --attention-dropout 0.0 --dropout 0.1 --fp16 True --init-model /checkpoint/edinan/diplomacy/400M_0701/model --dict-file /checkpoint/edinan/diplomacy/400M_0701/model.dict -m transformer/generator --embedding-size 1024 --ffn-size 4096 --attention-dropout 0.1 --n-heads 16 --n-positions 2048 --variant prelayernorm --activation gelu --n-encoder-layers 2 --n-decoder-layers 22 --skip-generation True --fp16 True --fp16-impl mem_efficient --force-fp16-tokens True --optimizer mem_eff_adam --truncate 128 --dict-tokenizer bytelevelbpe --bpe-vocab /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-vocab.json --bpe-merge /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-merges.txt --label-truncate 128 --log_every_n_secs 10 -lr 7e-06 --lr-scheduler reduceonplateau --lr-scheduler-patience 3 --optimizer adam --relu-dropout 0.0 --activation gelu --model-parallel True --save-after-valid True --text-truncate 128 --truncate 128 --warmup_updates 100 --fp16-impl mem_efficient --update-freq 2 --gradient-clip 0.1 --skip-generation True -vp 10 --max-train-time 27647.999999999996 -vmt ppl -vmm min -stim 360 -vme 10000 -bs 4 -mf /tmp/fairdip_traintest
 ```
 
-## Evaluating models
-
 ## Talking to models that are already trained (interactive)
 
 This is a model that was not trained for very long (DO NOT USE FOR ANYTHING ELSE); I'm simply providing a command to talk to it here as a demo:
@@ -95,3 +93,9 @@ python scripts/display_model.py -t dialogue -mf /checkpoint/edinan/20200629/dipl
 Note the `--skip-generation False` above: this is important as by default we skip generation during training for speed. Also note `-dt train:evalmode`: this is necessary to indicate to the model that we do not want it to train on these examples.
 
 
+## Evaluating models
+
+Evaluate a model on the validation set of the dialogue task, using beam search with a beam size of 10 and 3-gram blocking:
+```
+python scripts/display_model.py -t dialogue -mf /checkpoint/edinan/20200629/diplomacy_basic_baseline/3db/model --skip-generation False --inference beam --beam-size 10 --beam-min-length 15 --beam-block-ngram 3 --beam-context-block-ngram 3 -ne 15 -dt valid
+```
