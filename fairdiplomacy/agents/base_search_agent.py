@@ -294,7 +294,7 @@ class BaseSearchAgent(BaseAgent):
         }
 
     def distribute_rollouts(
-        self, game, set_orders_dicts: List[Dict], average_n_rollouts=1
+        self, game, set_orders_dicts: List[Dict], average_n_rollouts=1, log_timings=False
     ) -> List[Tuple[Dict, Dict]]:
         """Run average_n_rollouts x len(set_orders_dicts) rollouts
 
@@ -334,14 +334,10 @@ class BaseSearchAgent(BaseAgent):
                 ],
             )
         )
-        logging.getLogger("timings").debug(
-            "Timings[avg.do_rollout, n={}*{}, len={}] {}".format(
-                len(set_orders_dicts),
-                average_n_rollouts,
-                self.max_rollout_length,
-                sum(all_timings) / len(all_timings),
-            )
-        )
+
+        if log_timings:
+            TimingCtx.pprint_multi(all_timings, logging.getLogger("timings").info)
+
         return [
             (order_dict, average_score_dicts(list_of_scores_dicts))
             for order_dict, list_of_scores_dicts in all_results
@@ -417,12 +413,12 @@ class BaseSearchAgent(BaseAgent):
             # step games together at the pace of the slowest game, e.g. process
             # games with retreat phases alone before moving on to the next move phase
             min_phase = min([game.current_short_phase for game in games], key=sort_phase_key)
-            with timings("prep"):
+            with timings("encoding"):
                 batch_data = []
                 for game in games:
                     if not game.is_game_done and game.current_short_phase == min_phase:
                         inputs = encode_inputs(
-                            game, all_possible_orders=game.get_all_possible_orders()  # expensive
+                            game, all_possible_orders=game.get_all_possible_orders()
                         )
                         batch_data.append((game, inputs))
 
@@ -465,9 +461,8 @@ class BaseSearchAgent(BaseAgent):
                         if not game.is_game_done
                         else get_square_scores_from_game(game)
                     )
-                    # print('is_done', game.is_game_done, 'cur_score_est', cur_score_est, 'weight', score_weight, 'est_final', est_final_scores[game.game_id])
                     est_final_scores[game.game_id] += np.array(cur_score_est) * score_weight
-                    # print(min_phase, cur_score_est, score_weight, est_final_scores)
+
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
                     len(batch_data), len(batch_orders)

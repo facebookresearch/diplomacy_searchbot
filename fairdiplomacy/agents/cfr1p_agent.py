@@ -141,8 +141,12 @@ class CFR1PAgent(BaseSearchAgent):
         timings = MultiStopWatchTimer()
         iter_weight = 0.0
         for cfr_iter in range(self.n_rollouts):
-            timings.start("start")
+            # do verbose logging on 2^x iters
+            verbose_log_iter = (
+                cfr_iter & (cfr_iter + 1) == 0 and cfr_iter > self.n_rollouts / 8
+            ) or cfr_iter == self.n_rollouts - 1
 
+            timings.start("start")
             if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 4):
                 for pwr, actions in power_plausible_orders.items():
                     paired_list = []
@@ -242,7 +246,10 @@ class CFR1PAgent(BaseSearchAgent):
             # run rollouts or get from cache
             def on_miss():
                 return self.distribute_rollouts(
-                    game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
+                    game,
+                    set_orders_dicts,
+                    average_n_rollouts=self.average_n_rollouts,
+                    log_timings=verbose_log_iter,
                 )
 
             timings.start("distribute_rollouts")
@@ -251,10 +258,6 @@ class CFR1PAgent(BaseSearchAgent):
                 if self.cache_rollout_results
                 else on_miss()
             )
-            # if cfr_iter & (cfr_iter + 1) == 0:  # 2^n-1
-            #     logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] Power sampled orders:")
-            #     for power, (orders, _) in power_sampled_orders.items():
-            #         logging.info(f"    {power:10s}  {orders}")
 
             for pwr, actions in power_plausible_orders.items():
                 if len(actions) == 0:
@@ -272,9 +275,13 @@ class CFR1PAgent(BaseSearchAgent):
                 action_regrets = [(u - state_utility) for u in action_utilities]
 
                 # log some action values
-                if (cfr_iter & (cfr_iter + 1) == 0 and cfr_iter > self.n_rollouts / 8) or cfr_iter == self.n_rollouts - 1:
-                    logging.info(f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}")
-                    logging.info(f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
+                if verbose_log_iter:
+                    logging.info(
+                        f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
+                    )
+                    logging.info(
+                        f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
+                    )
                     action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])
                     bp_probs: List[float] = self.bp_strategy(pwr, power_plausible_orders[pwr])
                     avg_utilities = [
@@ -338,6 +345,7 @@ class CFR1PAgent(BaseSearchAgent):
 
             if self.cache_rollout_results and (cfr_iter + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
+
         timing_logger.debug(
             f"Timing[cfr_iter {cfr_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
         )
