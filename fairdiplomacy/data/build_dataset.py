@@ -156,10 +156,13 @@ def group_by(collection, fn):
 
 
 def is_good_game(db, game_id):
-    moves = db.execute(f"""SELECT turn, terrID, type	
+    moves = db.execute(
+        f"""SELECT turn, terrID, type	
                FROM {TABLE_MOVES}
                WHERE hashed_gameID=?
-            """, (game_id,)).fetchall()
+            """,
+        (game_id,),
+    ).fetchall()
 
     # Criterion: has proper starting units
     if {terr_id for (turn, terr_id, _) in moves if turn == 0} != set(PROPER_START_TERR_IDS):
@@ -173,7 +176,7 @@ def is_good_game(db, game_id):
     # Criterion: has non-hold moves in turn 0
     if all(typ == "Hold" for (turn, _, typ) in moves if turn == 0):
         return False
-    
+
     # Meets all criteria: good game
     return True
 

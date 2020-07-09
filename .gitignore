@@ -12,6 +12,7 @@ fairdiplomacy.egg-info/
 dist/
 pip-wheel-metadata/
 local/
+.idea/
 conf/conf_pb2.py
 .ipynb_checkpoints/
 .vscode/

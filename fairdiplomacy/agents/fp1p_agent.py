@@ -113,7 +113,8 @@ class FP1PAgent(BaseSearchAgent):
             p: list(v.keys()) for p, v in plausible_order_dicts.items()
         }
         bp_policy: Dict[Power, List[float]] = {
-            pwr: [np.exp(float(od[o])) for o in power_plausible_orders[pwr]] for pwr, od in plausible_order_dicts.items()
+            pwr: [np.exp(float(od[o])) for o in power_plausible_orders[pwr]]
+            for pwr, od in plausible_order_dicts.items()
         }
         # normalize everything
         bp_policy = {pwr: [p / sum(probs) for p in probs] for pwr, probs in bp_policy.items()}
@@ -261,7 +262,14 @@ class FP1PAgent(BaseSearchAgent):
                 #     else:
                 #         self.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
 
-            if self.enable_compute_nash_conv and fp_iter in (24, 49, 99, 199, 399, self.n_rollouts - 1):
+            if self.enable_compute_nash_conv and fp_iter in (
+                24,
+                49,
+                99,
+                199,
+                399,
+                self.n_rollouts - 1,
+            ):
                 logging.info(f"Computing nash conv for iter {fp_iter}")
                 self.compute_nash_conv(fp_iter, game, power_plausible_orders)
 
@@ -443,11 +451,16 @@ class RolloutResultsCache:
             self.misses += 1
             r = onmiss_fn()
             try:
-                self.cache_avg[key] = _map2(
-                    self.cache_avg[key],
-                    r,
-                    lambda avg, sample: (avg * self.cache_count[key] + sample) / (self.cache_count[key] + 1)
-                ) if key in self.cache_avg else r
+                self.cache_avg[key] = (
+                    _map2(
+                        self.cache_avg[key],
+                        r,
+                        lambda avg, sample: (avg * self.cache_count[key] + sample)
+                        / (self.cache_count[key] + 1),
+                    )
+                    if key in self.cache_avg
+                    else r
+                )
                 self.cache_count[key] += 1
             except RuntimeError as e:
                 print(e)

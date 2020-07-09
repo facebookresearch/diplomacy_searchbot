@@ -18,26 +18,21 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s]: %(
 
 def make_ratings_table(game_folder):
     game_jsons = glob.glob(os.path.join(game_folder, "**/game_*.json"), recursive=True)
-    pattern = re.compile('game_(\d+).json')
+    pattern = re.compile("game_(\d+).json")
     game_ids = []
     for f in game_jsons:
         m = pattern.search(f)
         if m:
             game_ids.append(int(m.group(1)))
-    
-    game_stats = {game_id: 
-        {
-            'id': game_id,
-            'press_type': 'NoPress',
-            **{pwr: 
-                {
-                    'id': -1,
-                    'points': -1,
-                    'status': 'NoPress',
-                    'logit_rating': 0,
-                }
-            for pwr in POWERS
-            }
+
+    game_stats = {
+        game_id: {
+            "id": game_id,
+            "press_type": "NoPress",
+            **{
+                pwr: {"id": -1, "points": -1, "status": "NoPress", "logit_rating": 0,}
+                for pwr in POWERS
+            },
         }
         for game_id in game_ids
     }
@@ -47,9 +42,7 @@ def make_ratings_table(game_folder):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--game-path",
-        required=True,
-        help="Path to folder with game_XXX.json files."
+        "--game-path", required=True, help="Path to folder with game_XXX.json files."
     )
     parser.add_argument("--out", required=True, help="Dump output pickle to this file")
 

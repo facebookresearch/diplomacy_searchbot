@@ -18,11 +18,11 @@ advance how many examples there are.
 """
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     iterator = utils.DataIterator()
     # Run through all turns to get a list of conversations
     convs = []
-    print(f'Total dataset Diplomacy turns: {len(iterator)}')
+    print(f"Total dataset Diplomacy turns: {len(iterator)}")
     tot_turns = 0
     train_cnts = defaultdict(int)
     valid_cnts = defaultdict(int)
@@ -55,14 +55,10 @@ if __name__ == '__main__':
             if k > i:
                 tot_valid_exs += k * v
 
-        print(
-            f'Num train episodes, exs with length >= {i + 1}: {tot_train}, {tot_train_exs}'
-        )
-        print('----------')
-        print(
-            f'Num valid episodes, exs with length >= {i + 1}: {tot_valid}, {tot_valid_exs}'
-        )
-        print('=========\n')
+        print(f"Num train episodes, exs with length >= {i + 1}: {tot_train}, {tot_train_exs}")
+        print("----------")
+        print(f"Num valid episodes, exs with length >= {i + 1}: {tot_valid}, {tot_valid_exs}")
+        print("=========\n")
 
         if tot_train == 0 and tot_valid == 0:
             break

@@ -40,17 +40,17 @@ MemberRow = namedtuple("MemberRow", "user game country status")
 
 def compute_logit_ratings(game_stats, wd=0.1):
     # 1. construct dataset
-    
+
     # 1a. find all u1 > u2 pairs from the game stats
     dataset = []
     POWERS = COUNTRY_ID_TO_POWER.values()
     for game in game_stats.values():
         for pwr0 in POWERS:
-            p0 = game[pwr0]['points']  
-            id0 = game[pwr0]['id']
+            p0 = game[pwr0]["points"]
+            id0 = game[pwr0]["id"]
             for pwr1 in POWERS:
-                p1 = game[pwr1]['points']
-                id1 = game[pwr1]['id']
+                p1 = game[pwr1]["points"]
+                id1 = game[pwr1]["id"]
                 if pwr0 == pwr1:
                     continue
                 if p0 > p1:
@@ -70,7 +70,7 @@ def compute_logit_ratings(game_stats, wd=0.1):
     num_users = dataset.max() + 1
     user_scores = nn.Parameter(torch.zeros(num_users))
     optimizer = optim.Adagrad([user_scores], lr=1e0)
-    
+
     # cross entropy loss where P(win) = softmax(score0, score1)
     def L(dataset):
         return -user_scores[dataset].log_softmax(-1)[:, 0].mean()
@@ -78,13 +78,15 @@ def compute_logit_ratings(game_stats, wd=0.1):
     # run gradient descent to optimize the loss
     for epoch in range(100):
         optimizer.zero_grad()
-        train_loss = L(train_dataset) + wd * (user_scores**2).mean()
+        train_loss = L(train_dataset) + wd * (user_scores ** 2).mean()
         train_loss.backward()
         optimizer.step()
         with torch.no_grad():
             val_loss = L(val_dataset)
         if epoch % 10 == 0:
-            print(f"Epoch {epoch}: Train Loss: {train_loss:.5f}  Val Loss: {val_loss:.5f} Mean: {user_scores.abs().mean():.5f} ( {user_scores.min():.5f} - {user_scores.max():.5f} ) ")
+            print(
+                f"Epoch {epoch}: Train Loss: {train_loss:.5f}  Val Loss: {val_loss:.5f} Mean: {user_scores.abs().mean():.5f} ( {user_scores.min():.5f} - {user_scores.max():.5f} ) "
+            )
 
     return user_scores.tolist()
 
@@ -96,9 +98,12 @@ def make_ratings_table(db):
             f"SELECT hashed_userID, hashed_gameID, countryID, status FROM {TABLE_MEMBERS}"
         ).fetchall()
     ]
-    press_type = {game_id: press_type for game_id, press_type in db.execute(
-        f"SELECT hashed_id, pressType from redacted_games"
-    ).fetchall()}
+    press_type = {
+        game_id: press_type
+        for game_id, press_type in db.execute(
+            f"SELECT hashed_id, pressType from redacted_games"
+        ).fetchall()
+    }
 
     user_ids = list(set(r.user for r in member_rows))
 
@@ -110,7 +115,7 @@ def make_ratings_table(db):
 
     print(f"Found {len(good_games)} good games.")
 
-    WIN_STATI = ('Won', 'Drawn')
+    WIN_STATI = ("Won", "Drawn")
     game_stats = {}
     for ii, game_id in enumerate(good_games):
         if ii & (ii - 1) == 0:
@@ -132,12 +137,9 @@ def make_ratings_table(db):
 
         # allot points to winners
         for winner in winners:
-            winner["total_points"] += 1. / len(winners)
+            winner["total_points"] += 1.0 / len(winners)
 
-        this_game_stats = {
-            'id': game_id,
-            'press_type': press_type[game_id]
-        }
+        this_game_stats = {"id": game_id, "press_type": press_type[game_id]}
         for country_id in range(1, 7 + 1):
             pwr = COUNTRY_ID_TO_POWER[country_id]
             k = (game_id, country_id)
@@ -146,7 +148,7 @@ def make_ratings_table(db):
                 u = member_row.user
                 this_game_stats[pwr] = {
                     "id": u,
-                    "points": 1. / len(winners) if member_row.status in WIN_STATI else 0,
+                    "points": 1.0 / len(winners) if member_row.status in WIN_STATI else 0,
                     "status": member_row.status,
                 }
             else:
@@ -157,7 +159,7 @@ def make_ratings_table(db):
     print("Computing logit scores")
     ratings = compute_logit_ratings(game_stats)
     for i in range(len(user_stats)):
-        user_stats[i]['logit_rating'] = ratings[i]
+        user_stats[i]["logit_rating"] = ratings[i]
 
     print("Adding final stats")
     for ii, game_id in enumerate(good_games):
@@ -170,7 +172,9 @@ def make_ratings_table(db):
             if k in member_dict:
                 this_game_stats[pwr].update(**user_stats[member_dict[k].user])
 
-    user_stats = [{**user_stats[u], "id": u} for u in range(max_userid) if user_stats[u]['total'] > 0]
+    user_stats = [
+        {**user_stats[u], "id": u} for u in range(max_userid) if user_stats[u]["total"] > 0
+    ]
     return game_stats, user_stats
 
 
@@ -191,7 +195,7 @@ if __name__ == "__main__":
     with open(args.out, "w") as f:
         json.dump(game_stats, f)
 
-    with open(os.path.dirname(args.out) + '/user_stats.json', "w") as f:
+    with open(os.path.dirname(args.out) + "/user_stats.json", "w") as f:
         json.dump(user_stats, f)
         # keys = list(user_stats[0].keys())
         # f.write(" ".join(keys) + "\n")

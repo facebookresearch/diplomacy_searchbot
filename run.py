@@ -109,6 +109,7 @@ def benchmark_agent(cfg):
 
     fairdiplomacy.benchmark_agent.run(cfg)
 
+
 @_register
 def play_webdip(cfg):
 

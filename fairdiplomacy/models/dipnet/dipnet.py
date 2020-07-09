@@ -38,15 +38,17 @@ def compute_order_features():
     # fixup strange stuff in the dataset
     for s in order_split:
         # fixup "A SIL S A PRU"
-        if len(s) == 5 and s[2] == 'S':
-            s.append('H')
+        if len(s) == 5 and s[2] == "S":
+            s.append("H")
         # fixup "A SMY - ROM VIA"
-        if len(s) == 5 and s[-1] == 'VIA':
+        if len(s) == 5 and s[-1] == "VIA":
             s.pop()
 
     loc_idx = {loc: i for i, loc in enumerate(LOCS)}
-    unit_idx = {'A': 0, 'F': 1}
-    order_type_idx = {t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))}
+    unit_idx = {"A": 0, "F": 1}
+    order_type_idx = {
+        t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))
+    }
 
     feats = []
     for o in order_split:
@@ -57,7 +59,7 @@ def compute_order_features():
         orderT = torch.zeros(len(order_type_idx))
         underlyingT = torch.zeros(len(order_type_idx))
 
-        if not o[2].startswith('B'):  # lets ignore the concatenated builds, they're tricky
+        if not o[2].startswith("B"):  # lets ignore the concatenated builds, they're tricky
             srcT[loc_idx[u[1]]] = 1
             dstT[loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]] = 1
             unitT[unit_idx[o[0]]] = 1
@@ -369,9 +371,7 @@ class DipNet(nn.Module):
 
 
 def compute_alignments(loc_idxs, step, A):
-    alignments = torch.matmul(
-        ((loc_idxs == step) | (loc_idxs == -2)).float(), A
-    )
+    alignments = torch.matmul(((loc_idxs == step) | (loc_idxs == -2)).float(), A)
     alignments /= torch.sum(alignments, dim=1, keepdim=True) + 1e-5
     # alignments = torch.where(
     #     torch.isnan(alignments), torch.zeros_like(alignments), alignments
@@ -409,15 +409,20 @@ class LSTMDipNetDecoder(nn.Module):
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
         self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
-        
+
         self.graph_decoder = graph_decoder
         if graph_decoder:
             self.decoder_A = nn.Parameter(A.clone())  # maybe A@A ?
-            self.decoder_lin = nn.Linear(2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size)
+            self.decoder_lin = nn.Linear(
+                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size
+            )
             # self.decoder_lin2 = nn.Linear(lstm_size, lstm_size)
         else:
             self.lstm = nn.LSTM(
-                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size, batch_first=True, num_layers=self.lstm_layers,
+                2 * inter_emb_size + order_emb_size + power_emb_size,
+                lstm_size,
+                batch_first=True,
+                num_layers=self.lstm_layers,
             )
 
         # if avg_embedding is True, alignments are not used, and pytorch
@@ -430,7 +435,7 @@ class LSTMDipNetDecoder(nn.Module):
 
         self.featurize_output = featurize_output
         if featurize_output:
-            self.register_buffer('order_feats', compute_order_features())
+            self.register_buffer("order_feats", compute_order_features())
             self.order_feat_lin = nn.Linear(self.order_feats.shape[1], order_emb_size)
             self.order_decoder_w = nn.Linear(self.order_feats.shape[1], lstm_size)  # FIXME
             self.order_decoder_b = nn.Linear(self.order_feats.shape[1], 1)
@@ -482,7 +487,7 @@ class LSTMDipNetDecoder(nn.Module):
                     torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
                     torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size).to(device),
                 )
-            
+
             # reuse same dropout weights for all steps
             dropout_in = (
                 torch.zeros(
@@ -528,7 +533,9 @@ class LSTMDipNetDecoder(nn.Module):
                     # print(self.decoder_A)
                     # print('order_alignments', order_alignments.mean(), order_alignments.std())
                     # print('order_enc', order_enc.mean(), order_enc.std())
-                    aggr_order_enc = torch.matmul(order_alignments.unsqueeze(1), order_enc).squeeze(1)
+                    aggr_order_enc = torch.matmul(
+                        order_alignments.unsqueeze(1), order_enc
+                    ).squeeze(1)
                     # print('aggr', step, float(aggr_order_enc.mean()), float(aggr_order_enc.std()))
                     # aggr_order_enc *= 0
                     dec_input = torch.cat((loc_enc, aggr_order_enc, power_emb), dim=1).unsqueeze(1)
@@ -553,11 +560,10 @@ class LSTMDipNetDecoder(nn.Module):
 
             with timings("dec.cand_emb"):
                 cand_emb = self.cand_embedding(cand_idxs)
-                
 
             with timings("dec.logits"):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
-                
+
                 if self.featurize_output:
                     cand_order_feats = self.order_feats[cand_idxs]
                     order_w = self.order_decoder_w(cand_order_feats)
@@ -616,12 +622,16 @@ class LSTMDipNetDecoder(nn.Module):
                 all_order_idxs.append(order_idxs)
 
             with timings("dec.order_emb"):
-                order_input = teacher_force_orders[:, step] if teacher_force_orders is not None else order_idxs.masked_fill(order_idxs == EOS_IDX, 0)
-                
+                order_input = (
+                    teacher_force_orders[:, step]
+                    if teacher_force_orders is not None
+                    else order_idxs.masked_fill(order_idxs == EOS_IDX, 0)
+                )
+
                 order_emb = self.order_embedding(order_input)
                 if self.featurize_output:
                     order_emb += self.order_feat_lin(self.order_feats[order_input])
-                
+
                 if self.graph_decoder:
                     order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]
 

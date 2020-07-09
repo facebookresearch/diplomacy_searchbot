@@ -76,9 +76,7 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
 
             # 2. build the order string
             if from_loc != "":
-                order_str = (
-                    f"{unit} {loc} {order_type} {terr_to_unit.get(from_loc, 'F')} {from_loc} - {to_loc}"
-                )
+                order_str = f"{unit} {loc} {order_type} {terr_to_unit.get(from_loc, 'F')} {from_loc} - {to_loc}"
             else:
                 # note: default to Fleet in secondary location because sometimes
                 # we get confused with NC / SC
@@ -226,7 +224,7 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
 
         if json_out:
             game_json = game.to_saved_game_format()
-            with open(json_out, 'w') as jf:
+            with open(json_out, "w") as jf:
                 json.dump(game_json, jf)
 
         if agent is None:
@@ -344,7 +342,7 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
                 raise RuntimeError(f"{order_req_by_unit[terr]} != {order_resp_by_unit[terr]}")
         time.sleep(2)
 
-    
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-key", required=True, help="webdip API key")
