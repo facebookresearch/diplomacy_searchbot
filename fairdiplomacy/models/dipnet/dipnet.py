@@ -172,6 +172,7 @@ class DipNet(nn.Module):
         x_has_press=None,
     ):
         """
+        TODO(alerer): fix the docs.
         Arguments:
         - x_bo: [B, 81, 35]
         - x_pb: [B, 2, 100], long

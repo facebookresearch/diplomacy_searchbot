@@ -42,6 +42,13 @@ class DataFields(dict):
         else:
             return cls()
 
+    @classmethod
+    def stack(cls, L: list, dim: int = 0):
+        if len(L) > 0:
+            return cls({k: torch.stack([x[k] for x in L], dim) for k in L[0]})
+        else:
+            return cls()
+
     def to_storage_fmt_(self):
         for f in DataFields.BOOL_STORAGE_FIELDS:
             self[f] = self[f].to(torch.bool)
@@ -67,7 +74,7 @@ class Dataset(torch.utils.data.Dataset):
         cf_agent=None,
         n_cf_agent_samples=1,
         min_rating=None,
-        exclude_n_holds=-1
+        exclude_n_holds=-1,
     ):
         self.game_ids = game_ids
         self.data_dir = data_dir
@@ -255,7 +262,7 @@ def encode_game(
             n_cf_agent_samples=n_cf_agent_samples,
             value_decay_alpha=value_decay_alpha,
             input_valid_power_idxs=input_valid_power_idxs,
-            exclude_n_holds=exclude_n_holds
+            exclude_n_holds=exclude_n_holds,
         )
         for phase_idx in range(num_phases)
     ]
@@ -341,7 +348,7 @@ def encode_phase(
     n_cf_agent_samples=1,
     value_decay_alpha,
     input_valid_power_idxs,
-    exclude_n_holds
+    exclude_n_holds,
 ):
     """
     Arguments:
@@ -414,7 +421,7 @@ def encode_phase(
             )
             encoded_power_actions_lst.append(encoded_power_actions)
             if exclude_n_holds >= 0 and len(orders) >= exclude_n_holds:
-                if all(o.endswith(' H') for o in orders):
+                if all(o.endswith(" H") for o in orders):
                     valid = 0
             valid_power_idxs[power_i] &= valid
         y_actions_lst.append(torch.stack(encoded_power_actions_lst, dim=0))  # [N, 17]
