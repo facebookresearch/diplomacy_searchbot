@@ -38,10 +38,14 @@ if __name__ == "__main__":
         "large_jsons_nostream/redacted_messages_*.json",
     )
     parser.add_argument(
-        "--save_dir", type=str, default="/checkpoint/fairdiplomacy/processed_chat_jsons/variantID"
+        "--save_dir",
+        type=str,
+        default="/checkpoint/fairdiplomacy/processed_chat_jsons/variantID",
     )
     parser.add_argument(
-        "--db_path", type=str, default="/checkpoint/fairdiplomacy/facebook_notext.sqlite3"
+        "--db_path",
+        type=str,
+        default="/checkpoint/fairdiplomacy/facebook_notext.sqlite3",
     )
     args = parser.parse_args()
 
@@ -51,7 +55,9 @@ if __name__ == "__main__":
     cur = conn.cursor()
     cur.execute(f"select {DB2JSON_FIELD_TUPLE[0]}, {args.field} from {args.table}")
     hashedID2field_list = cur.fetchall()
-    hashedID2field_dict = {d[DB2JSON_FIELD_TUPLE[0]]: d[args.field] for d in hashedID2field_list}
+    hashedID2field_dict = {
+        d[DB2JSON_FIELD_TUPLE[0]]: d[args.field] for d in hashedID2field_list
+    }
     print("Fields fetched...")
     conn.close()
 

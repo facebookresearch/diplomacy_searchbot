@@ -326,10 +326,14 @@ def run_grid(
                 f'rsync -av {PARLAI_PATH}/{folder} {SAVE_ROOT}/ParlAI_Diplomacy '
                 '--exclude .git --exclude "*.ipynb" '
             )
-            import ipdb; ipdb.set_trace()
+            import ipdb
+
+            ipdb.set_trace()
             bash(cmd)
         NEW_PARLAI_PATH = '{SAVE_ROOT}/ParlAI_Diplomacy'.format(**locals())
-        import ipdb; ipdb.set_trace()
+        import ipdb
+
+        ipdb.set_trace()
     else:
         NEW_PARLAI_PATH = PARLAI_PATH
 
