@@ -10,6 +10,7 @@
 #include "../cc/game_state.h"
 #include "../cc/loc.h"
 #include "../cc/power.h"
+#include "../cc/thirdparty/nlohmann/json.hpp"
 
 #define S_ARMY 0
 #define S_FLEET 1
@@ -222,10 +223,6 @@ py::array_t<float> encode_board_state(GameState &state) {
   return r;
 } // encode_board_state
 
-py::array_t<float> encode_game_board_state(Game &game) {
-  return encode_board_state(game.get_state());
-} // encode_game_board_state
-
 py::array_t<float> encode_prev_orders(PhaseData &phase_data) {
   JCHECK(phase_data.get_state().get_phase().phase_type == 'M',
          "encode_prev_orders called on non-movement phase");
@@ -364,5 +361,15 @@ py::array_t<float> encode_prev_orders(PhaseData &phase_data) {
 
   return r;
 } // encode_prev_orders
+
+py::array_t<float> encode_board_state_from_json(const std::string &json_str) {
+  auto j = json::parse(json_str);
+  GameState state(j);
+  return encode_board_state(state);
+}
+
+py::array_t<float> encode_board_state_from_phase(PhaseData &phase) {
+  return encode_board_state(phase.get_state());
+}
 
 } // namespace dipcc

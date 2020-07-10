@@ -1,18 +1,21 @@
 import numpy as np
+import json
 
-import diplomacy
+import pydipcc
 from diplomacy_research.models import state_space as ss
 
 from fairdiplomacy.models.consts import LOCS, LOC_TYPES, POWERS, MAP
 
 
-def board_state_to_np(state):
+def board_state_to_np(phase):
     """Encode the current game state as an 81x35 np array
 
     See section 4.1 and Figure 2 of the MILA paper for an explanation.
     """
-    state_proto = ss.dict_to_proto(state, ss.StateProto)
-    return ss.proto_to_board_state(state_proto, MAP).astype('float32')
+    if type(phase) == pydipcc.PhaseData:
+        return pydipcc.encode_board_state_from_phase(phase)
+    else:
+        return pydipcc.encode_board_state_from_json(json.dumps(phase.state))
 
 
 def prev_orders_to_np(phase):
@@ -23,7 +26,17 @@ def prev_orders_to_np(phase):
     See section 4.1 and Figure 2 of the MILA paper for an explanation.
     """
     phase_proto = ss.dict_to_proto(phase.to_dict(), ss.PhaseHistoryProto)
-    return ss.proto_to_prev_orders_state(phase_proto, MAP).astype('float32')
+    return ss.proto_to_prev_orders_state(phase_proto, MAP).astype("float32")
+
+
+# Unused, kept as a reference
+def mila_board_state_to_np(state):
+    """Encode the current game state as an 81x35 np array
+
+    See section 4.1 and Figure 2 of the MILA paper for an explanation.
+    """
+    state_proto = ss.dict_to_proto(state, ss.StateProto)
+    return ss.proto_to_board_state(state_proto, MAP).astype("float32")
 
 
 def get_power_at_loc(state, loc):

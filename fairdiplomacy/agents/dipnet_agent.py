@@ -6,7 +6,6 @@ from fairdiplomacy.game import Game, sort_phase_key
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import get_valid_orders_impl, encode_state, DataFields
 from fairdiplomacy.models.consts import SEASONS, POWERS
-from fairdiplomacy.models.dipnet.encoding import board_state_to_np, prev_orders_to_np
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
 

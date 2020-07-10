@@ -56,6 +56,7 @@ public:
   pybind11::dict py_get_orderable_locations();
 
   std::vector<PhaseData> get_phase_history();
+  PhaseData get_phase_data();
 
   static Game from_json(const std::string &s) { return Game(s); }
 

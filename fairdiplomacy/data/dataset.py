@@ -27,10 +27,7 @@ MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
 class DataFields(dict):
-    BOOL_STORAGE_FIELDS = [
-        "x_board_state",
-        "x_prev_state",
-    ]
+    BOOL_STORAGE_FIELDS = ["x_board_state", "x_prev_state"]
 
     def select(self, idx):
         return DataFields({k: v[idx] for k, v in self.items()})
@@ -279,15 +276,16 @@ def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
     # encode board state
     phase_history = game.get_phase_history()
     if phase_idx is None:
-        state = game.get_state()
         phase_idx = len(phase_history)
+        phase = game.get_phase_data()
+        state = phase.state
         season_char = game.phase[0]
     else:
         phase = phase_history[phase_idx]
         state = phase_history[phase_idx].state
         season_char = phase.name[0]
 
-    x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
+    x_board_state = torch.from_numpy(board_state_to_np(phase)).unsqueeze(0)
 
     prev_phases = []
     for i in range(phase_idx - 1, -1, -1):
@@ -299,7 +297,7 @@ def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
     x_prev_orders = torch.zeros(1, 2, 100, dtype=torch.long)
     if len(prev_phases) > 0:
         prev_orders, prev_order_locs = [], []
-        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1].state)).unsqueeze(0)
+        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1])).unsqueeze(0)
         for phase in prev_phases:
             # print(phase.name, phase.orders)
             for pwr in phase.orders:

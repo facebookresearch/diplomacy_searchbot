@@ -18,9 +18,9 @@ from fairdiplomacy.game import Game, sort_phase_key
 import pydipcc
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import (
+    encode_state,
     encode_inputs,
     zero_inputs,
-    encode_state,
     decode_order_idxs,
 )
 from fairdiplomacy.data.dataset import DataFields
@@ -413,17 +413,22 @@ class BaseSearchAgent(BaseAgent):
             # step games together at the pace of the slowest game, e.g. process
             # games with retreat phases alone before moving on to the next move phase
             min_phase = min([game.current_short_phase for game in games], key=sort_phase_key)
-            with timings("encoding"):
-                batch_data = []
-                for game in games:
-                    if not game.is_game_done and game.current_short_phase == min_phase:
-                        inputs = encode_inputs(
-                            game, all_possible_orders=game.get_all_possible_orders()
-                        )
-                        batch_data.append((game, inputs))
 
-                if len(batch_data) == 0:
-                    break
+            batch_data = []
+            for game in games:
+                if not game.is_game_done and game.current_short_phase == min_phase:
+                    with timings("encode.all_poss_orders"):
+                        all_possible_orders = game.get_all_possible_orders()
+                    with timings("encode.state"):
+                        encoded_state = encode_state(game)
+                    with timings("encode.inputs"):
+                        inputs = encode_inputs(
+                            game, all_possible_orders=all_possible_orders, game_state=encoded_state
+                        )
+                    batch_data.append((game, inputs))
+
+            if len(batch_data) == 0:
+                break
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
