@@ -14,6 +14,6 @@ setuptools.setup(
     name="dipcc",
     version="0.1",
     # packages=["dipcc"],
-    package_dir={"": "python/"},
+    package_dir={"": "dipcc/python/"},
     cmdclass={"build_ext": BuildExt},
 )
