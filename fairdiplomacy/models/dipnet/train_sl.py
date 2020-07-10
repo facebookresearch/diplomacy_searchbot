@@ -164,6 +164,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
             policy_losses, value_losses, sampled_idxs, final_sos = process_batch(
                 net, batch, policy_loss_fn, value_loss_fn, temperature=0.001, p_teacher_force=1.0
             )
+
             batch_losses.append((policy_losses, value_losses))
             batch_accuracies.append(calculate_accuracy(sampled_idxs, y_actions))
             batch_value_accuracies.append(
