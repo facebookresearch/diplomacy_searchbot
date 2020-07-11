@@ -538,7 +538,7 @@ if __name__ == "__main__":
 
     agent = CFR1PAgent(
         n_rollouts=10,
-        max_rollout_length=5,
+        max_rollout_length=3,
         model_path="/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best",
         postman_sync_batches=False,
         rollout_temperature=0.5,
@@ -546,6 +546,6 @@ if __name__ == "__main__":
         rollout_top_p=0.9,
         mix_square_ratio_scoring=0.1,
         n_plausible_orders=24,
-        average_n_rollouts=3,
+        average_n_rollouts=1,
     )
     print(agent.get_orders(Game(), "AUSTRIA"))

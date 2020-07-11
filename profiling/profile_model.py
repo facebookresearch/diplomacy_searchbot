@@ -12,7 +12,9 @@ from fairdiplomacy.models.dipnet.load_model import load_dipnet_model, new_model
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model-path", default="/checkpoint/jsgray/diplomacy/dipnet.pth")
+parser.add_argument(
+    "--model-path", default="/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best"
+)
 parser.add_argument("--new-model", action="store_true")
 parser.add_argument("-n", type=int, default=20)
 args = parser.parse_args()
@@ -41,15 +43,15 @@ else:
 for game_name, game in [("new_game", Game()), ("late_game", late_game)]:
     print("\n#", game_name)
     inputs = encode_inputs(game)
-    inputs = [x.to("cuda") for x in inputs]
+    inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
     for batch_size in B:
-        b_inputs = [x.repeat((batch_size,) + (1,) * (len(x.shape) - 1)) for x in inputs]
+        b_inputs = {k: v.repeat((batch_size,) + (1,) * (len(v.shape) - 1)) for k,v in inputs.items()}
         with torch.no_grad():
             tic = time.time()
             for _ in range(args.n):
                 order_idxs, order_scores, cand_scores, final_scores = model(
-                    *b_inputs, temperature=1.0
+                    **b_inputs, temperature=1.0
                 )
             toc = time.time() - tic
 
