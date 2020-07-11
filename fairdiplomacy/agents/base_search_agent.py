@@ -626,13 +626,13 @@ def server_handler(
                     batch_count += 1
                     total_batches += 1
                     frame_count += inputs["x_board_state"].shape[0]
-                    if (total_batches & (total_batches - 1)) == 0:
+                    if total_batches > 16 and (total_batches & (total_batches - 1)) == 0:
                         delta = time.time() - totaltic
-                        logging.debug(
-                            f"Performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
+                        logging.info(
+                            f"Server thread: performed {batch_count} forwards of avg batch size {frame_count / batch_count} "
                             f"in {delta} s, {frame_count / delta} forward/s."
                         )
-                        logging.debug(f"Timings[server] {str(timings)}")
+                        TimingCtx.pprint_multi([timings], logging.info)
                         batch_count = frame_count = 0
                         timings.clear()
                         totaltic = time.time()
