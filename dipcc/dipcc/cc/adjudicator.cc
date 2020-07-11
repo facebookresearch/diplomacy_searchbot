@@ -790,20 +790,28 @@ public:
       cands_[src][src].min = 1;
       cands_[src][src].max = 1;
       // erase all other pending convoys for this army
-      auto &maybe_dest_convoys = maybe_convoy_orders_by_dest_[dest];
-      for (auto it = maybe_dest_convoys.begin();
-           it != maybe_dest_convoys.end();) {
-        if (it->get_target().loc == src) {
-          it = maybe_dest_convoys.erase(it);
-        } else {
-          ++it;
-        }
-      }
+      erase_all_pending_convoys(src, dest);
       // Even if unit at dest already won their loc, they may have had an
       // unresolved support which could now be confirmed.
-      if (maybe_dest_convoys.size() == 0 && map_contains(r.winners, dest) &&
+      if (maybe_convoy_orders_by_dest_[dest].size() == 0 &&
+          map_contains(r.winners, dest) &&
           root_loc(r.winners.at(dest).src) == dest) {
         _resolve_support_if_exists(dest);
+      }
+    }
+  }
+
+  void erase_all_pending_convoys(Loc src, Loc dest) {
+    auto &maybe_dest_convoys = maybe_convoy_orders_by_dest_[dest];
+    for (auto it = maybe_dest_convoys.begin();
+         it != maybe_dest_convoys.end();) {
+      if (it->get_target().loc == src) {
+        DLOG(INFO) << "Disabling fleet for broken convoy: "
+                   << it->get_unit().loc;
+        it = maybe_dest_convoys.erase(it);
+        maybe_convoy_orders_by_fleet_.erase(it->get_unit().loc);
+      } else {
+        ++it;
       }
     }
   }
@@ -1134,7 +1142,9 @@ GameState GameState::process_m(
                                    order.get_via());
     } else {
       DLOG(INFO) << "Unconvoyed via move: " << order.to_string();
-      unconvoyed_movers.insert(root_loc(order.get_unit().loc));
+      unconvoyed_movers.insert(order.get_unit().loc);
+      loc_candidates.erase_all_pending_convoys(order.get_unit().loc,
+                                               order.get_dest());
     }
   }
 
@@ -1176,11 +1186,11 @@ GameState GameState::process_m(
         }
         if (move_cand.via) {
           DLOG(INFO) << "Convoy cut candidate " << order.to_string() << " : "
-                     << root_loc(loc);
+                     << root_loc(move_cand.src);
           convoy_cut_candidates.insert(root_loc(move_cand.src));
         } else {
           DLOG(INFO) << "Cut candidate " << order.to_string() << " : "
-                     << root_loc(loc);
+                     << root_loc(move_cand.src);
           cut_candidates.insert(root_loc(move_cand.src));
         }
       }
