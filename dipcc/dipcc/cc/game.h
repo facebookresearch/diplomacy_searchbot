@@ -56,10 +56,12 @@ public:
   pybind11::dict py_get_orderable_locations();
 
   std::vector<PhaseData> get_phase_history();
+  PhaseData get_phase_data();
 
   static Game from_json(const std::string &s) { return Game(s); }
 
   std::string get_phase_long() { return state_.get_phase().to_string_long(); }
+  std::string get_phase_short() { return state_.get_phase().to_string(); }
 
 private:
   void crash_dump();

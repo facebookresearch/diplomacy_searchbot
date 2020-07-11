@@ -145,6 +145,21 @@ bool is_water(Loc loc) {
   return IS_WATER.at(static_cast<size_t>(loc) - 1); // -1 for NONE
 }
 
+// >>> [game.map.area_type(loc) == "COAST" for loc in LOCS]
+std::vector<bool> IS_COAST{
+    true,  true,  true,  true,  false, true,  true,  false, false, false, false,
+    true,  true,  false, true,  true,  false, false, true,  false, true,  false,
+    false, false, true,  true,  true,  true,  true,  true,  false, true,  true,
+    true,  true,  true,  false, true,  false, true,  false, true,  true,  true,
+    false, true,  false, false, true,  false, false, false, false, true,  false,
+    false, true,  true,  true,  true,  false, false, true,  true,  false, true,
+    false, false, true,  true,  false, true,  false, false, true,  true,  true,
+    true,  true,  true,  true};
+
+bool is_coast(Loc loc) {
+  return IS_COAST.at(static_cast<size_t>(loc) - 1); // -1 for NONE
+}
+
 // >>> [loc[:3] in game.map.scs for loc in LOCS]
 // N.B. include center coasts, e.g. IS_CENTER[STP/NC] = true
 std::vector<bool> IS_CENTER{

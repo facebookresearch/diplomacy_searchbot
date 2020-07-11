@@ -40,6 +40,7 @@ def new_model(args):
         value_dropout=args.value_dropout,
         graph_decoder=getattr(args, "graph_decoder", False),
         featurize_output=getattr(args, "featurize_output", False),
+        relfeat_output=getattr(args, "relfeat_output", False),
     )
 
 

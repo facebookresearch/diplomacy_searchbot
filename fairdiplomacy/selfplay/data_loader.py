@@ -14,6 +14,7 @@ import torch.utils.tensorboard
 
 import fairdiplomacy.selfplay.metrics
 import fairdiplomacy.selfplay.vtrace
+from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import POWERS, POWER2IDX
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
@@ -177,9 +178,9 @@ def rollout_to_batch(
 
     # Prepare observation to be used for training. Drop information about all
     # powers, but current.
-    obs = list(rollout.observations)
-    obs[4] = obs[4][:, rollout.power_id].clone()
-    obs[5] = obs[5][:, rollout.power_id].clone()
+    obs = DataFields(rollout.observations)
+    obs["x_loc_idxs"] = obs["x_loc_idxs"][:, rollout.power_id].clone()
+    obs["x_possible_actions"] = obs["x_possible_actions"][:, rollout.power_id].clone()
 
     rollout_batch = RolloutBatch(
         power_ids=torch.full([N], rollout.power_id, dtype=torch.long),
@@ -205,7 +206,7 @@ def _join_batches(batches: Sequence[RolloutBatch]) -> RolloutBatch:
         for b in batches:
             values.append(getattr(b, k))
         if k == "observations":
-            values = [torch.cat(x, 0) for x in zip(*values)]
+            values = DataFields.cat(values)
         else:
             values = torch.cat(values, 0)
         merged[k] = values

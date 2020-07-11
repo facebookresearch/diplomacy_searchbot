@@ -330,6 +330,7 @@ def run_grid(
 
             ipdb.set_trace()
             bash(cmd)
+
         NEW_PARLAI_PATH = "{SAVE_ROOT}/ParlAI_Diplomacy".format(**locals())
         import ipdb
 

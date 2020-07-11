@@ -27,10 +27,7 @@ MAX_VALID_LEN = get_order_vocabulary_idxs_len()
 
 
 class DataFields(dict):
-    BOOL_STORAGE_FIELDS = [
-        "x_board_state",
-        "x_prev_state",
-    ]
+    BOOL_STORAGE_FIELDS = ["x_board_state", "x_prev_state"]
 
     def select(self, idx):
         return DataFields({k: v[idx] for k, v in self.items()})
@@ -39,6 +36,13 @@ class DataFields(dict):
     def cat(cls, L: list):
         if len(L) > 0:
             return cls({k: _cat([x[k] for x in L]) for k in L[0]})
+        else:
+            return cls()
+
+    @classmethod
+    def stack(cls, L: list, dim: int = 0):
+        if len(L) > 0:
+            return cls({k: torch.stack([x[k] for x in L], dim) for k in L[0]})
         else:
             return cls()
 
@@ -67,6 +71,7 @@ class Dataset(torch.utils.data.Dataset):
         cf_agent=None,
         n_cf_agent_samples=1,
         min_rating=None,
+        exclude_n_holds=-1,
     ):
         self.game_ids = game_ids
         self.data_dir = data_dir
@@ -89,6 +94,7 @@ class Dataset(torch.utils.data.Dataset):
                 value_decay_alpha=value_decay_alpha,
                 input_valid_power_idxs=self.get_valid_power_idxs(game_id),
                 game_metadata=self.game_metadata[game_id],
+                exclude_n_holds=exclude_n_holds,
             )
             for game_id in game_ids
         )
@@ -204,6 +210,7 @@ def encode_game(
     input_valid_power_idxs,
     value_decay_alpha,
     game_metadata,
+    exclude_n_holds,
 ):
     """
     Arguments:
@@ -252,6 +259,7 @@ def encode_game(
             n_cf_agent_samples=n_cf_agent_samples,
             value_decay_alpha=value_decay_alpha,
             input_valid_power_idxs=input_valid_power_idxs,
+            exclude_n_holds=exclude_n_holds,
         )
         for phase_idx in range(num_phases)
     ]
@@ -268,15 +276,16 @@ def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
     # encode board state
     phase_history = game.get_phase_history()
     if phase_idx is None:
-        state = game.get_state()
         phase_idx = len(phase_history)
+        phase = game.get_phase_data()
+        state = phase.state
         season_char = game.phase[0]
     else:
         phase = phase_history[phase_idx]
         state = phase_history[phase_idx].state
         season_char = phase.name[0]
 
-    x_board_state = torch.from_numpy(board_state_to_np(state)).unsqueeze(0)
+    x_board_state = torch.from_numpy(board_state_to_np(phase)).unsqueeze(0)
 
     prev_phases = []
     for i in range(phase_idx - 1, -1, -1):
@@ -288,7 +297,7 @@ def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
     x_prev_orders = torch.zeros(1, 2, 100, dtype=torch.long)
     if len(prev_phases) > 0:
         prev_orders, prev_order_locs = [], []
-        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1].state)).unsqueeze(0)
+        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1])).unsqueeze(0)
         for phase in prev_phases:
             # print(phase.name, phase.orders)
             for pwr in phase.orders:
@@ -337,6 +346,7 @@ def encode_phase(
     n_cf_agent_samples=1,
     value_decay_alpha,
     input_valid_power_idxs,
+    exclude_n_holds,
 ):
     """
     Arguments:
@@ -408,6 +418,9 @@ def encode_phase(
                 orders, x_possible_actions[power_i]
             )
             encoded_power_actions_lst.append(encoded_power_actions)
+            if exclude_n_holds >= 0 and len(orders) >= exclude_n_holds:
+                if all(o.endswith(" H") for o in orders):
+                    valid = 0
             valid_power_idxs[power_i] &= valid
         y_actions_lst.append(torch.stack(encoded_power_actions_lst, dim=0))  # [N, 17]
 

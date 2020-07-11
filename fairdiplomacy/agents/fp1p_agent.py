@@ -206,7 +206,7 @@ class FP1PAgent(BaseSearchAgent):
                 if self.cache_rollout_results
                 else on_miss()
             )
-            if fp_iter & (fp_iter + 1) == 0 or fp_iter == self.n_rollouts - 1:  # 2^n-1
+            if fp_iter & (fp_iter + 1) == 0:  # 2^n-1
                 logging.info(f"[{fp_iter+1}/{self.n_rollouts}] Power sampled orders:")
                 for power, orders in cur_policy.items():
                     logging.info(f"    {power:10s}  {orders}")
@@ -230,8 +230,9 @@ class FP1PAgent(BaseSearchAgent):
                 # state_utility = np.dot(power_action_ps[pwr], action_utilities)
                 # action_regrets = [(u - state_utility) for u in action_utilities]
 
-                # # log some action values
+                # log some action values
                 # if fp_iter & (fp_iter + 1) == 0:  # 2^n-1
+                # if fp_iter == self.n_rollouts - 1:
                 #     logging.info(f"[{fp_iter+1}/{self.n_rollouts}] {pwr} cum_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}")
                 #     logging.info(f"    {'probs':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
                 #     action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])

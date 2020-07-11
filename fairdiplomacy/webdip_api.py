@@ -181,12 +181,22 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
 #     return j
 
 
-def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=None):
+def play_webdip(
+    api_key: str,
+    game_id=0,
+    agent=None,
+    check_phase=None,
+    json_out=None,
+    force=False,
+    force_power="ENGLAND",
+):
     api_header = {"Authorization": f"Bearer {api_key}"}
 
     while True:
         logging.info("========================================================================")
-        if not check_phase:
+        if check_phase or force or json_out:
+            next_game = {"gameID": game_id, "countryID": COUNTRY_POWER_TO_ID[force_power]}
+        else:
             missing_orders_resp = requests.get(
                 API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header,
             )
@@ -201,8 +211,6 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
                 continue
 
             next_game = missing_orders_json[0]
-        else:
-            next_game = {"gameID": game_id, "countryID": 1}
 
         power = COUNTRY_ID_TO_POWER[next_game["countryID"]]
         status_resp = requests.get(
@@ -226,6 +234,7 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
             game_json = game.to_saved_game_format()
             with open(json_out, "w") as jf:
                 json.dump(game_json, jf)
+            return
 
         if agent is None:
             return
@@ -340,6 +349,10 @@ def play_webdip(api_key: str, game_id=0, agent=None, check_phase=None, json_out=
                 ):
                     continue
                 raise RuntimeError(f"{order_req_by_unit[terr]} != {order_resp_by_unit[terr]}")
+
+        if force:
+            break
+
         time.sleep(2)
 
 

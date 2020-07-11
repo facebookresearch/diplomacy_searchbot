@@ -3,8 +3,9 @@ import time
 
 
 class TimingCtx:
-    def __init__(self, init=None):
+    def __init__(self, init=None, init_ns=None):
         self.timings = init if init is not None else Counter()
+        self.ns = init_ns if init_ns is not None else Counter()
         self.arg = None
         self.last_clear = time.time()
 
@@ -21,6 +22,7 @@ class TimingCtx:
 
     def __exit__(self, *args):
         self.timings[self.arg] += time.time() - self.tic
+        self.ns[self.arg] += 1
 
     def __repr__(self):
         return dict(
@@ -35,10 +37,7 @@ class TimingCtx:
             raise ValueError(f"__add__ called with type {type(other)}")
 
     def __truediv__(self, other):
-        c = TimingCtx({k: v / other for k, v in self.timings.items()})
-        c.last_clear = self.last_clear
-        return c
-
+        return {k: v / other for k, v in self.timings.items()}
 
     def __radd__(self, other):
         if other == 0:
@@ -48,3 +47,27 @@ class TimingCtx:
 
     def items(self):
         return self.timings.items()
+
+    @classmethod
+    def pprint_multi(cls, timings, log_fn):
+        data = []
+        for k in timings[0].timings.keys():
+            t_mean = sum(t.timings[k] for t in timings) / len(timings)
+            t_max = max(t.timings[k] for t in timings)
+            n = sum(t.ns[k] for t in timings) / len(timings)
+            data.append((t_mean, t_max, k, n))
+
+        log_fn(f"TimingCtx summary of {len(timings)} timings:")
+        ind_log_fn = lambda x: log_fn("  " + x)
+        ind_log_fn(
+            "{:^24}|{:^8}|{:^18}|{:^18}".format("Key", "N_mean", "t_mean (ms)", "t_max (ms)")
+        )
+        ind_log_fn("-" * (24 + 8 + 18 + 18))
+        for t_mean, t_max, k, n in sorted(data, reverse=True):
+            ind_log_fn(
+                "{:^24}|{:^8.1f}|{:^18.1f}|{:^18.1f}".format(k, n, t_mean * 1e3, t_max * 1e3)
+            )
+        ind_log_fn("-" * (24 + 8 + 18 + 18))
+
+        sum_t_mean = sum(t_mean for t_mean, _, _, _ in data)
+        ind_log_fn("{:^24}|{:^8}|{:^18.1f}|{:^18}".format("Total", "", sum_t_mean * 1e3, ""))

@@ -102,7 +102,7 @@ def root():
     try:
         phase_id = phase_list.index(phase)
     except ValueError:
-        return "Bad phase. Known: " + " ".join(phase_list)
+        return "Bad phase. Known: " + " ".join(map(str, phase_list))
     num_phases = len(phase_list)
     prev_phase = phase_list[phase_id - 1] if phase_id > 0 else ""
     next_phase = phase_list[phase_id + 1] if phase_id < len(phase_list) - 1 else ""
@@ -115,7 +115,7 @@ def root():
         url_suffix = ""
 
     game = fairdiplomacy.game.Game.clone_from(game, up_to_phase=phase)
-    image = game.render()
+    image = game.render(incl_abbrev=True)
     return flask.render_template_string(INDEX_HTML, **locals())
 
 

@@ -16,6 +16,7 @@ import postman
 from fairdiplomacy.agents.base_search_agent import run_server, cat_pad_inputs
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, decode_order_idxs
 from fairdiplomacy.game import Game
+from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS, N_SCS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
@@ -149,23 +150,28 @@ class InferencePool:
             server.kill()
 
 
-def do_model_request(client, x, temperature=1.0) -> Tuple[torch.Tensor, torch.Tensor]:
+def do_model_request(
+    client, x: DataFields, temperature: float = 1.0
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Synchronous request to model server
 
     Arguments:
-    - x: a Tuple of Tensors, where each tensor's dim=0 is the batch dim
-    - temperature: model softmax temperature
+        - x: a DataFields dict of Tensors, where each tensor's dim=0 is the batch dim
+        - temperature: model softmax temperature
 
     Returns:
-    - whatever the client returns
+        - whatever the client returns
     """
-    temp_array = torch.full((x[0].shape[0], 1), temperature)
-    req = (*x, temp_array)
+    x = dict(x)
+    B = x["x_board_state"].shape[0]
+    x["temperature"] = torch.full((B, 1), temperature)
     try:
-        return client.evaluate(req)
+        return client.evaluate(x)
     except Exception:
-        logging.exception(
-            "Caught server error with inputs {}".format([(x.shape, x.dtype) for x in req])
+        logging.error(
+            "Caught server error with inputs {}".format(
+                [(k, v.shape, v.dtype) for k, v in x.items()]
+            )
         )
         raise
 
@@ -331,7 +337,7 @@ def yield_rollouts(
                             logprobs[i].append(
                                 exploit_order_logprobs[inner_index, exploit_power_id]
                             )
-                        observations[i].append([x[inner_index] for x in batch_inputs])
+                        observations[i].append(batch_inputs.select(inner_index))
 
             turn_idx += 1
 
@@ -343,20 +349,24 @@ def yield_rollouts(
             final_game_json = games[i].to_saved_game_format()
             if mode == RolloutMode.SELFPLAY:
                 for power_id in range(len(POWERS)):
+                    extended_obs = DataFields.stack(observations[i])
+                    extended_obs["cand_indices"] = torch.stack(
+                        [x[power_id] for x in cand_actions[i]], 0
+                    )
                     yield ExploitRollout(
                         power_id=power_id,
                         game_json=final_game_json,
                         actions=torch.stack([x[power_id] for x in actions[i]], 0),
                         logprobs=torch.stack([x[power_id] for x in logprobs[i]], 0),
-                        observations=[torch.stack(obs, 0) for obs in zip(*observations[i])]
-                        + [torch.stack([x[power_id] for x in cand_actions[i]], 0)],
+                        observations=extended_obs,
                     )
             else:
+                extended_obs = DataFields.stack(observations[i])
+                extended_obs["cand_indices"] = torch.stack(cand_actions[i], 0)
                 yield ExploitRollout(
                     power_id=exploit_power_id,
                     game_json=final_game_json,
                     actions=torch.stack(actions[i], 0),
                     logprobs=torch.stack(logprobs[i], 0),
-                    observations=[torch.stack(obs, 0) for obs in zip(*observations[i])]
-                    + [torch.stack(cand_actions[i], 0)],
+                    observations=extended_obs,
                 )

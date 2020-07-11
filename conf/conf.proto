@@ -40,7 +40,7 @@ message CFR1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -125,7 +125,7 @@ message BRSearchAgent {
   // Number of rollouts per plausible order
   optional uint32 rollouts_per_plausible_order = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -158,7 +158,7 @@ message CE1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -191,7 +191,7 @@ message FP1PAgent {
   // Number of CFR iterations
   optional uint32 n_rollouts = 6;
 
-  // Maximum rollout length heuristically evaluating the game
+  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
   optional uint32 max_rollout_length = 7;
 
   // If true, use model predicted final scores in heuristic evalauation
@@ -433,15 +433,27 @@ message TrainTask {
   // Max gamesto include in dataset (for testing only)
   optional int32 max_games = 30 [default = -1];
 
+  // cut this percentile of games based on player rating
+  // (only for dataset with player ratings)
   optional float min_rating_percentile = 31 [default = 0];
-
+  
+  // obsolete
   optional bool graph_decoder = 32 [default = false];
 
+  // dimension of LSTM
   optional int32 lstm_size = 33 [default = 200];
 
+  // number of LSTM layers
   optional int32 lstm_layers = 34 [default = 1];
 
+  // if true, add features to output orders in the model
   optional bool featurize_output = 35 [default = false];
+
+  // if true, add "relational" features to output orders in the model
+  optional bool relfeat_output = 36 [default = false];
+
+  // exclude actions with >=n units, all holds, from the dataset
+  optional int32 exclude_n_holds = 37 [default = -1];
 
   optional Launcher launcher = 1000;
 }
@@ -671,6 +683,8 @@ message PlayWebdipTask {
   optional uint64 game_id = 3;
   optional string check_phase = 4;
   optional string json_out = 5;
+  optional bool force = 6 [ default = false ];
+  optional string force_power = 7 [ default = "ENGLAND" ];
 }
 
 // Every config is parsed as Cfg that is thin wrapper over actual config for the

@@ -8,7 +8,7 @@ I import parlai here so there are a few caveats/changes/tricks to using ParlAI i
 
 ## Creating tasks and agents
 We use the "register" syntax so that new agents and tasks are visible to the parlai module. Note, however,
-that in any script that uses these tasks or agents, you will have to make a call to the functions `register_all_agents()` and `register_all_agents()` which can be found in `utils/loading.py`.
+that in any script that uses these tasks or agents, you will have to make a call to the functions `register_all_agents()` and `register_all_tasks()` which can be found in `utils/loading.py`.
 
 
 ## Viewing data
@@ -97,5 +97,5 @@ Note the `--skip-generation False` above: this is important as by default we ski
 
 Evaluate a model on the validation set of the dialogue task, using beam search with a beam size of 10 and 3-gram blocking:
 ```
-python scripts/display_model.py -t dialogue -mf /checkpoint/edinan/20200629/diplomacy_basic_baseline/3db/model --skip-generation False --inference beam --beam-size 10 --beam-min-length 15 --beam-block-ngram 3 --beam-context-block-ngram 3 -ne 15 -dt valid
+python scripts/eval.py -t dialogue -mf /checkpoint/edinan/20200629/diplomacy_basic_baseline/3db/model --skip-generation False --inference beam --beam-size 10 --beam-min-length 15 --beam-block-ngram 3 --beam-context-block-ngram 3 -ne 15 -dt valid
 ```

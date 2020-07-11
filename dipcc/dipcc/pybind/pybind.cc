@@ -19,8 +19,11 @@ PYBIND11_MODULE(pydipcc, m) {
       .def("from_json", &Game::from_json)
       .def("get_phase_history", &Game::get_phase_history,
            py::return_value_policy::move)
+      .def("get_phase_data", &Game::get_phase_data,
+           py::return_value_policy::move)
       .def_property_readonly("is_game_done", &Game::is_game_done)
       .def_property_readonly("phase", &Game::get_phase_long)
+      .def_property_readonly("current_short_phase", &Game::get_phase_short)
       .def_readwrite("game_id", &Game::game_id);
 
   py::class_<PhaseData>(m, "PhaseData")
@@ -30,5 +33,11 @@ PYBIND11_MODULE(pydipcc, m) {
       .def("to_dict", &PhaseData::to_dict);
 
   m.def("encode_board_state", &encode_board_state,
+        py::return_value_policy::move);
+  m.def("encode_board_state_from_json", &encode_board_state_from_json,
+        py::return_value_policy::move);
+  m.def("encode_board_state_from_phase", &encode_board_state_from_phase,
+        py::return_value_policy::move);
+  m.def("encode_prev_orders", &encode_prev_orders,
         py::return_value_policy::move);
 }

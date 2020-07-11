@@ -38,10 +38,10 @@ if __name__ == "__main__":
         "large_jsons_nostream/redacted_messages_*.json",
     )
     parser.add_argument(
-        "--save_dir", type=str, default="/checkpoint/fairdiplomacy/processed_chat_jsons/variantID"
+        "--save_dir", type=str, default="/checkpoint/fairdiplomacy/processed_chat_jsons/variantID",
     )
     parser.add_argument(
-        "--db_path", type=str, default="/checkpoint/fairdiplomacy/facebook_notext.sqlite3"
+        "--db_path", type=str, default="/checkpoint/fairdiplomacy/facebook_notext.sqlite3",
     )
     args = parser.parse_args()
 
