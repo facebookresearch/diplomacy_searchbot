@@ -17,10 +17,12 @@ from fairdiplomacy.game import Game
 from fairdiplomacy.data.dataset import ORDER_VOCABULARY_TO_IDX
 from fairdiplomacy.models.consts import POWERS
 import os
+from parlai_diplomacy.tasks.language_diplomacy.utils import COUNTRY_ID_TO_POWER
 import joblib
 import argparse
 import logging
 from tqdm import tqdm
+from functools import reduce
 
 EOS_IDX = -1
 
@@ -65,7 +67,7 @@ def dipnet_split_accuracy(net, val_set, batch_size):
     return total_orders, total_correct, total_correct / total_orders
 
 
-def compute_game_orders(game_id, eval_game_dict):
+def parlai_split_accuracy(game_id, eval_game_dict):
     """
     Produces the dictionary with true orders and valid locations
     :param game_id: game id
@@ -79,13 +81,16 @@ def compute_game_orders(game_id, eval_game_dict):
         game = Game.from_saved_game_format(j)
     except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
         print(f"Error while loading game at {json_path}: {e}")
-        return None, None
+        return None
 
     total_phases = len(game.state_history)
-    logging.info(f"Encoding {game.game_id} with {total_phases} phases")
+    # print(f"Encoding {game.game_id} with {total_phases} phases")
 
+    num_total_orders = 0
+    num_total_matches = 0
+    global_missing_orders = []
     game_dict = dict()
-    assert len(eval_game_dict) == total_phases
+    assert len(eval_game_dict) - 1 == total_phases
     for idx in range(total_phases):
         phase_name = str(list(game.state_history.keys())[idx])
         tmp_game = Game.clone_from(game, up_to_phase=phase_name)
@@ -96,18 +101,30 @@ def compute_game_orders(game_id, eval_game_dict):
 
         # TODO: BUILDS/DISBAND? are an issue
         # TODO: Filter out duplicate orders for same location in eval
-        for power in POWERS:
-            eval_power_orders = eval_phase_dict[power]
+        for (id, power) in COUNTRY_ID_TO_POWER.items():
+            eval_power_orders = eval_phase_dict[str(id)]["predicted"].split(";")
 
+            missing_orders = [
+                order
+                for order in game.order_history[phase_name].get(power, [])
+                if order not in ORDER_VOCABULARY_TO_IDX
+            ]
+
+            global_missing_orders.extend(missing_orders)
             power_orders_set = set(
                 [
                     ORDER_VOCABULARY_TO_IDX[order]
                     for order in game.order_history[phase_name].get(power, [])
+                    if order in ORDER_VOCABULARY_TO_IDX
                 ]
             )
 
             eval_power_order_set = set(
-                [ORDER_VOCABULARY_TO_IDX[order] for order in eval_power_orders]
+                [
+                    ORDER_VOCABULARY_TO_IDX[order.strip()]
+                    for order in eval_power_orders
+                    if order.strip() in ORDER_VOCABULARY_TO_IDX
+                ]
             )
 
             num_matches = len(power_orders_set & eval_power_order_set)
@@ -121,9 +138,12 @@ def compute_game_orders(game_id, eval_game_dict):
                 "num_matches": num_matches,
                 "num_orders": num_orders,
             }
+
+            num_total_matches += num_matches
+            num_total_orders += num_orders
         game_dict[phase_name] = phase_dict
 
-    return game_id, game_dict
+    return [game_id], [game_dict], num_total_matches, num_total_orders, global_missing_orders
 
 
 def compute_dipnet_accuracy(p_args):
@@ -145,10 +165,6 @@ def compute_dipnet_accuracy(p_args):
     print(f"num_orders: {num_orders}, num_correct: {num_correct}, accuracy: {acc}")
 
 
-def parlai_split_accuracy(game_dicts):
-    pass
-
-
 def compute_parlai_accuracy(args):
     """
     Computes parlai diplomacy model exact match accuracy from json dictionary
@@ -159,16 +175,31 @@ def compute_parlai_accuracy(args):
     with open(args.eval_file) as f:
         eval_dict = json.load(f)
 
-    game_ids = eval_dict.keys()
+    game_ids = list(eval_dict.keys())
 
-    # game_ids = [1000, 1060, 1088, 1044, 1131, 1119, 1021]
-    # game_dict = compute_game_orders(1000, eval_dict[1000])
-    game_dicts = joblib.Parallel(n_jobs=args.num_jobs)(
-        joblib.delayed(compute_game_orders)(game_id) for game_id in game_ids
+    def _combine(a, b):
+        return tuple([a_ + b_ for a_, b_ in zip(a, b)])
+
+    output = reduce(
+        _combine,
+        [
+            el
+            for el in joblib.Parallel(n_jobs=args.num_jobs)(
+                joblib.delayed(parlai_split_accuracy)(game_id, eval_dict[game_id])
+                for game_id in game_ids
+            )
+            if el is not None
+        ],
     )
 
-    num_orders, num_correct, acc = parlai_split_accuracy(game_dicts)
-    print(f"num_orders: {num_orders}, num_correct: {num_correct}, accuracy: {acc}")
+    num_orders = output[3]
+    num_correct = output[2]
+    acc = output[2] / output[3]
+
+    print(f"Missing {len(output[4])} orders")
+    print(
+        f"Parlai accuracy: num_orders: {num_orders}, num_correct: {num_correct}, accuracy: {acc}"
+    )
 
 
 if __name__ == "__main__":
@@ -182,6 +213,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons/",
+    )
+    parser.add_argument(
+        "--eval_file",
+        type=str,
+        default="/checkpoint/fairdiplomacy/validation_report/valid_prediction_json/valid_set_prediction.json",
     )
     parser.add_argument(
         "--num_jobs", type=int, default=20,
