@@ -1,5 +1,6 @@
 import diplomacy
 import torch
+import numpy as np
 from typing import List
 
 from fairdiplomacy.game import Game, sort_phase_key
@@ -33,6 +34,10 @@ class DipnetAgent(BaseAgent):
                 **inputs, temperature=temperature, top_p=top_p
             )
 
+        resample_duplicate_disbands_inplace(
+            order_idxs, cand_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
+        )
+
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
 
 
@@ -43,6 +48,39 @@ def decode_order_idxs(order_idxs) -> List[str]:
             continue
         orders.extend(ORDER_VOCABULARY[idx].split(";"))
     return orders
+
+
+def resample_duplicate_disbands_inplace(
+    order_idxs, sampled_idxs, logits, x_possible_actions, x_in_adj_phase
+):
+    """Modify order_idxs and sampled_idxs in-place, resampling where there are
+    multiple disband orders.
+    """
+    # Resample all multiple disbands. Since builds are a 1-step decode, any 2+
+    # step adj-phase is a disband.
+    mask = (sampled_idxs[:, :, 1] != -1) & x_in_adj_phase.bool().unsqueeze(1)
+    if not mask.any():
+        return
+
+    new_sampled_idxs = torch.multinomial(
+        logits[mask][:, 0].exp() + 1e-7, logits.shape[2], replacement=False
+    )
+
+    filler = torch.empty(
+        new_sampled_idxs.shape[0],
+        sampled_idxs.shape[2] - new_sampled_idxs.shape[1],
+        dtype=new_sampled_idxs.dtype,
+        device=new_sampled_idxs.device,
+    ).fill_(-1)
+
+    sampled_idxs[mask] = torch.cat([new_sampled_idxs, filler], dim=1)
+    order_idxs[mask] = torch.cat(
+        [x_possible_actions[mask][:, 0].long().gather(1, new_sampled_idxs), filler], dim=1
+    )
+
+    # copy step-0 logits to other steps, since they were the logits used above
+    # to sample all steps
+    logits[mask] = logits[mask][:, 0].unsqueeze(1)
 
 
 def encode_inputs(game, *, all_possible_orders=None, game_state=None):
