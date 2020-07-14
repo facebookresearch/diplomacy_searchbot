@@ -10,20 +10,15 @@ and parlai diplomacy agent
 """
 import json
 import torch
-from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 from fairdiplomacy.data.dataset import Dataset, DataFields
 from fairdiplomacy.models.dipnet.order_vocabulary import *
 from fairdiplomacy.game import Game
 from fairdiplomacy.data.dataset import ORDER_VOCABULARY_TO_IDX
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.agents.dipnet_agent import encode_inputs
-from fairdiplomacy.models.dipnet.load_model import load_dipnet_model, new_model
-import os
-from parlai_diplomacy.tasks.language_diplomacy.utils import COUNTRY_ID_TO_POWER
+from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
 import joblib
 import argparse
 from parlai_diplomacy.scripts.evaluation.utils import load_game
-import logging
 from tqdm import tqdm
 from functools import reduce
 
@@ -172,7 +167,7 @@ def compute_json_accuracy(args):
 
     game_ids = list(eval_dict.keys())
 
-    # json_split_accuracy(game_ids[0], eval_dict[game_ids[0]])
+    json_split_accuracy("115984", eval_dict["115984"])
 
     def _combine(a, b):
         return tuple([a_ + b_ for a_, b_ in zip(a, b)])
@@ -210,7 +205,9 @@ if __name__ == "__main__":
         "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons/",
     )
     parser.add_argument(
-        "--eval_file", type=str, default="/private/home/apjacob/fairdip_valid_set_prediction.json",
+        "--eval_file",
+        type=str,
+        default="/checkpoint/fairdiplomacy/parlai_valid_set_prediction.json",
     )
     parser.add_argument(
         "--num_jobs", type=int, default=20,

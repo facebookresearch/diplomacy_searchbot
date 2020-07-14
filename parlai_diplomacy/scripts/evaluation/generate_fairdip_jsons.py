@@ -9,8 +9,6 @@ Script that generates fairdiplomacy evaluation jsons to be used in compute_accur
 """
 import json
 import torch
-from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
-from fairdiplomacy.data.dataset import Dataset, DataFields
 from fairdiplomacy.models.dipnet.order_vocabulary import *
 from fairdiplomacy.game import Game
 from fairdiplomacy.data.dataset import ORDER_VOCABULARY_TO_IDX, ORDER_VOCABULARY
@@ -18,12 +16,8 @@ from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.agents.dipnet_agent import encode_inputs
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model, new_model
 import os
-from parlai_diplomacy.tasks.language_diplomacy.utils import COUNTRY_ID_TO_POWER
-import joblib
 import argparse
-import logging
 from tqdm import tqdm, trange
-from functools import reduce
 from parlai_diplomacy.scripts.evaluation.utils import load_game
 
 
@@ -32,7 +26,7 @@ EOS_IDX = -1
 
 def generate_jsons(net, args, game_ids):
     """
-
+    Generates jsons and stores it in args.save_dir
     :param net:
     :param args:
     :param game_ids:
@@ -75,10 +69,10 @@ def generate_jsons(net, args, game_ids):
     with open(save_file, "w") as f:
         json.dump(game_dict, f)
 
-    print(f"Validation predict json saved to {save_file}")
+    print(f"fairdip validation predict json saved to {save_file}")
 
 
-def generate_dipnet_jsons(p_args):
+def generate_fairdip_jsons(p_args):
     """
     Computes fairdiplomacy dipnet exact match accuracy using greedy decoding
     :param p_args:
@@ -124,4 +118,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    generate_dipnet_jsons(args)
+    generate_fairdip_jsons(args)
