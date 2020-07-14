@@ -80,7 +80,7 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     # calculate sum-of-squares value loss
     y_final_scores = batch["y_final_scores"].to(device).float().squeeze(1)
     value_loss = value_loss_fn(final_sos, y_final_scores)
-    
+
     # a given state appears multiple times in the dataset for different powers,
     # but we always compute the value loss for each power. So we need to reweight
     # the value loss by 1/num_valid_powers
@@ -173,7 +173,14 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
             batch_value_accuracies.append(
                 calculate_value_accuracy(final_sos, batch["y_final_scores"])
             )
-            batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, y_actions))
+            batch_acc_split_counts.append(
+                calculate_split_accuracy_counts(
+                    sampled_idxs,
+                    cand_idxs_to_order_idxs(
+                        batch["y_actions"], batch["x_possible_actions"], pad_out=EOS_IDX
+                    ),
+                )
+            )
         net.train()
 
     # validation loss
