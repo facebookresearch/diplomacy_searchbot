@@ -21,8 +21,21 @@ import argparse
 from parlai_diplomacy.scripts.evaluation.utils import load_game
 from tqdm import tqdm
 from functools import reduce
+from collections import namedtuple
 
 EOS_IDX = -1
+
+CountryTuple = namedtuple(
+    "Country",
+    [
+        "power_orders_set",
+        "eval_power_order_set",
+        "matches",
+        "power_orderable_locs",
+        "incorrect_semantics_orders",
+        "incorrect_syntax_orders",
+    ],
+)
 
 
 def dipnet_split_accuracy(net, val_set, batch_size):
@@ -80,15 +93,18 @@ def json_split_accuracy(game_id, eval_game_dict):
     total_phases = len(game.state_history)
     # print(f"Encoding {game.game_id} with {total_phases} phases")
 
-    num_total_orders = 0
-    num_total_matches = 0
     global_missing_orders = []
     game_dict = dict()
     assert len(eval_game_dict) == total_phases
     for idx in range(total_phases):
         phase_name = str(list(game.state_history.keys())[idx])
         tmp_game = Game.clone_from(game, up_to_phase=phase_name)
-        # all_possible_orders = tmp_game.get_all_possible_orders()
+        all_possible_orders_idx = [
+            ORDER_VOCABULARY_TO_IDX[order]
+            for loc, orders in tmp_game.get_all_possible_orders().items()
+            for order in orders
+            if order in ORDER_VOCABULARY_TO_IDX
+        ]
         all_orderable_locations = tmp_game.get_orderable_locations()
         eval_phase_dict = eval_game_dict[phase_name]
         phase_dict = dict()
@@ -96,46 +112,51 @@ def json_split_accuracy(game_id, eval_game_dict):
         for power in POWERS:
             eval_power_orders = eval_phase_dict[power].split(";")
 
-            missing_orders = [
-                order
-                for order in game.order_history[phase_name].get(power, [])
-                if order not in ORDER_VOCABULARY_TO_IDX
-            ]
+            power_orders_set = set()
+            missing_orders = []
+            for order in game.order_history[phase_name].get(power, []):
+                if order in ORDER_VOCABULARY_TO_IDX:
+                    order_idx = ORDER_VOCABULARY_TO_IDX[order]
 
+                    assert order_idx in all_possible_orders_idx
+                    power_orders_set.add(order_idx)
+                else:
+                    missing_orders.append(order)
             global_missing_orders.extend(missing_orders)
-            power_orders_set = set(
-                [
-                    ORDER_VOCABULARY_TO_IDX[order]
-                    for order in game.order_history[phase_name].get(power, [])
-                    if order in ORDER_VOCABULARY_TO_IDX
-                ]
-            )
 
-            eval_power_order_set = set(
-                [
-                    ORDER_VOCABULARY_TO_IDX[order.strip()]
-                    for order in eval_power_orders
-                    if order.strip() in ORDER_VOCABULARY_TO_IDX
-                ]
-            )
+            eval_power_order_set = set()
+            incorrect_syntax_orders = []
+            incorrect_semantics_orders = []
+            for order in eval_power_orders:
+                order = order.strip()
 
-            num_matches = len(power_orders_set & eval_power_order_set)
-            num_orders = len(power_orders_set)
+                if not order:
+                    continue
+
+                if order in ORDER_VOCABULARY_TO_IDX:
+                    order_idx = ORDER_VOCABULARY_TO_IDX[order]
+                    eval_power_order_set.add(order_idx)
+
+                    if order_idx not in all_possible_orders_idx:
+                        incorrect_semantics_orders.append(order)
+                else:
+                    incorrect_syntax_orders.append(order)
+
+            matches = power_orders_set & eval_power_order_set
 
             power_orderable_locs = all_orderable_locations[power]
-            phase_dict[power] = {
-                "gt_orders": power_orders_set,
-                "eval_orders": eval_power_order_set,
-                "orderable_locs": power_orderable_locs,
-                "num_matches": num_matches,
-                "num_orders": num_orders,
-            }
+            phase_dict[power] = CountryTuple(
+                power_orders_set,
+                eval_power_order_set,
+                matches,
+                power_orderable_locs,
+                incorrect_semantics_orders,
+                incorrect_syntax_orders,
+            )
 
-            num_total_matches += num_matches
-            num_total_orders += num_orders
         game_dict[phase_name] = phase_dict
 
-    return [game_id], [game_dict], num_total_matches, num_total_orders, global_missing_orders
+    return [game_id], [game_dict], global_missing_orders
 
 
 def compute_dipnet_accuracy(p_args):
@@ -155,6 +176,35 @@ def compute_dipnet_accuracy(p_args):
     print(f"Dipnet: num_orders: {num_orders}, num_correct: {num_correct}, accuracy: {acc}")
 
 
+def print_json_metrics(game_ids, game_dicts, missing_orders):
+    """
+    Prints json metrics
+    :param game_ids:
+    :param game_dicts:
+    :param missing_orders:
+    :return:
+    """
+    num_matched_orders = 0
+    num_orders = 0
+    num_incorrect_semantics = 0
+    incorrect_syntax = []
+
+    for game_dict in tqdm(game_dicts):
+        for phase, phase_dict in game_dict.items():
+            for name, country in phase_dict.items():
+                num_orders += len(country.power_orders_set)
+                num_matched_orders += len(country.matches)
+                num_incorrect_semantics += len(country.incorrect_semantics_orders)
+                incorrect_syntax.extend(country.incorrect_syntax_orders)
+
+    print(f"No. of missing orders: {len(missing_orders)}")
+    print(f"Total num_orders: {num_orders}")
+    print(f"Total num_matched_orders: {num_matched_orders}")
+    print(f"Total num_incorrect_semantics: {num_incorrect_semantics}")
+    print(f"Total num_incorrect_syntax: {len(incorrect_syntax)}")
+    print(f"Accuracy: {num_matched_orders/num_orders}")
+
+
 def compute_json_accuracy(args):
     """
     Computes model exact match accuracy when provided jsons
@@ -167,12 +217,12 @@ def compute_json_accuracy(args):
 
     game_ids = list(eval_dict.keys())
 
-    json_split_accuracy("115984", eval_dict["115984"])
+    # json_split_accuracy("115984", eval_dict["115984"])
 
     def _combine(a, b):
         return tuple([a_ + b_ for a_, b_ in zip(a, b)])
 
-    output = reduce(
+    game_ids, game_dicts, missing_orders = reduce(
         _combine,
         [
             el
@@ -184,12 +234,7 @@ def compute_json_accuracy(args):
         ],
     )
 
-    num_orders = output[3]
-    num_correct = output[2]
-    acc = output[2] / output[3]
-
-    print(f"Missing {len(output[4])} orders")
-    print(f"Accuracy: num_orders: {num_orders}, num_correct: {num_correct}, accuracy: {acc}")
+    print_json_metrics(game_ids, game_dicts, missing_orders)
 
 
 if __name__ == "__main__":
@@ -207,7 +252,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--eval_file",
         type=str,
-        default="/checkpoint/fairdiplomacy/parlai_valid_set_prediction.json",
+        default="/checkpoint/fairdiplomacy/parlai_valid_set_prediction_no_last_phase.json",
     )
     parser.add_argument(
         "--num_jobs", type=int, default=20,

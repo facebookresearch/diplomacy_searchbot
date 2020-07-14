@@ -85,10 +85,6 @@ def generate_fairdip_jsons(p_args):
     print("Loading dataset")
     _, val_set = torch.load(args.data_cache)
 
-    # Read evaluation json.
-    with open(p_args.eval_file) as f:
-        eval_dict = json.load(f)
-
     game_ids = val_set.game_ids  # list(eval_dict.keys())
 
     print("Generating validation jsons...")
@@ -102,15 +98,7 @@ if __name__ == "__main__":
         "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons/",
     )
     parser.add_argument(
-        "--eval_file",
-        type=str,
-        default="/checkpoint/fairdiplomacy/validation_report/valid_prediction_json/valid_set_prediction.json",
-    )
-    parser.add_argument(
         "--save_dir", type=str, default="/private/home/apjacob",
-    )
-    parser.add_argument(
-        "--num_jobs", type=int, default=20,
     )
     parser.add_argument(
         "--checkpoint",
