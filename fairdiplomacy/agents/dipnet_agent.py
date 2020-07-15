@@ -147,6 +147,7 @@ if __name__ == "__main__":
     game = Game()
     print(
         DipnetAgent(
-            model_path="/checkpoint/jsgray/diplomacy/sl_candemb_no13k_ep85.pth", device="cpu"
-        ).get_orders(game, "RUSSIA")
+            model_path="/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best",
+            temperature=1.0,
+        ).get_orders(game, "AUSTRIA")
     )
