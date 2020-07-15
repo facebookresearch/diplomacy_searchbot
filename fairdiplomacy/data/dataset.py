@@ -505,14 +505,14 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
         # disbands: all possible disband orders, up to the number of required disbands
         n_disbands = -n_builds
         _, order_idxs = filter_orders_in_vocab(power_possible_orders)
-        all_order_idxs[0, :n_disbands, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        all_order_idxs[0, :n_disbands, : len(order_idxs)] = order_idxs.sort().values.unsqueeze(0)
         loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_disbands
 
     # move phase: iterate through orderable_locs in topo order
     for i, loc in enumerate(orderable_locs):
         orders, order_idxs = filter_orders_in_vocab(all_possible_orders[loc])
-        all_order_idxs[0, i, : len(order_idxs)] = order_idxs
+        all_order_idxs[0, i, : len(order_idxs)] = order_idxs.sort().values
         loc_idxs[0, LOCS.index(loc)] = i
 
     return all_order_idxs, loc_idxs, len(orderable_locs)

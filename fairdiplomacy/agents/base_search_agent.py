@@ -577,6 +577,7 @@ def server_handler(
 
     if seed is not None:
         torch.manual_seed(seed)
+        np.random.seed(seed)
 
     frame_count, batch_count, total_batches = 0, 0, 0
     timings = TimingCtx()
