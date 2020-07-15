@@ -26,7 +26,7 @@ public:
   OwnedUnit get_unit(Loc loc) const;
   OwnedUnit get_unit_rooted(Loc loc) const;
   void set_unit(Power power, UnitType type, Loc loc);
-  void set_units(const std::map<Loc, OwnedUnit> units) { units_ = units; }
+  void set_units(const std::map<Loc, OwnedUnit> units);
   void remove_unit_rooted(Loc);
   const std::map<Loc, OwnedUnit> &get_units() const { return units_; }
 
@@ -41,7 +41,7 @@ public:
   void remove_dislodged_unit(OwnedUnit unit);
   void add_contested_loc(Loc loc);
   std::vector<OwnedUnit> get_dislodged_units() const;
-  int get_n_builds(Power power) const;
+  int get_n_builds(Power power);
 
   const std::unordered_map<Power, std::unordered_set<Loc>> &
   get_orderable_locations();
@@ -60,6 +60,7 @@ private:
   void load_all_possible_orders_m();
   void load_all_possible_orders_r();
   void load_all_possible_orders_a();
+  void copy_possible_orders_to_root_loc();
 
   GameState
   process_m(const std::unordered_map<Power, std::vector<Order>> &orders);

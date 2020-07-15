@@ -82,6 +82,9 @@ py::dict py_state_to_dict(GameState &state) {
   }
   if (state.get_phase().phase_type == 'R') {
     for (auto &p : all_possible_orders) {
+      if (p.second.size() == 0) {
+        continue;
+      }
       OwnedUnit unit = state.get_unit_rooted(p.first);
       auto key = py::cast<std::string>(unit.unowned().to_string());
       py::list retreats;
