@@ -38,7 +38,6 @@ def new_model(args):
         avg_embedding=args.avg_embedding,
         value_decoder_init_scale=args.value_decoder_init_scale,
         value_dropout=args.value_dropout,
-        graph_decoder=getattr(args, "graph_decoder", False),
         featurize_output=getattr(args, "featurize_output", False),
         relfeat_output=getattr(args, "relfeat_output", False),
     )
