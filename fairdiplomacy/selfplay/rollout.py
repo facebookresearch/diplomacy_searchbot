@@ -65,12 +65,15 @@ def order_logits_to_action_logprobs(logits, order_ids, mask=None):
     return (order_logprobs * mask).sum(-1)
 
 
-def _noop_transform(args):
+def _noop_transform(inputs, args):
     return args
 
 
-def model_output_transform_exploit(args):
+def model_output_transform_exploit(inputs, args):
     order_idxs, sampled_idxs, logits, final_scores = args
+    resample_duplicate_disbands_inplace(
+        order_idxs, sampled_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
+    )
     del final_scores  # Not used.
     # Assuming no temperature.
     steps = logits.shape[2]
@@ -80,8 +83,11 @@ def model_output_transform_exploit(args):
     return order_idxs, sampled_idxs, action_logprobs
 
 
-def model_output_transform_blueprint(args):
+def model_output_transform_blueprint(inputs, args):
     order_idxs, sampled_idxs, logits, final_scores = args
+    resample_duplicate_disbands_inplace(
+        order_idxs, sampled_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
+    )
     del sampled_idxs  # Not used.
     del logits  # Not used.
     del final_scores  # Not used.
@@ -105,7 +111,7 @@ class InferencePool:
     ):
         if not max_batch_size:
             max_batch_size = DEFAULT_BATCH_SIZE
-        logging.info("Launching servers",)
+        logging.info("Launching servers")
         self.servers = []
         for gpu_id in gpu_ids:
             for _ in range(server_procs_per_gpu):
@@ -117,10 +123,7 @@ class InferencePool:
                         port=0,
                         batch_size=max_batch_size,
                         load_model_fn=functools.partial(
-                            load_dipnet_model,
-                            model_path,
-                            map_location=f"cuda:{gpu_id}",
-                            eval=True,
+                            load_dipnet_model, model_path, map_location=f"cuda:{gpu_id}", eval=True
                         ),
                         ckpt_sync_path=ckpt_sync_path,
                         ckpt_sync_every=ckpt_sync_every,
