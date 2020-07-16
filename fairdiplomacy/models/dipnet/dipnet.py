@@ -43,13 +43,22 @@ class DipNet(nn.Module):
         value_decoder_init_scale=1.0,
         featurize_output=False,
         relfeat_output=False,
+        featurize_prev_orders=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
+
+        self.featurize_prev_orders = featurize_prev_orders
+        self.prev_order_enc_size = prev_order_emb_size
+        if featurize_prev_orders:
+            order_feats, _srcs, _dsts = compute_order_features()
+            self.register_buffer("order_feats", order_feats)
+            self.prev_order_enc_size += self.order_feats.shape[-1]
+
         self.encoder = DipNetEncoder(
             board_state_size=board_state_size + len(POWERS) + season_emb_size + 1,
             prev_orders_size=board_state_size
-            + prev_order_emb_size
+            + self.prev_order_enc_size
             + len(POWERS)
             + season_emb_size
             + 1,
@@ -86,7 +95,6 @@ class DipNet(nn.Module):
         self.prev_order_embedding = nn.Embedding(
             orders_vocab_size, prev_order_emb_size, padding_idx=0
         )
-        self.prev_order_emb_size = prev_order_emb_size
 
     def forward(
         self,
@@ -147,17 +155,22 @@ class DipNet(nn.Module):
 
         # A. get season and prev order embs
         x_season_emb = self.season_lin(x_season)
+
         x_prev_order_emb = self.prev_order_embedding(x_prev_orders[:, 0])
+        if self.featurize_prev_orders:
+            x_prev_order_emb = torch.cat(
+                (x_prev_order_emb, self.order_feats[x_prev_orders[:, 0]]), dim=-1
+            )
 
         # B. insert the prev orders into the correct board location (which is in the second column of x_po)
         x_prev_order_exp = torch.zeros(
-            (B, NUM_LOCS, self.prev_order_emb_size), device=x_board_state.device
+            (B, NUM_LOCS, self.prev_order_enc_size), device=x_board_state.device
         )
         prev_order_loc_idxs = torch.arange(B, device=x_board_state.device).repeat_interleave(
             x_prev_orders.shape[-1]
         ) * NUM_LOCS + x_prev_orders[:, 1].reshape(-1)
-        x_prev_order_exp.view(-1, self.prev_order_emb_size).index_add_(
-            0, prev_order_loc_idxs, x_prev_order_emb.view(-1, self.prev_order_emb_size)
+        x_prev_order_exp.view(-1, self.prev_order_enc_size).index_add_(
+            0, prev_order_loc_idxs, x_prev_order_emb.view(-1, self.prev_order_enc_size)
         )
 
         # concatenate the subcomponents into board state and prev state, following the paper
