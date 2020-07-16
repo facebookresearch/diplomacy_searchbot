@@ -377,6 +377,9 @@ class LSTMDipNetDecoder(nn.Module):
             self.register_buffer("order_feats", order_feats)
             order_decoder_input_sz = self.order_feats.shape[1]
             self.order_feat_lin = nn.Linear(order_decoder_input_sz, order_emb_size)
+
+            # this one has to stay as separate w, b
+            # for backwards compatibility
             self.order_decoder_w = nn.Linear(order_decoder_input_sz, lstm_size)  # FIXME
             self.order_decoder_b = nn.Linear(order_decoder_input_sz, 1)
 
@@ -388,39 +391,25 @@ class LSTMDipNetDecoder(nn.Module):
             self.register_buffer("order_dsts", dsts)
             order_relfeat_input_sz = 2 * inter_emb_size
 
-            self.order_relfeat_src_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size)
-            self.order_relfeat_src_decoder_b = nn.Linear(order_relfeat_input_sz, 1)
-            self.order_relfeat_dst_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size)
-            self.order_relfeat_dst_decoder_b = nn.Linear(order_relfeat_input_sz, 1)
+            self.order_relfeat_src_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size + 1)
+            self.order_relfeat_dst_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size + 1)
 
-            self.order_emb_relfeat_src_decoder_w = nn.Linear(order_emb_size, lstm_size)
-            self.order_emb_relfeat_src_decoder_b = nn.Linear(order_emb_size, 1)
-            self.order_emb_relfeat_dst_decoder_w = nn.Linear(order_emb_size, lstm_size)
-            self.order_emb_relfeat_dst_decoder_b = nn.Linear(order_emb_size, 1)
+            self.order_emb_relfeat_src_decoder_w = nn.Linear(order_emb_size, lstm_size + 1)
+            self.order_emb_relfeat_dst_decoder_w = nn.Linear(order_emb_size, lstm_size + 1)
 
-    def get_order_loc_feats(self, cand_order_locs, enc_w, enc_b):
-        valid = cand_order_locs > 0  # B x O
-        cand_order_locs = cand_order_locs.clamp(min=0)
-        out_w = enc_w.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_w.shape[-1])
-        ) * valid.unsqueeze(-1)
-        out_b = enc_b.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_b.shape[-1])
-        ) * valid.unsqueeze(-1)
-        return out_w, out_b
-
-    def get_order_emb_loc_feats(self, cand_order_locs, enc, enc_w_lin, enc_b_lin):
-        valid = cand_order_locs > 0  # B x O
-        cand_order_locs = cand_order_locs.clamp(min=0)
-        enc_w = enc_w_lin(enc)
-        enc_b = enc_b_lin(enc)
-        out_w = enc_w.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_w.shape[-1])
-        ) * valid.unsqueeze(-1)
-        out_b = enc_b.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_b.shape[-1])
-        ) * valid.unsqueeze(-1)
-        return out_w, out_b
+    def get_order_loc_feats(self, cand_order_locs, enc_w, out_w, enc_lin=None):
+        B, L, D = enc_w.shape
+        flat_order_locs = cand_order_locs.view(-1)
+        valid = (flat_order_locs > 0).nonzero().squeeze(-1)
+        # offsets of the order into the flattened enc_w tensor
+        order_offsets = (
+            cand_order_locs + torch.arange(B, device=cand_order_locs.device).view(B, 1) * L
+        )
+        valid_order_offsets = order_offsets.view(-1)[valid]
+        valid_order_w = enc_w.view(-1, D)[valid_order_offsets]
+        if enc_lin:
+            valid_order_w = enc_lin(valid_order_w)
+        out_w.view(-1, out_w.shape[-1]).index_add_(0, valid, valid_order_w)
 
     def forward(
         self,
@@ -492,9 +481,7 @@ class LSTMDipNetDecoder(nn.Module):
 
             if self.relfeat_output:
                 src_relfeat_w = self.order_relfeat_src_decoder_w(enc)
-                src_relfeat_b = self.order_relfeat_src_decoder_b(enc)
                 dst_relfeat_w = self.order_relfeat_dst_decoder_w(enc)
-                dst_relfeat_b = self.order_relfeat_dst_decoder_b(enc)
 
         for step in range(all_cand_idxs.shape[1]):
             with timings("dec.loc_enc"):
@@ -530,37 +517,43 @@ class LSTMDipNetDecoder(nn.Module):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
 
                 if self.featurize_output:
+                    # a) featurize based on one-hot features
                     cand_order_feats = self.order_feats[cand_idxs]
-                    order_w = self.order_decoder_w(cand_order_feats)
-                    order_b = self.order_decoder_b(cand_order_feats)
+                    order_w = torch.cat(
+                        (
+                            self.order_decoder_w(cand_order_feats),
+                            self.order_decoder_b(cand_order_feats),
+                        ),
+                        dim=-1,
+                    )
 
                     if self.relfeat_output:
                         cand_srcs = self.order_srcs[cand_idxs]
                         cand_dsts = self.order_dsts[cand_idxs]
-                        src_order_w, src_order_b = self.get_order_loc_feats(
-                            cand_srcs, src_relfeat_w, src_relfeat_b
-                        )
-                        dst_order_w, dst_order_b = self.get_order_loc_feats(
-                            cand_dsts, dst_relfeat_w, dst_relfeat_b
-                        )
 
-                        src_order_emb_w, src_order_emb_b = self.get_order_emb_loc_feats(
+                        # b) featurize based on the src and dst encoder features
+                        self.get_order_loc_feats(cand_srcs, src_relfeat_w, order_w)
+                        self.get_order_loc_feats(cand_dsts, dst_relfeat_w, order_w)
+
+                        # c) featurize based on the src and dst order embeddings
+                        self.get_order_loc_feats(
                             cand_srcs,
                             order_enc,
-                            self.order_emb_relfeat_src_decoder_w,
-                            self.order_emb_relfeat_src_decoder_b,
+                            order_w,
+                            enc_lin=self.relfeat_order_enc_src_decoder,
                         )
-                        dst_order_emb_w, dst_order_emb_b = self.get_order_emb_loc_feats(
+                        self.get_order_loc_feats(
                             cand_dsts,
                             order_enc,
-                            self.order_emb_relfeat_dst_decoder_w,
-                            self.order_emb_relfeat_dst_decoder_b,
+                            order_w,
+                            enc_lin=self.relfeat_order_enc_dst_decoder,
                         )
 
-                        order_w += src_order_w + dst_order_w + src_order_emb_w + dst_order_emb_w
-                        order_b += src_order_b + dst_order_b + src_order_emb_b + dst_order_emb_b
-
-                    order_scores_featurized = torch.bmm(order_w, out) + order_b
+                    # add some ones to out so that the last element of order_w is a bias
+                    out_with_ones = torch.cat(
+                        (out, torch.ones((out.shape[0], 1, 1), device=out.device)), dim=1
+                    )
+                    order_scores_featurized = torch.bmm(order_w, out_with_ones)
                     logits += order_scores_featurized.squeeze(-1)
 
             with timings("dec.invalid_mask"):
