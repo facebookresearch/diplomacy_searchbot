@@ -540,13 +540,13 @@ class LSTMDipNetDecoder(nn.Module):
                             cand_srcs,
                             order_enc,
                             order_w,
-                            enc_lin=self.relfeat_order_enc_src_decoder,
+                            enc_lin=self.order_emb_relfeat_src_decoder_w,
                         )
                         self.get_order_loc_feats(
                             cand_dsts,
                             order_enc,
                             order_w,
-                            enc_lin=self.relfeat_order_enc_dst_decoder,
+                            enc_lin=self.order_emb_relfeat_dst_decoder_w,
                         )
 
                     # add some ones to out so that the last element of order_w is a bias
