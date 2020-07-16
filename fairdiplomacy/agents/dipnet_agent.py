@@ -62,6 +62,11 @@ def resample_duplicate_disbands_inplace(
     if not mask.any():
         return
 
+    # N.B. we are sampling more orders than we need here: we are sampling
+    # according to the longest sequence in the batch, not the longest
+    # multi-disband sequence. Still, even if there is a 3-unit disband and a
+    # 2-unit disband, we will sample the same # for both and mask out the extra
+    # orders (see the eos_mask below)
     new_sampled_idxs = torch.multinomial(
         logits[mask][:, 0].exp() + 1e-7, logits.shape[2], replacement=False
     )
@@ -73,10 +78,15 @@ def resample_duplicate_disbands_inplace(
         device=new_sampled_idxs.device,
     ).fill_(-1)
 
+    eos_mask = sampled_idxs == EOS_IDX
+
     sampled_idxs[mask] = torch.cat([new_sampled_idxs, filler], dim=1)
     order_idxs[mask] = torch.cat(
         [x_possible_actions[mask][:, 0].long().gather(1, new_sampled_idxs), filler], dim=1
     )
+
+    sampled_idxs[eos_mask] = EOS_IDX
+    order_idxs[eos_mask] = EOS_IDX
 
     # copy step-0 logits to other steps, since they were the logits used above
     # to sample all steps
