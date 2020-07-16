@@ -217,6 +217,16 @@ public:
                    << jt.second.dislodge_self_support;
       }
     }
+    DLOG(INFO) << "Unconfirmed convoy fleets:";
+    for (auto &it : maybe_convoy_orders_by_fleet_) {
+      DLOG(INFO) << " " << it.first << ": " << it.second.to_string();
+    }
+    DLOG(INFO) << "Confirmed convoy fleets:";
+    for (auto &it : confirmed_convoy_fleets_) {
+      for (Loc fleet_loc : it.second) {
+        DLOG(INFO) << " " << fleet_loc << ": " << it.first;
+      }
+    }
   }
 
   Resolution resolve() {
@@ -802,14 +812,15 @@ public:
   }
 
   void erase_all_pending_convoys(Loc src, Loc dest) {
-    auto &maybe_dest_convoys = maybe_convoy_orders_by_dest_[dest];
+    set<Order> &maybe_dest_convoys = maybe_convoy_orders_by_dest_[dest];
     for (auto it = maybe_dest_convoys.begin();
          it != maybe_dest_convoys.end();) {
       if (it->get_target().loc == src) {
-        DLOG(INFO) << "Disabling fleet for broken convoy: "
-                   << it->get_unit().loc;
+        Loc fleet_loc = it->get_unit().loc;
+        DLOG(INFO) << "Disabling fleet for broken convoy: " << fleet_loc;
         it = maybe_dest_convoys.erase(it);
-        maybe_convoy_orders_by_fleet_.erase(it->get_unit().loc);
+        JCHECK(maybe_convoy_orders_by_fleet_.erase(fleet_loc),
+               "Disabled fleet missing in maybe_convoy_orders_by_fleet_");
       } else {
         ++it;
       }
