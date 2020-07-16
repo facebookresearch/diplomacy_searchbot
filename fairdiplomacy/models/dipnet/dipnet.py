@@ -44,6 +44,7 @@ class DipNet(nn.Module):
         featurize_output=False,
         relfeat_output=False,
         featurize_prev_orders=False,
+        residual_linear=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -67,6 +68,7 @@ class DipNet(nn.Module):
             A=A,
             dropout=encoder_dropout,
             learnable_A=learnable_A,
+            residual_linear=residual_linear,
         )
 
         self.policy_decoder = LSTMDipNetDecoder(
@@ -695,6 +697,7 @@ class DipNetEncoder(nn.Module):
         A,  # 81x81
         dropout,
         learnable_A=False,
+        residual_linear=False,
     ):
         super().__init__()
 
@@ -719,6 +722,7 @@ class DipNetEncoder(nn.Module):
                     residual=True,
                     learnable_A=learnable_A,
                     dropout=dropout,
+                    residual_linear=residual_linear,
                 )
             )
 
@@ -743,6 +747,7 @@ class DipNetEncoder(nn.Module):
                     residual=True,
                     learnable_A=learnable_A,
                     dropout=dropout,
+                    residual_linear=residual_linear,
                 )
             )
 
@@ -761,15 +766,30 @@ class DipNetEncoder(nn.Module):
 
 
 class DipNetBlock(nn.Module):
-    def __init__(self, *, in_size, out_size, A, dropout, residual=True, learnable_A=False):
+    def __init__(
+        self,
+        *,
+        in_size,
+        out_size,
+        A,
+        dropout,
+        residual=True,
+        learnable_A=False,
+        residual_linear=False,
+    ):
         super().__init__()
         self.graph_conv = GraphConv(in_size, out_size, A, learnable_A=learnable_A)
         self.batch_norm = nn.BatchNorm1d(A.shape[0])
         self.dropout = nn.Dropout(dropout)
         self.residual = residual
+        self.residual_linear = residual_linear
+        if residual_linear:
+            self.residual_lin = nn.Linear(in_size, out_size)
 
     def forward(self, x):
         y = self.graph_conv(x)
+        if self.residual_linear:
+            y += self.residual_lin(x)
         y = self.batch_norm(y)
         y = F.relu(y)
         y = self.dropout(y)

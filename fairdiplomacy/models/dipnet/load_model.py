@@ -41,6 +41,7 @@ def new_model(args):
         featurize_output=getattr(args, "featurize_output", False),
         relfeat_output=getattr(args, "relfeat_output", False),
         featurize_prev_orders=getattr(args, "featurize_prev_orders", False),
+        residual_linear=getattr(args, "residual_linear", False),
     )
 
 

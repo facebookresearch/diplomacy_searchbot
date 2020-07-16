@@ -459,6 +459,8 @@ message TrainTask {
 
   optional bool featurize_prev_orders = 39 [default = false];
 
+  optional bool residual_linear = 40 [default = false];
+
   optional Launcher launcher = 1000;
 }
 
