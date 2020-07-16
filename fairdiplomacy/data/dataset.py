@@ -61,9 +61,9 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
         *,
-        game_ids: List[int],
+        game_ids: List[Union[int, str]],
         data_dir: str,
-        game_metadata: Dict[int, Any],
+        game_metadata: Dict[Union[int, str], Any],
         debug_only_opening_phase=False,
         only_with_min_final_score=7,
         n_jobs=20,
@@ -87,7 +87,7 @@ class Dataset(torch.utils.data.Dataset):
         torch.set_num_threads(1)
         encoded_games = joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(encode_game)(
-                f"{data_dir}/game_{game_id}.json",
+                f"{data_dir}/game_{game_id}.json" if isinstance(game_id, int) else game_id,
                 only_with_min_final_score=only_with_min_final_score,
                 cf_agent=cf_agent,
                 n_cf_agent_samples=n_cf_agent_samples,

@@ -366,7 +366,7 @@ message TrainTask {
   // Path to load/save the model.
   optional string checkpoint = 8;
 
-  // Lercentage of games to use as val set.
+  // Percentage of games to use as val set.
   optional float val_set_pct = 9;
 
   // Prob[teacher forcing] during training.
@@ -664,6 +664,11 @@ message BuildDbCacheTask {
 
   // Optional, # of parallel encoding processes. Default = #cpu
   optional int32 n_parallel_jobs = 6 [ default = -1 ];
+
+  // Percentage of games to use as val set.
+  optional float val_set_pct = 7;
+
+  optional Launcher launcher = 100;
 }
 
 // Root config to compare agents.
