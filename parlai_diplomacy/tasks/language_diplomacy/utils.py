@@ -17,12 +17,14 @@ import parlai_diplomacy.tasks.language_diplomacy.config as cfg
 # CONSTANTS
 ###########################################
 
-DATAPATH = '/checkpoint/fairdiplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_*.json'
-ORDER_PATH = '/checkpoint/fairdiplomacy/processed_orders_jsons/game_*.json*'  # some are json.partial
-ORDER_JSON_PATH = (
-    '/checkpoint/fairdiplomacy/processed_orders_jsons/combined_json/game.json'
+DATAPATH = (
+    "/checkpoint/fairdiplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_*.json"
 )
-JOINED_JSON_PATH = '/checkpoint/fairdiplomacy/joined_jsons/msg_order.json'
+ORDER_PATH = (
+    "/checkpoint/fairdiplomacy/processed_orders_jsons/game_*.json*"  # some are json.partial
+)
+ORDER_JSON_PATH = "/checkpoint/fairdiplomacy/processed_orders_jsons/combined_json/game.json"
+JOINED_JSON_PATH = "/checkpoint/fairdiplomacy/joined_jsons/msg_order.json"
 COUNTRY_ID_TO_POWER = {
     1: "ENGLAND",
     2: "FRANCE",
@@ -40,7 +42,7 @@ COUNTRY_ID_TO_POWER = {
 
 
 def is_training(datatype):
-    return 'train' in datatype and 'evalmode' not in datatype
+    return "train" in datatype and "evalmode" not in datatype
 
 
 def flatten_orders(order_list):
@@ -54,7 +56,7 @@ def flatten_orders(order_list):
     # join the orders
     flat_order_str = "; ".join(order_list)
     # add end_of_order token: [EO_O]
-    flat_order_str = f'{flat_order_str} [EO_O]'
+    flat_order_str = f"{flat_order_str} [EO_O]"
 
     return flat_order_str
 
@@ -75,18 +77,18 @@ def flatten_state(state):
         return final_status
 
     keys = [
-        'units',
-        'retreats',
-        'centers',
-        'homes',
-        'influence',
-        'civil_disorder',
-        'builds',
+        "units",
+        "retreats",
+        "centers",
+        "homes",
+        "influence",
+        "civil_disorder",
+        "builds",
     ]
     state_list = [flatten_country_status(key, state[key]) for key in keys]
     final_state_str = "\n".join(state_list)
     # add end_or_state_token: [EO_STATE]
-    final_state_str = f'{final_state_str} [EO_STATE]'
+    final_state_str = f"{final_state_str} [EO_STATE]"
 
     return final_state_str
 
@@ -96,11 +98,11 @@ def add_common_args(argparser):
     Add common commandline args to the different teachers
     """
     argparser.add_argument(
-        '--min-turns',
+        "--min-turns",
         type=int,
         default=1,
         choices={1, 2, 3, 4},
-        help='Minimum number of dialogue turns per conversation',
+        help="Minimum number of dialogue turns per conversation",
     )
 
 
@@ -111,10 +113,10 @@ def load_data():
     total_data = []
     tot = len(glob(DATAPATH))
     for i, fle in enumerate(glob(DATAPATH)):
-        print(f'[ Loading data from path {i} / {tot}: {fle} ... ]')
-        with open(fle, 'r') as f:
+        print(f"[ Loading data from path {i} / {tot}: {fle} ... ]")
+        with open(fle, "r") as f:
             database = json.load(f)
-            data = database[2]['data']
+            data = database[2]["data"]
             total_data += data
 
     return total_data
@@ -123,15 +125,15 @@ def load_data():
 def load_order_data():
     total_data = {}
     tot = len(glob(ORDER_PATH))
-    print(f'[ Loading order data from path {ORDER_PATH}, {tot} games in total ... ]')
+    print(f"[ Loading order data from path {ORDER_PATH}, {tot} games in total ... ]")
     for i, fle in enumerate(tqdm(glob(ORDER_PATH))):
-        with open(fle, 'r') as f:
-            game_id = int(re.search('game_(.*).json', fle, re.IGNORECASE).group(1))
+        with open(fle, "r") as f:
+            game_id = int(re.search("game_(.*).json", fle, re.IGNORECASE).group(1))
             database = json.load(f)
             # some games contain partial order information
-            total_data.setdefault(game_id, {'partial': 'partial' in fle})
-            for phase in database['phases']:
-                total_data[game_id].setdefault(phase['name'], phase)
+            total_data.setdefault(game_id, {"partial": "partial" in fle})
+            for phase in database["phases"]:
+                total_data[game_id].setdefault(phase["name"], phase)
     # TODO: chunk teacher / stream datas
     return total_data
 
@@ -154,22 +156,18 @@ def join_order_and_msg(raw_order, raw_msg):
             if from_to.startswith(str(speaker_id)):
                 for entry in conv[from_to]:
                     if cfg.HOW_TO_SELECT_MSG == cfg.SPEAKER_MSG_ONLY:
-                        select_this_msg = entry['fromCountryID'] == str(speaker_id)
+                        select_this_msg = entry["fromCountryID"] == str(speaker_id)
                     elif cfg.HOW_TO_SELECT_MSG == cfg.PARTNER_MSG_ONLY:
-                        select_this_msg = entry['fromCountryID'] != str(speaker_id)
+                        select_this_msg = entry["fromCountryID"] != str(speaker_id)
                     elif cfg.HOW_TO_SELECT_MSG == cfg.ALL_MSG:
                         select_this_msg = True
                     else:
-                        raise ValueError(
-                            f'Wrong msg_selection_method: {cfg.HOW_TO_SELECT_MSG}!'
-                        )
+                        raise ValueError(f"Wrong msg_selection_method: {cfg.HOW_TO_SELECT_MSG}!")
 
                     if select_this_msg:
-                        speaker = COUNTRY_ID_TO_POWER[
-                            int(entry['fromCountryID'])
-                        ].capitalize()
+                        speaker = COUNTRY_ID_TO_POWER[int(entry["fromCountryID"])].capitalize()
                         speaker_timed_msg = (
-                            entry['timeSent'],
+                            entry["timeSent"],
                             f"{speaker}: {entry['message']}",
                         )
                         speaker_timed_msgs.append(speaker_timed_msg)
@@ -179,57 +177,53 @@ def join_order_and_msg(raw_order, raw_msg):
         sorted_speaker_timed_msgs = sorted(speaker_timed_msgs, key=lambda x: int(x[0]))
 
         # join this speaker's msgs
-        speaker_msgs = "\n".join(
-            [timed_msg[1] for timed_msg in sorted_speaker_timed_msgs]
-        )
+        speaker_msgs = "\n".join([timed_msg[1] for timed_msg in sorted_speaker_timed_msgs])
         return speaker_msgs
 
     joined_data = {}
-    print('[ Joining message and order by Phase ID ... ]')
+    print("[ Joining message and order by Phase ID ... ]")
     for game_id in tqdm(raw_order):
         if game_id not in raw_msg:
             # inner join by game_id: game_id must be in both raw_order and raw_msg
             continue
         joined_data.setdefault(game_id, {})
         for phase in raw_order[game_id]:
-            if phase != 'partial':
+            if phase != "partial":
                 # set phase
                 joined_data[game_id].setdefault(phase, {})
-                state = flatten_state(raw_order[game_id][phase]['state'])
+                state = flatten_state(raw_order[game_id][phase]["state"])
                 if phase in raw_msg[game_id]:
                     # phase in raw_msg, (state, msg) --> orders
                     for speaker_id, speaker in COUNTRY_ID_TO_POWER.items():
-                        speaker_token = f'{speaker.capitalize()} message:'
-                        speaker_msg = get_msg_from_speaker(
-                            raw_msg[game_id][phase], speaker_id
-                        )
+                        speaker_token = f"{speaker.capitalize()} message:"
+                        speaker_msg = get_msg_from_speaker(raw_msg[game_id][phase], speaker_id)
                         speaker_order = flatten_orders(
-                            raw_order[game_id][phase]['orders'][speaker]
+                            raw_order[game_id][phase]["orders"][speaker]
                         )
                         joined_data[game_id][phase][speaker_id] = {
-                            'state_msg': f'{state} {speaker_token} {speaker_msg}',
-                            'order': f'{speaker_order}',
+                            "state_msg": f"{state} {speaker_token} {speaker_msg}",
+                            "order": f"{speaker_order}",
                         }
                 else:
                     # TODO: inner join or left join or right join or?
                     # phase not in raw_msg, state --> orders
                     for speaker_id, speaker in COUNTRY_ID_TO_POWER.items():
-                        speaker_token = f'{speaker.capitalize()} message:'
-                        speaker_msg = ''
+                        speaker_token = f"{speaker.capitalize()} message:"
+                        speaker_msg = ""
                         speaker_order = flatten_orders(
-                            raw_order[game_id][phase]['orders'][speaker]
+                            raw_order[game_id][phase]["orders"][speaker]
                         )
                         joined_data[game_id][phase][speaker_id] = {
-                            'state_msg': f'{state} {speaker_token} {speaker_msg}',
-                            'order': f'{speaker_order}',
+                            "state_msg": f"{state} {speaker_token} {speaker_msg}",
+                            "order": f"{speaker_order}",
                         }
 
-    print(f'[ Saving joined_json to {JOINED_JSON_PATH} ... ]')
+    print(f"[ Saving joined_json to {JOINED_JSON_PATH} ... ]")
     time1 = time.time()
     with open(JOINED_JSON_PATH, "w") as fh:
         json.dump(joined_data, fh)
     time2 = time.time()
-    print(f'[ Saved to {JOINED_JSON_PATH}, took {(time2-time1)/60} mins ... ]')
+    print(f"[ Saved to {JOINED_JSON_PATH}, took {(time2-time1)/60} mins ... ]")
 
     return joined_data
 
@@ -240,20 +234,20 @@ def select_by_game_and_turn(data):
 
     {Game ID --> {Turn ID: {Conversation ID: []}}}
     """
-    print('[ Re-ordering data by GAME ID and TURN ID ... ]')
+    print("[ Re-ordering data by GAME ID and TURN ID ... ]")
     new_data = {}
     for entry in tqdm(data):
         # select keys
-        game_id = int(entry['hashed_gameID'])
-        turn_id = int(entry['turn'])
-        from_cnt = int(entry['fromCountryID'])
-        to_cnt = int(entry['toCountryID'])
+        game_id = int(entry["hashed_gameID"])
+        turn_id = int(entry["turn"])
+        from_cnt = int(entry["fromCountryID"])
+        to_cnt = int(entry["toCountryID"])
         # set game dictionary
         new_data.setdefault(game_id, {})
         # set turn dictionary
         new_data[game_id].setdefault(turn_id, {})
         # isolate conversations between two players
-        keys = [f'{from_cnt}_{to_cnt}', f'{to_cnt}_{from_cnt}']
+        keys = [f"{from_cnt}_{to_cnt}", f"{to_cnt}_{from_cnt}"]
         for key in keys:
             new_data[game_id][turn_id].setdefault(key, [])
             new_data[game_id][turn_id][key].append(entry)
@@ -265,20 +259,20 @@ def select_by_game_and_phase(data):
     # TODO: currently keep conversations btw players to be
     # consistent with select_by_game_and_turn,
     # but could change to single user messages later
-    print('[ Re-ordering data by GAME ID and PHASE ID ... ]')
+    print("[ Re-ordering data by GAME ID and PHASE ID ... ]")
     new_data = {}
     for entry in tqdm(data):
         # select keys
-        game_id = int(entry['hashed_gameID'])
-        phase_id = str(entry['game_phase'])
-        from_cnt = int(entry['fromCountryID'])
-        to_cnt = int(entry['toCountryID'])
+        game_id = int(entry["hashed_gameID"])
+        phase_id = str(entry["game_phase"])
+        from_cnt = int(entry["fromCountryID"])
+        to_cnt = int(entry["toCountryID"])
         # set game dictionary
         new_data.setdefault(game_id, {})
         # set turn dictionary
         new_data[game_id].setdefault(phase_id, {})
         # isolate conversations between two players
-        keys = [f'{from_cnt}_{to_cnt}', f'{to_cnt}_{from_cnt}']
+        keys = [f"{from_cnt}_{to_cnt}", f"{to_cnt}_{from_cnt}"]
         for key in keys:
             new_data[game_id][phase_id].setdefault(key, [])
             new_data[game_id][phase_id][key].append(entry)
@@ -301,8 +295,8 @@ class DiplomacyConversation:
 
     def __init__(self, key, data, turn, game):
         self.key = key
-        self.to_id = int(key.split('_')[0])
-        self.from_id = int(key.split('_')[1])
+        self.to_id = int(key.split("_")[0])
+        self.from_id = int(key.split("_")[1])
         self.turn = turn
         self.game = game
 
@@ -312,41 +306,41 @@ class DiplomacyConversation:
 
     def _get_msg(self):
         return {
-            'game_turn': self.turn,
-            'game': self.game,
-            'speaker_id': self.from_id,
-            'to_id': self.to_id,
-            'input': None,
-            'response': None,
+            "game_turn": self.turn,
+            "game": self.game,
+            "speaker_id": self.from_id,
+            "to_id": self.to_id,
+            "input": None,
+            "response": None,
         }
 
     def _organize_by_turns(self):
         # first sort the data by time sent
-        sorted_data = sorted(self.raw_data, key=lambda y: int(y['timeSent']))
+        sorted_data = sorted(self.raw_data, key=lambda y: int(y["timeSent"]))
 
         # next combine consecutive messages from a single user
         combined_data = []
-        prev = {'fromCountryID': None}
+        prev = {"fromCountryID": None}
         for entry in sorted_data:
-            if entry['fromCountryID'] == prev['fromCountryID']:
-                prev['message'] += '\n' + entry['message']
+            if entry["fromCountryID"] == prev["fromCountryID"]:
+                prev["message"] += "\n" + entry["message"]
             else:
-                if prev['fromCountryID'] is not None:
+                if prev["fromCountryID"] is not None:
                     combined_data.append(prev)
                 prev = entry
 
         if not combined_data or combined_data[-1] != prev:
-            if prev['fromCountryID'] is not None:
+            if prev["fromCountryID"] is not None:
                 # add last message
                 combined_data.append(prev)
 
         # now determine the first speaker and possibly offset the data
         data = []
-        first_speaker = combined_data[0]['fromCountryID']
+        first_speaker = combined_data[0]["fromCountryID"]
         if int(first_speaker) != self.from_id:
             first_turn = {
-                'fromCountryID': self.from_id,
-                'message': '__SILENCE__',
+                "fromCountryID": self.from_id,
+                "message": "__SILENCE__",
             }
             lst = [first_turn] + combined_data
         else:
@@ -354,11 +348,11 @@ class DiplomacyConversation:
 
         len_conv = len(combined_data) // 2
         for i in range(len_conv):
-            first = lst[2 * i]['message']
-            second = lst[2 * i + 1]['message']
+            first = lst[2 * i]["message"]
+            second = lst[2 * i + 1]["message"]
             msg = self._get_msg()
-            msg['input'] = first
-            msg['response'] = second
+            msg["input"] = first
+            msg["response"] = second
             data.append(msg)
 
         return data
@@ -389,24 +383,22 @@ class DiplomacyMessageOrderPair:
 
     def _get_msg(self):
         return {
-            'game_phase': self.phase,
-            'game': self.game,
-            'speaker_id': None,
-            'speaker': None,
-            'state_and_message': None,
-            'order': None,
+            "game_phase": self.phase,
+            "game": self.game,
+            "speaker_id": None,
+            "speaker": None,
+            "state_and_message": None,
+            "order": None,
         }
 
     def _organize_by_speakers(self):
         data = []
         for speaker_id in self.raw_data:
             msg = self._get_msg()
-            msg['speaker_id'] = speaker_id
-            msg['speaker'] = COUNTRY_ID_TO_POWER[int(speaker_id)].capitalize()
-            msg['state_and_message'] = self.raw_data[speaker_id]['state_msg']
-            msg[
-                'order'
-            ] = f"{msg['speaker'].capitalize()}: {self.raw_data[speaker_id]['order']}"
+            msg["speaker_id"] = speaker_id
+            msg["speaker"] = COUNTRY_ID_TO_POWER[int(speaker_id)].capitalize()
+            msg["state_and_message"] = self.raw_data[speaker_id]["state_msg"]
+            msg["order"] = f"{msg['speaker'].capitalize()}: {self.raw_data[speaker_id]['order']}"
             data.append(msg)
 
         return data
@@ -506,9 +498,7 @@ class DataIterator:
         turn_keys = {i: key for i, key in enumerate(curr_game.keys())}
         turn_key = turn_keys[self.turn_idx]
 
-        curr_turn = DiplomacyTurn(
-            curr_game[turn_key], turn_key, self.key_map[self.game_idx]
-        )
+        curr_turn = DiplomacyTurn(curr_game[turn_key], turn_key, self.key_map[self.game_idx])
         self.turn_idx += 1
 
         return curr_turn
@@ -525,18 +515,18 @@ class MessageOrderDataIterator:
         overwrite = False
         if cfg.OVERWRITE_JOINED_JSON:
             confirm_overwrite = input(
-                'About to overwrite the joined_json, are you sure you want to do that? '
-                '[Y/y] for YES, anything else for NO'
+                "About to overwrite the joined_json, are you sure you want to do that? "
+                "[Y/y] for YES, anything else for NO"
             )
-            overwrite = confirm_overwrite in ['Y', 'y']
+            overwrite = confirm_overwrite in ["Y", "y"]
 
         if os.path.exists(JOINED_JSON_PATH) and (not overwrite):
-            print(f'[ Loading {JOINED_JSON_PATH} ...]')
+            print(f"[ Loading {JOINED_JSON_PATH} ...]")
             time1 = time.time()
             with open(JOINED_JSON_PATH, "r") as fh:
                 self.joined_data = json.load(fh)
             time2 = time.time()
-            print(f'[ Loading finished, took {(time2-time1)/60} mins ...]')
+            print(f"[ Loading finished, took {(time2-time1)/60} mins ...]")
         else:
             if raw_order is None:
                 self.raw_order = load_order_data()

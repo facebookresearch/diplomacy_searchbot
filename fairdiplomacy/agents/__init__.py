@@ -27,4 +27,12 @@ def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.
     }[agent_name](**MessageToDict(agent_cfg, preserving_proto_field_name=True))
 
 
-__all__ = [build_agent_from_cfg, DipnetAgent, MilaSLAgent, BRSearchAgent, CFR1PAgent, CE1PAgent, RandomAgent]
+__all__ = [
+    build_agent_from_cfg,
+    DipnetAgent,
+    MilaSLAgent,
+    BRSearchAgent,
+    CFR1PAgent,
+    CE1PAgent,
+    RandomAgent,
+]

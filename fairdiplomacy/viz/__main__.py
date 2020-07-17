@@ -132,11 +132,13 @@ def show_test_situation(test_situation_name):
         return f"Bad game.json (not found): " + situation["game_path"]
 
     return flask.redirect(
-        "/?" + urllib.parse.urlencode(
+        "/?"
+        + urllib.parse.urlencode(
             dict(game=situation["game_path"], phase=situation["phase"], test=test_situation_name)
         ),
         code=307,
     )
+
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

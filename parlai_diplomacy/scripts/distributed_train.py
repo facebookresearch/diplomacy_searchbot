@@ -38,5 +38,5 @@ load.register_all_agents()
 load.register_all_tasks()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     DistributedTrain.main()

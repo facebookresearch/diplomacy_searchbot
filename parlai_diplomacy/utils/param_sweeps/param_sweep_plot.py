@@ -28,8 +28,8 @@ def fetcher(uri) -> Optional[hip.Experiment]:
     :returns: hiplot Experiment Object for display
     """
     df = load_sweep(uri, allow_multitask=False)
-    if 'stdout' in df.columns:
-        del df['stdout']
+    if "stdout" in df.columns:
+        del df["stdout"]
     if len(df) == 0:
         print("Errors parsing trainstats and opt files", uri)
         return None
@@ -37,9 +37,7 @@ def fetcher(uri) -> Optional[hip.Experiment]:
     data = df.to_dict("records")
     exp = hip.Experiment.from_iterable(data)
     primary_metric = df.columns[-1]
-    exp.display_data(hip.Displays.PARALLEL_PLOT).update(
-        {"order": ["uid"] + list(df.columns)}
-    )
+    exp.display_data(hip.Displays.PARALLEL_PLOT).update({"order": ["uid"] + list(df.columns)})
     exp.parameters_definition[primary_metric].type = hip.ValueType.NUMERIC
     return exp
 

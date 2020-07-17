@@ -46,7 +46,9 @@ for game_name, game in [("new_game", Game()), ("late_game", late_game)]:
     inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
     for batch_size in B:
-        b_inputs = {k: v.repeat((batch_size,) + (1,) * (len(v.shape) - 1)) for k,v in inputs.items()}
+        b_inputs = {
+            k: v.repeat((batch_size,) + (1,) * (len(v.shape) - 1)) for k, v in inputs.items()
+        }
         with torch.no_grad():
             tic = time.time()
             for _ in range(args.n):

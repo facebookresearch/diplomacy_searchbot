@@ -132,22 +132,22 @@ def sha1(string):
     """
     Compute the sha1 hexdigest of the string.
     """
-    return hashlib.sha1(string.encode('utf-8')).hexdigest()
+    return hashlib.sha1(string.encode("utf-8")).hexdigest()
 
 
 def run_grid(
     grid: Dict[str, Any],
     name_keys: Set[str],
     sweep_name: str,
-    user: str = os.environ['USER'],
-    prefix: str = 'python -u scripts/train.py',  # NOTE: I changed this here from parlai_internal
+    user: str = os.environ["USER"],
+    prefix: str = "python -u scripts/train.py",  # NOTE: I changed this here from parlai_internal
     gpus: int = 1,
     cpus: int = 10,
     nodes: int = 1,
     node_exclude=None,
-    partition: str = 'learnfair',
+    partition: str = "learnfair",
     PARLAI_PATH: str = DEFAULT_PARLAI_PATH,
-    jobtime: str = '01:59:59',
+    jobtime: str = "01:59:59",
     include_job_id: bool = False,
     hide_keys: bool = None,
     create_model_file: bool = True,
@@ -161,7 +161,7 @@ def run_grid(
     volta: bool = False,
     volta32: bool = False,
     copy_env: bool = True,
-    copy_dirs=('tests', 'examples', 'projects',),
+    copy_dirs=("tests", "examples", "projects",),
     max_num_jobs=None,
     data_parallel: Optional[bool] = None,
 ):
@@ -216,10 +216,10 @@ def run_grid(
     if hide_keys is None:
         hide_keys = {}
 
-    if not hasattr(grid, 'items'):
-        raise TypeError('Grid should be a dict.')
+    if not hasattr(grid, "items"):
+        raise TypeError("Grid should be a dict.")
 
-    if not one_job_per_node and (gpus > 1 or nodes > 1) and ('train_model' in prefix):
+    if not one_job_per_node and (gpus > 1 or nodes > 1) and ("train_model" in prefix):
         raise ValueError(
             "Looks like you should be using distributed training. Change "
             "prefix to 'python -u -m parlai.scripts.distributed_train'."
@@ -229,31 +229,31 @@ def run_grid(
         SAVE_ROOT = save_root(sweep_name, user)
     else:
         SAVE_ROOT = saveroot
-    Job = namedtuple('Job', ['cmd', 'name'])
-    all_jobs = [Job(cmd=prefix, name='')]
+    Job = namedtuple("Job", ["cmd", "name"])
+    all_jobs = [Job(cmd=prefix, name="")]
 
     for key, args in grid.items():
         new_jobs = []
         # save_name
         save_key = key
-        while save_key.startswith('-'):
+        while save_key.startswith("-"):
             save_key = save_key[1:]
-        save_key = save_key.replace('_', '')
+        save_key = save_key.replace("_", "")
 
         for job in all_jobs:
             for a in args:
-                new_cmd = ' '.join((job.cmd, str(key), str(a)))
+                new_cmd = " ".join((job.cmd, str(key), str(a)))
                 new_name = job.name
                 if (len(args) > 1 or key in name_keys) and key not in hide_keys:
                     if type(a) == str:
-                        a = a.replace('_', '')
-                        if ' ' in a:
-                            a = a.replace(' --', '_').replace(' -', '_')
-                            a = a.replace(' ', '=')
+                        a = a.replace("_", "")
+                        if " " in a:
+                            a = a.replace(" --", "_").replace(" -", "_")
+                            a = a.replace(" ", "=")
                         if save_key in {"t", "task", "et", "evaltask"}:
                             a = a.replace("parlaiinternal.projects.", "")
 
-                    new_name += '_{}={}'.format(save_key, a)
+                    new_name += "_{}={}".format(save_key, a)
                 if hashname:
                     new_name = sha1(new_name)
                 new_jobs.append(Job(cmd=new_cmd, name=new_name))
@@ -283,54 +283,55 @@ def run_grid(
         if include_job_id:
             if fixedname:
                 new_name = fixedname
-            new_name += '_jobid=' + str(job_id)
+            new_name += "_jobid=" + str(job_id)
         if create_model_file:
-            new_cmd = '{} --model-file {}/{}/model'.format(job.cmd, SAVE_ROOT, new_name)
+            new_cmd = "{} --model-file {}/{}/model".format(job.cmd, SAVE_ROOT, new_name)
         else:
-            new_cmd = '{} '.format(job.cmd)
+            new_cmd = "{} ".format(job.cmd)
         final_jobs.append(Job(cmd=new_cmd, name=new_name))
         job_id += 1
 
-    print('Example of first job:\n{}\n'.format(final_jobs[0].cmd))
-    print('Your jobs will run for {}.'.format(jobtime))
+    print("Example of first job:\n{}\n".format(final_jobs[0].cmd))
+    print("Your jobs will run for {}.".format(jobtime))
     ans = input(
-        'About to launch {} jobs for a total of {} GPUs. Continue? (Y/y to proceed) '.format(
+        "About to launch {} jobs for a total of {} GPUs. Continue? (Y/y to proceed) ".format(
             len(final_jobs), nodes * gpus * len(final_jobs)
         )
     )
-    if ans.strip().lower() != 'y':
-        print('Aborting...')
+    if ans.strip().lower() != "y":
+        print("Aborting...")
         sys.exit(-1)
 
-    PARLAI_DATAPATH = os.environ.get('PARLAI_DATAPATH')
-    if '-dp' in grid:
-        PARLAI_DATAPATH = grid['-dp'][0]
-    elif '--datapath' in grid:
-        PARLAI_DATAPATH = grid['--datapath'][0]
+    PARLAI_DATAPATH = os.environ.get("PARLAI_DATAPATH")
+    if "-dp" in grid:
+        PARLAI_DATAPATH = grid["-dp"][0]
+    elif "--datapath" in grid:
+        PARLAI_DATAPATH = grid["--datapath"][0]
     elif not PARLAI_DATAPATH:
-        PARLAI_DATAPATH = os.path.join(PARLAI_PATH, 'data')
+        PARLAI_DATAPATH = os.path.join(PARLAI_PATH, "data")
 
-    PARLAI_DOWNPATH = os.environ.get('PARLAI_DOWNPATH')
-    if '--download-path' in grid:
-        PARLAI_DOWNPATH = grid['--download-path'][0]
+    PARLAI_DOWNPATH = os.environ.get("PARLAI_DOWNPATH")
+    if "--download-path" in grid:
+        PARLAI_DOWNPATH = grid["--download-path"][0]
     elif not PARLAI_DOWNPATH:
-        PARLAI_DOWNPATH = os.path.join(PARLAI_PATH, 'downloads')
+        PARLAI_DOWNPATH = os.path.join(PARLAI_PATH, "downloads")
 
     if copy_env:
-        print('[ Copying env... make take up to a minute ]')
+        print("[ Copying env... make take up to a minute ]")
         # Make ParlAI Diplomacy Dir
-        bash('mkdir -p ' + os.path.join(SAVE_ROOT, 'ParlAI_Diplomacy'))
-        folders = ['agents', 'scripts', 'tasks', 'utils']
+        bash("mkdir -p " + os.path.join(SAVE_ROOT, "ParlAI_Diplomacy"))
+        folders = ["agents", "scripts", "tasks", "utils"]
         for folder in folders:
             cmd = (
-                f'rsync -av {PARLAI_PATH}/{folder} {SAVE_ROOT}/ParlAI_Diplomacy '
+                f"rsync -av {PARLAI_PATH}/{folder} {SAVE_ROOT}/ParlAI_Diplomacy "
                 '--exclude .git --exclude "*.ipynb" '
             )
             import ipdb
 
             ipdb.set_trace()
             bash(cmd)
-        NEW_PARLAI_PATH = '{SAVE_ROOT}/ParlAI_Diplomacy'.format(**locals())
+
+        NEW_PARLAI_PATH = "{SAVE_ROOT}/ParlAI_Diplomacy".format(**locals())
         import ipdb
 
         ipdb.set_trace()
@@ -340,7 +341,7 @@ def run_grid(
     # Dump grid to grid file
     if not os.path.exists(SAVE_ROOT):
         os.makedirs(SAVE_ROOT)
-    with open(os.path.join(SAVE_ROOT, 'grid.json'), 'w') as f:
+    with open(os.path.join(SAVE_ROOT, "grid.json"), "w") as f:
         json.dump(grid, f)
 
     # shuffle jobs so we're not systematically doing them in any order
@@ -391,7 +392,7 @@ def bash(bashCommand):
     output, error = process.communicate()
     output = str(output)
     output = output[:-3]
-    output = output.lstrip('b').strip('\'').strip('"')
+    output = output.lstrip("b").strip("'").strip('"')
     return output
 
 
@@ -400,7 +401,7 @@ def save_root(SWEEP_NAME, unixname):
     Return root folder for saving model files, stdout, stderr, etc.
     """
     DATE = bash('date +"%Y%m%d"')
-    SAVE_ROOT = os.path.join('/checkpoint/', str(unixname), DATE, SWEEP_NAME)
+    SAVE_ROOT = os.path.join("/checkpoint/", str(unixname), DATE, SWEEP_NAME)
     return SAVE_ROOT
 
 
@@ -422,9 +423,9 @@ def create_job_files(
     """
     SHOULD_REQUEUE = str(requeue).lower()
     SAVE = os.path.join(SAVE_ROOT, param_name)
-    bash('mkdir -p ' + SAVE)
-    SCRIPTFILE = os.path.join(SAVE, 'run.sh')
-    ARRAYJOBFILE = os.path.join(SAVE_ROOT, 'array_jobs')
+    bash("mkdir -p " + SAVE)
+    SCRIPTFILE = os.path.join(SAVE, "run.sh")
+    ARRAYJOBFILE = os.path.join(SAVE_ROOT, "array_jobs")
 
     if one_job_per_node or not gpus:
         ntasks_per_node = 1
@@ -432,7 +433,7 @@ def create_job_files(
         ntasks_per_node = gpus
     if nodes > 1 or (gpus > 1 and not one_job_per_node):
         python_cmd += " --distributed-world-size " + str(nodes * ntasks_per_node)
-    with open(SCRIPTFILE, 'w') as fw:
+    with open(SCRIPTFILE, "w") as fw:
         fw.write(SH_TEMPLATE.format(**locals()).lstrip())
     return SAVE
 
@@ -444,8 +445,8 @@ def submit_array_jobs(
     cpus=1,
     nodes=1,
     node_exclude=None,
-    partition='learnfair',
-    jobtime='01:59:59',
+    partition="learnfair",
+    jobtime="01:59:59",
     PARLAI_PATH=DEFAULT_PARLAI_PATH,
     mem_gb=64,
     requeue=False,
@@ -460,7 +461,7 @@ def submit_array_jobs(
 ):
     assert jobs_path is not None
 
-    SLURMFILE = os.path.join(SAVE_ROOT, 'run.slrm')
+    SLURMFILE = os.path.join(SAVE_ROOT, "run.slrm")
     if one_job_per_node or not gpus:
         ntasks_per_node = 1
     else:
@@ -468,7 +469,7 @@ def submit_array_jobs(
     SBATCH_EXTRAS = []
     if node_exclude is not None:
         # If any nodes are down, exclude them here
-        SBATCH_EXTRAS.append('#SBATCH --exclude ' + str(node_exclude))
+        SBATCH_EXTRAS.append("#SBATCH --exclude " + str(node_exclude))
 
     constraints = []
 
@@ -476,15 +477,15 @@ def submit_array_jobs(
 
     # Request the number of GPUs (defaults to 1)
     if gpus > 0:
-        gpustr = f'#SBATCH --gpus-per-node={gpus}'
+        gpustr = f"#SBATCH --gpus-per-node={gpus}"
         if volta:
-            constraints.append('volta')
+            constraints.append("volta")
         if volta32:
-            constraints.append('volta32gb')
+            constraints.append("volta32gb")
         SBATCH_EXTRAS.append(gpustr)
 
     if constraints:
-        SBATCH_EXTRAS.append("#SBATCH -C '{}'".format('&'.join(constraints)))
+        SBATCH_EXTRAS.append("#SBATCH -C '{}'".format("&".join(constraints)))
 
     if comment:
         SBATCH_EXTRAS.append('#SBATCH --comment="{}"'.format(comment))
@@ -495,9 +496,9 @@ def submit_array_jobs(
     for idx, each_path in enumerate(jobs_path):
         JOB_LAUNCHER.append(BASH_IF_CLAUSE.format(index=idx, SAVE=each_path))
     JOB_LAUNCHER = "\n".join(JOB_LAUNCHER)
-    bash('mkdir -p ' + os.path.join(SAVE_ROOT, 'slurm_logs'))
-    with open(SLURMFILE, 'w') as fw:
+    bash("mkdir -p " + os.path.join(SAVE_ROOT, "slurm_logs"))
+    with open(SLURMFILE, "w") as fw:
         fw.write(SLRM_JOB_ARRAY_TEMPLATE.format(**locals()).lstrip())
 
-    print(bash('sbatch --test-only --array=0-{} {}'.format(total_num_jobs, SLURMFILE)))
-    print(bash('sbatch --array=0-{} {}'.format(total_num_jobs, SLURMFILE)))
+    print(bash("sbatch --test-only --array=0-{} {}".format(total_num_jobs, SLURMFILE)))
+    print(bash("sbatch --array=0-{} {}".format(total_num_jobs, SLURMFILE)))
