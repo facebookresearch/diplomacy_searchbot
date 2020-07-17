@@ -17,12 +17,13 @@ def run_situation_check(meta, agent):
     for name, config in meta.items():
         logging.info("=" * 80)
         comment = config.get("comment", "")
-        logging.info(f"{name}: {comment} ({config['phase']})")
+        logging.info(f"{name}: {comment} (phase={config.get('phase')})")
         logging.info(f"path: {config['game_path']}")
         with open(config["game_path"]) as f:
             j = json.load(f)
         game = Game.from_saved_game_format(j)
-        game = Game.clone_from(game, up_to_phase=config["phase"])
+        if "phase" in config:
+            game = Game.clone_from(game, up_to_phase=config["phase"])
 
         prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
         logging.info("CFR strategy:")
