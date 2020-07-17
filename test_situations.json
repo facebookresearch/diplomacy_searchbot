@@ -67,8 +67,8 @@
         "phase": "S1906M",
         "powers": ["RUSSIA", "GERMANY", "FRANCE"],
         "tests": {
-            "RUS should not move to SIL": "lambda r: order_prob(r, 'A WAR - SIL') < 0.1",
-            "RUS should not attack Germany": "lambda r: order_prob(r, 'F SWE - DEN') + order_prob(r, 'F SWE S A EDI - DEN') < 0.1"
+            "RUS should not move to SIL": "lambda r: order_prob(r, 'A WAR - SIL') < 0.25",
+            "RUS should not attack Germany": "lambda r: order_prob(r, 'F SWE - DEN') + order_prob(r, 'A EDI - DEN') < 0.1"
         }
     },
     "russia_ally_germany_2": {
@@ -76,8 +76,8 @@
         "phase": "S1908M",
         "powers": ["RUSSIA", "GERMANY"],
         "tests": {
-            "RUS should consider LIV": "lambda r: order_prob(r, 'A STP - LVN') > 0.01",
-            "GER should consider LIV": "lambda r: order_prob(r, 'A WAR - LVN') > 0.01"
+            "RUS should consider LVN": "lambda r: order_prob(r, 'A STP - LVN') > 0.0",
+            "GER should consider LVN": "lambda r: order_prob(r, 'A WAR - LVN') > 0.0"
         }
     },
     "england_1": {
@@ -86,6 +86,22 @@
       "powers": ["ENGLAND"],
       "tests": {
         "LVP -> WAL": "lambda r: order_prob(r, 'F LVP - WAL') > 0.99"
+      }
+    },
+    "turkey_mutual_support_1": {
+      "game_path": "/checkpoint/alerer/diplomacy_json/bob_russia_309561.json",
+      "phase": "S1905M",
+      "powers": ["TURKEY"],
+      "tests": {
+        "TUR does mutual supports": "lambda r: order_prob(r, 'F SMY S A CON') > 0.25"
+      }
+    },
+    "turkey_mutual_support_1": {
+      "game_path": "/checkpoint/alerer/diplomacy_json/bob_russia_309561.json",
+      "phase": "F1905M",
+      "powers": ["TURKEY"],
+      "tests": {
+        "TUR does mutual supports": "lambda r: order_prob(r, 'F SMY S A CON') > 0.25"
       }
     }
 }
