@@ -6,9 +6,10 @@ cd "$($(dirname $0)/checkpoint_repo.sh)"
 export HOURS=48
 export NAME=${NAME:-my_model}
 PARTITION=${PARTITION:-learnfair}
+CONF=${CONF:-conf/c02_sup_train/sl.prototxt}
 
 python run.py \
-    --cfg conf/c02_sup_train/sl.prototxt \
+    --cfg $CONF \
     I.launcher=slurm_8gpus \
     launcher.slurm.hours=$HOURS \
     launcher.slurm.partition=$PARTITION \

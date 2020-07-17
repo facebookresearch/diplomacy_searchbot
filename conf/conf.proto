@@ -461,6 +461,8 @@ message TrainTask {
 
   optional bool residual_linear = 40 [default = false];
 
+  optional bool merged_gnn = 41 [default = false];
+
   optional Launcher launcher = 1000;
 }
 

@@ -45,6 +45,7 @@ class DipNet(nn.Module):
         relfeat_output=False,
         featurize_prev_orders=False,
         residual_linear=False,
+        merged_gnn=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -69,6 +70,7 @@ class DipNet(nn.Module):
             dropout=encoder_dropout,
             learnable_A=learnable_A,
             residual_linear=residual_linear,
+            merged_gnn=merged_gnn,
         )
 
         self.policy_decoder = LSTMDipNetDecoder(
@@ -698,6 +700,7 @@ class DipNetEncoder(nn.Module):
         dropout,
         learnable_A=False,
         residual_linear=False,
+        merged_gnn=False,
     ):
         super().__init__()
 
@@ -711,6 +714,7 @@ class DipNetEncoder(nn.Module):
                 residual=False,
                 learnable_A=learnable_A,
                 dropout=dropout,
+                residual_linear=residual_linear,
             )
         )
         for _ in range(num_blocks - 1):
@@ -736,6 +740,7 @@ class DipNetEncoder(nn.Module):
                 residual=False,
                 learnable_A=learnable_A,
                 dropout=dropout,
+                residual_linear=residual_linear,
             )
         )
         for _ in range(num_blocks - 1):
@@ -751,6 +756,22 @@ class DipNetEncoder(nn.Module):
                 )
             )
 
+        self.merged_gnn = merged_gnn
+        if self.merged_gnn:
+            self.merged_blocks = nn.ModuleList()
+            for _ in range(num_blocks // 2):
+                self.merged_blocks.append(
+                    DipNetBlock(
+                        in_size=2 * inter_emb_size,
+                        out_size=2 * inter_emb_size,
+                        A=A,
+                        residual=True,
+                        learnable_A=learnable_A,
+                        dropout=dropout,
+                        residual_linear=residual_linear,
+                    )
+                )
+
     def forward(self, x_bo, x_po):
 
         y_bo = x_bo
@@ -762,6 +783,10 @@ class DipNetEncoder(nn.Module):
             y_po = block(y_po)
 
         state_emb = torch.cat([y_bo, y_po], -1)
+
+        if self.merged_gnn:
+            for block in self.merged_blocks:
+                state_emb = block(state_emb)
         return state_emb
 
 
