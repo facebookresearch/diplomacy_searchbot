@@ -176,7 +176,7 @@ def compute_dipnet_accuracy(p_args):
     print(f"Dipnet: num_orders: {num_orders}, num_correct: {num_correct}, accuracy: {acc}")
 
 
-def print_json_metrics(game_ids, game_dicts, missing_orders):
+def print_json_metrics(game_dicts, missing_orders):
     """
     Prints json metrics
     :param game_ids:
@@ -234,7 +234,7 @@ def compute_json_accuracy(args):
         ],
     )
 
-    print_json_metrics(game_ids, game_dicts, missing_orders)
+    print_json_metrics(game_dicts, missing_orders)
 
 
 if __name__ == "__main__":

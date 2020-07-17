@@ -30,7 +30,15 @@ ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_IDXS_BY_UNIT = get_order_vocabulary_idxs_by_unit()
 
 
-def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_teacher_force=1.0):
+def process_batch(
+    net,
+    batch,
+    policy_loss_fn,
+    value_loss_fn,
+    temperature=1.0,
+    p_teacher_force=1.0,
+    shuffle_locs=False,
+):
     """Calculate a forward pass on a batch
 
     Returns:
@@ -41,6 +49,29 @@ def process_batch(net, batch, policy_loss_fn, value_loss_fn, temperature=1.0, p_
     """
     assert p_teacher_force == 1
     device = next(net.parameters()).device
+
+    if shuffle_locs:
+        y_actions = batch["y_actions"]
+        B, L = y_actions.shape
+
+        loc_priority = torch.rand(B, L)
+        loc_priority += (y_actions == -1) * 1000
+        perm = loc_priority.sort(dim=-1).indices
+
+        batch["y_actions"] = y_actions.gather(-1, perm)
+
+        batch["x_possible_actions"] = batch["x_possible_actions"].gather(
+            -2, perm.unsqueeze(-1).repeat(1, 1, 469)
+        )
+
+        # x_loc_idxs is B x 81, where the value in each loc is which order in
+        # the sequence it is (or -1 if not in the sequence)
+        new_x_loc_idxs = batch["x_loc_idxs"].clone()
+        for lidx in range(L):
+            mask = batch["x_loc_idxs"] == perm[:, lidx].unsqueeze(-1)
+            new_x_loc_idxs[mask] = lidx
+        batch["x_loc_idxs"] = new_x_loc_idxs
+
     # forward pass
     teacher_force_orders = (
         cand_idxs_to_order_idxs(batch["y_actions"], batch["x_possible_actions"], pad_out=0)
@@ -174,7 +205,14 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
             batch_value_accuracies.append(
                 calculate_value_accuracy(final_sos, batch["y_final_scores"])
             )
-            batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, y_actions))
+            batch_acc_split_counts.append(
+                calculate_split_accuracy_counts(
+                    sampled_idxs,
+                    cand_idxs_to_order_idxs(
+                        batch["y_actions"], batch["x_possible_actions"], pad_out=EOS_IDX
+                    ),
+                )
+            )
         net.train()
 
     # validation loss
@@ -289,7 +327,12 @@ def main_subproc(rank, world_size, args, train_set, val_set):
             logger.debug("Starting epoch {} batch {}".format(epoch, batch_i))
             optim.zero_grad()
             policy_losses, value_losses, _, _ = process_batch(
-                net, batch, policy_loss_fn, value_loss_fn, p_teacher_force=args.teacher_force
+                net,
+                batch,
+                policy_loss_fn,
+                value_loss_fn,
+                p_teacher_force=args.teacher_force,
+                shuffle_locs=args.shuffle_locs,
             )
 
             # backward

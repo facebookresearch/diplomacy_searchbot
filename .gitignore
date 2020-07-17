@@ -16,6 +16,7 @@ local/
 conf/conf_pb2.py
 .ipynb_checkpoints/
 .vscode/
+.idea/
 client_secret.json
 service_account_credentials.json
 sheets.googleapis.com-python.json

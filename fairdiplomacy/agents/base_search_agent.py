@@ -22,6 +22,7 @@ from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
     zero_inputs,
     decode_order_idxs,
+    resample_duplicate_disbands_inplace,
 )
 from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
@@ -576,6 +577,7 @@ def server_handler(
 
     if seed is not None:
         torch.manual_seed(seed)
+        np.random.seed(seed)
 
     frame_count, batch_count, total_batches = 0, 0, 0
     timings = TimingCtx()
@@ -614,7 +616,7 @@ def server_handler(
 
                     with timings("transform"):
                         if output_transform is not None:
-                            y = output_transform(y)
+                            y = output_transform(inputs, y)
 
                     with timings("to_cpu"):
                         y = tuple(x.to("cpu") for x in y)
@@ -669,8 +671,11 @@ def compute_sampled_logprobs(sampled_idxs, logits):
     return total_logprobs
 
 
-def model_output_transform(y):
+def model_output_transform(x, y):
     order_idxs, sampled_idxs, logits, final_sos = y
+    resample_duplicate_disbands_inplace(
+        order_idxs, sampled_idxs, logits, x["x_possible_actions"], x["x_in_adj_phase"]
+    )
     return order_idxs, compute_sampled_logprobs(sampled_idxs, logits), final_sos
 
 

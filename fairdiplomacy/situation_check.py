@@ -25,7 +25,7 @@ def run_situation_check(meta, agent):
         game = Game.clone_from(game, up_to_phase=config["phase"])
 
         prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
-        logging.info("CFR Average strategy:")
+        logging.info("CFR strategy:")
         for power in POWERS:
             pd = prob_distributions[power]
             pdl = sorted(list(pd.items()), key=lambda x: -x[1])

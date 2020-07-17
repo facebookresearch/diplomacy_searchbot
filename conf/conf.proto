@@ -455,6 +455,8 @@ message TrainTask {
   // exclude actions with >=n units, all holds, from the dataset
   optional int32 exclude_n_holds = 37 [default = -1];
 
+  optional bool shuffle_locs = 38 [default = false];
+
   optional Launcher launcher = 1000;
 }
 

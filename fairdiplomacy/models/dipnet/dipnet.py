@@ -16,74 +16,6 @@ from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, E
 
 EOS_TOKEN = get_order_vocabulary()[EOS_IDX]
 
-# def make_onehot(X, k):
-#     """Converts a list of indices X, 0 <= X < k, into a one-hot tensor.
-#     """
-
-#     ret = torch.zeros((len(X), k))
-#     idx = torch.tensor(X, dtype=torch.long).unsqueeze(-1)
-#     ret.scatter_(1, idx, 1)
-#     return ret
-
-
-def compute_order_features():
-    """Returns a [13k x D] tensor where each row contains (one-hot) features for one order in the vocabulary.
-    """
-
-    order_vocabulary = get_order_vocabulary()
-    # assert order_vocabulary[0] == EOS_TOKEN
-    # order_vocabulary = order_vocabulary[1:]  # we'll fix this up at the end
-    order_split = [o.split() for o in order_vocabulary]
-
-    # fixup strange stuff in the dataset
-    for s in order_split:
-        # fixup "A SIL S A PRU"
-        if len(s) == 5 and s[2] == "S":
-            s.append("H")
-        # fixup "A SMY - ROM VIA"
-        if len(s) == 5 and s[-1] == "VIA":
-            s.pop()
-
-    loc_idx = {loc: i for i, loc in enumerate(LOCS)}
-    unit_idx = {"A": 0, "F": 1}
-    order_type_idx = {
-        t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))
-    }
-
-    num_locs = len(loc_idx)
-    feats = []
-    srcs, dsts = [], []
-    for o in order_split:
-        u = o[3:] if len(o) >= 6 else o
-        srcT = torch.zeros(num_locs)
-        dstT = torch.zeros(num_locs)
-        unitT = torch.zeros(len(unit_idx))
-        orderT = torch.zeros(len(order_type_idx))
-        underlyingT = torch.zeros(len(order_type_idx))
-
-        if not o[2].startswith("B"):  # lets ignore the concatenated builds, they're tricky
-            src_loc = loc_idx[u[1]]
-            dst_loc = loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]
-            srcT[src_loc] = 1
-            dstT[dst_loc] = 1
-            unitT[
-                unit_idx[o[0]]
-            ] = 1  # FIXME: this is wrong! should be u[0]. But too late for backwards compatibility
-            orderT[order_type_idx[o[2]]] = 1
-            underlyingT[order_type_idx[u[2]]] = 1
-            srcs.append(src_loc)
-            dsts.append(dst_loc)
-        else:
-            srcs.append(-1)
-            dsts.append(-1)
-
-        feats.append(torch.cat((srcT, dstT, unitT, orderT, underlyingT), dim=-1))
-
-    feats = torch.stack(feats, dim=0)
-    # FIXME: this could be done better
-
-    return feats, torch.tensor(srcs, dtype=torch.long), torch.tensor(dsts, dtype=torch.long)
-
 
 class DipNet(nn.Module):
     def __init__(
@@ -109,7 +41,6 @@ class DipNet(nn.Module):
         learnable_alignments=False,
         avg_embedding=False,
         value_decoder_init_scale=1.0,
-        graph_decoder=False,
         featurize_output=False,
         relfeat_output=False,
     ):
@@ -141,7 +72,6 @@ class DipNet(nn.Module):
             avg_embedding=avg_embedding,
             power_emb_size=power_emb_size,
             A=A,
-            graph_decoder=graph_decoder,
             featurize_output=featurize_output,
             relfeat_output=relfeat_output,
         )
@@ -411,7 +341,6 @@ class LSTMDipNetDecoder(nn.Module):
         avg_embedding=False,
         power_emb_size,
         A=None,
-        graph_decoder=False,
         featurize_output=False,
         relfeat_output=False,
     ):
@@ -427,20 +356,12 @@ class LSTMDipNetDecoder(nn.Module):
         self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
 
-        self.graph_decoder = graph_decoder
-        if graph_decoder:
-            self.decoder_A = nn.Parameter(A.clone())  # maybe A@A ?
-            self.decoder_lin = nn.Linear(
-                2 * inter_emb_size + order_emb_size + power_emb_size, lstm_size
-            )
-            # self.decoder_lin2 = nn.Linear(lstm_size, lstm_size)
-        else:
-            self.lstm = nn.LSTM(
-                2 * inter_emb_size + order_emb_size + power_emb_size,
-                lstm_size,
-                batch_first=True,
-                num_layers=self.lstm_layers,
-            )
+        self.lstm = nn.LSTM(
+            2 * inter_emb_size + order_emb_size + power_emb_size,
+            lstm_size,
+            batch_first=True,
+            num_layers=self.lstm_layers,
+        )
 
         # if avg_embedding is True, alignments are not used, and pytorch
         # `comp`lains about unused parameters, so only set self.master_alignments
@@ -456,6 +377,9 @@ class LSTMDipNetDecoder(nn.Module):
             self.register_buffer("order_feats", order_feats)
             order_decoder_input_sz = self.order_feats.shape[1]
             self.order_feat_lin = nn.Linear(order_decoder_input_sz, order_emb_size)
+
+            # this one has to stay as separate w, b
+            # for backwards compatibility
             self.order_decoder_w = nn.Linear(order_decoder_input_sz, lstm_size)  # FIXME
             self.order_decoder_b = nn.Linear(order_decoder_input_sz, 1)
 
@@ -467,39 +391,25 @@ class LSTMDipNetDecoder(nn.Module):
             self.register_buffer("order_dsts", dsts)
             order_relfeat_input_sz = 2 * inter_emb_size
 
-            self.order_relfeat_src_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size)
-            self.order_relfeat_src_decoder_b = nn.Linear(order_relfeat_input_sz, 1)
-            self.order_relfeat_dst_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size)
-            self.order_relfeat_dst_decoder_b = nn.Linear(order_relfeat_input_sz, 1)
+            self.order_relfeat_src_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size + 1)
+            self.order_relfeat_dst_decoder_w = nn.Linear(order_relfeat_input_sz, lstm_size + 1)
 
-            self.order_emb_relfeat_src_decoder_w = nn.Linear(order_emb_size, lstm_size)
-            self.order_emb_relfeat_src_decoder_b = nn.Linear(order_emb_size, 1)
-            self.order_emb_relfeat_dst_decoder_w = nn.Linear(order_emb_size, lstm_size)
-            self.order_emb_relfeat_dst_decoder_b = nn.Linear(order_emb_size, 1)
+            self.order_emb_relfeat_src_decoder_w = nn.Linear(order_emb_size, lstm_size + 1)
+            self.order_emb_relfeat_dst_decoder_w = nn.Linear(order_emb_size, lstm_size + 1)
 
-    def get_order_loc_feats(self, cand_order_locs, enc_w, enc_b):
-        valid = cand_order_locs > 0  # B x O
-        cand_order_locs = cand_order_locs.clamp(min=0)
-        out_w = enc_w.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_w.shape[-1])
-        ) * valid.unsqueeze(-1)
-        out_b = enc_b.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_b.shape[-1])
-        ) * valid.unsqueeze(-1)
-        return out_w, out_b
-
-    def get_order_emb_loc_feats(self, cand_order_locs, enc, enc_w_lin, enc_b_lin):
-        valid = cand_order_locs > 0  # B x O
-        cand_order_locs = cand_order_locs.clamp(min=0)
-        enc_w = enc_w_lin(enc)
-        enc_b = enc_b_lin(enc)
-        out_w = enc_w.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_w.shape[-1])
-        ) * valid.unsqueeze(-1)
-        out_b = enc_b.gather(
-            1, cand_order_locs.unsqueeze(-1).expand(-1, -1, enc_b.shape[-1])
-        ) * valid.unsqueeze(-1)
-        return out_w, out_b
+    def get_order_loc_feats(self, cand_order_locs, enc_w, out_w, enc_lin=None):
+        B, L, D = enc_w.shape
+        flat_order_locs = cand_order_locs.view(-1)
+        valid = (flat_order_locs > 0).nonzero().squeeze(-1)
+        # offsets of the order into the flattened enc_w tensor
+        order_offsets = (
+            cand_order_locs + torch.arange(B, device=cand_order_locs.device).view(B, 1) * L
+        )
+        valid_order_offsets = order_offsets.view(-1)[valid]
+        valid_order_w = enc_w.view(-1, D)[valid_order_offsets]
+        if enc_lin:
+            valid_order_w = enc_lin(valid_order_w)
+        out_w.view(-1, out_w.shape[-1]).index_add_(0, valid, valid_order_w)
 
     def forward(
         self,
@@ -540,12 +450,13 @@ class LSTMDipNetDecoder(nn.Module):
             all_logits = []
 
             order_enc = torch.zeros(enc.shape[0], 81, self.order_emb_size, device=enc.device)
-            if not self.graph_decoder:
-                self.lstm.flatten_parameters()
-                hidden = (
-                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size, device=device),
-                    torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size, device=device),
-                )
+
+            self.lstm.flatten_parameters()
+            hidden = (
+                torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size, device=device),
+                torch.zeros(self.lstm_layers, enc.shape[0], self.lstm_size, device=device),
+            )
+
             # reuse same dropout weights for all steps
             dropout_in = (
                 torch.zeros(
@@ -570,9 +481,7 @@ class LSTMDipNetDecoder(nn.Module):
 
             if self.relfeat_output:
                 src_relfeat_w = self.order_relfeat_src_decoder_w(enc)
-                src_relfeat_b = self.order_relfeat_src_decoder_b(enc)
                 dst_relfeat_w = self.order_relfeat_dst_decoder_w(enc)
-                dst_relfeat_b = self.order_relfeat_dst_decoder_b(enc)
 
         for step in range(all_cand_idxs.shape[1]):
             with timings("dec.loc_enc"):
@@ -591,34 +500,13 @@ class LSTMDipNetDecoder(nn.Module):
                     loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             with timings("dec.lstm"):
-                if self.graph_decoder:
-                    order_alignments = compute_alignments(loc_idxs, step, self.decoder_A)
-                    # print('decoder_A', self.decoder_A.mean(), self.decoder_A.std())
-                    # print(self.decoder_A)
-                    # print('order_alignments', order_alignments.mean(), order_alignments.std())
-                    # print('order_enc', order_enc.mean(), order_enc.std())
-                    aggr_order_enc = torch.matmul(
-                        order_alignments.unsqueeze(1), order_enc
-                    ).squeeze(1)
-                    # print('aggr', step, float(aggr_order_enc.mean()), float(aggr_order_enc.std()))
-                    # aggr_order_enc *= 0
-                    dec_input = torch.cat((loc_enc, aggr_order_enc, power_emb), dim=1).unsqueeze(1)
+                lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
+                if self.training and self.lstm_dropout > 0.0:
+                    lstm_input = lstm_input * dropout_in
 
-                    if self.training and self.lstm_dropout > 0.0:
-                        dec_input = dec_input * dropout_in
-
-                    out = self.decoder_lin(dec_input)
-
-                    if self.training and self.lstm_dropout > 0.0:
-                        out = out * dropout_out
-                else:
-                    lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
-                    if self.training and self.lstm_dropout > 0.0:
-                        lstm_input = lstm_input * dropout_in
-
-                    out, hidden = self.lstm(lstm_input, hidden)
-                    if self.training and self.lstm_dropout > 0.0:
-                        out = out * dropout_out
+                out, hidden = self.lstm(lstm_input, hidden)
+                if self.training and self.lstm_dropout > 0.0:
+                    out = out * dropout_out
 
                 out = out.squeeze(1).unsqueeze(2)
 
@@ -629,37 +517,43 @@ class LSTMDipNetDecoder(nn.Module):
                 logits = torch.matmul(cand_emb, out).squeeze(2)  # [B, <=469]
 
                 if self.featurize_output:
+                    # a) featurize based on one-hot features
                     cand_order_feats = self.order_feats[cand_idxs]
-                    order_w = self.order_decoder_w(cand_order_feats)
-                    order_b = self.order_decoder_b(cand_order_feats)
+                    order_w = torch.cat(
+                        (
+                            self.order_decoder_w(cand_order_feats),
+                            self.order_decoder_b(cand_order_feats),
+                        ),
+                        dim=-1,
+                    )
 
                     if self.relfeat_output:
                         cand_srcs = self.order_srcs[cand_idxs]
                         cand_dsts = self.order_dsts[cand_idxs]
-                        src_order_w, src_order_b = self.get_order_loc_feats(
-                            cand_srcs, src_relfeat_w, src_relfeat_b
-                        )
-                        dst_order_w, dst_order_b = self.get_order_loc_feats(
-                            cand_dsts, dst_relfeat_w, dst_relfeat_b
-                        )
 
-                        src_order_emb_w, src_order_emb_b = self.get_order_emb_loc_feats(
+                        # b) featurize based on the src and dst encoder features
+                        self.get_order_loc_feats(cand_srcs, src_relfeat_w, order_w)
+                        self.get_order_loc_feats(cand_dsts, dst_relfeat_w, order_w)
+
+                        # c) featurize based on the src and dst order embeddings
+                        self.get_order_loc_feats(
                             cand_srcs,
                             order_enc,
-                            self.order_emb_relfeat_src_decoder_w,
-                            self.order_emb_relfeat_src_decoder_b,
+                            order_w,
+                            enc_lin=self.order_emb_relfeat_src_decoder_w,
                         )
-                        dst_order_emb_w, dst_order_emb_b = self.get_order_emb_loc_feats(
+                        self.get_order_loc_feats(
                             cand_dsts,
                             order_enc,
-                            self.order_emb_relfeat_dst_decoder_w,
-                            self.order_emb_relfeat_dst_decoder_b,
+                            order_w,
+                            enc_lin=self.order_emb_relfeat_dst_decoder_w,
                         )
 
-                        order_w += src_order_w + dst_order_w + src_order_emb_w + dst_order_emb_w
-                        order_b += src_order_b + dst_order_b + src_order_emb_b + dst_order_emb_b
-
-                    order_scores_featurized = torch.bmm(order_w, out) + order_b
+                    # add some ones to out so that the last element of order_w is a bias
+                    out_with_ones = torch.cat(
+                        (out, torch.ones((out.shape[0], 1, 1), device=out.device)), dim=1
+                    )
+                    order_scores_featurized = torch.bmm(order_w, out_with_ones)
                     logits += order_scores_featurized.squeeze(-1)
 
             with timings("dec.invalid_mask"):
@@ -723,7 +617,7 @@ class LSTMDipNetDecoder(nn.Module):
                 if self.featurize_output:
                     order_emb += self.order_feat_lin(self.order_feats[order_input])
 
-                if self.graph_decoder or self.relfeat_output:
+                if self.relfeat_output:
                     order_enc = order_enc + order_emb[:, None] * alignments[:, :, None]
 
         with timings("dec.fin"):
@@ -870,16 +764,6 @@ class DipNetBlock(nn.Module):
             y += x
         return y
 
-    # GCN+
-    # def forward(self, x):
-    #     y = self.batch_norm(x)
-    #     y = F.relu(y)
-    #     y = self.graph_conv(y)
-    #     y = self.dropout(y)
-    #     if self.residual:
-    #         y += x
-    #     return y
-
 
 def he_init(shape):
     fan_in = shape[-2] if len(shape) >= 2 else shape[-1]
@@ -938,3 +822,62 @@ class ValueDecoder(nn.Module):
         y = y / y.sum(dim=1, keepdim=True)
         # y = nn.functional.softmax(y, dim=1)
         return y
+
+
+def compute_order_features():
+    """Returns a [13k x D] tensor where each row contains (one-hot) features for one order in the vocabulary.
+    """
+
+    order_vocabulary = get_order_vocabulary()
+    # assert order_vocabulary[0] == EOS_TOKEN
+    # order_vocabulary = order_vocabulary[1:]  # we'll fix this up at the end
+    order_split = [o.split() for o in order_vocabulary]
+
+    # fixup strange stuff in the dataset
+    for s in order_split:
+        # fixup "A SIL S A PRU"
+        if len(s) == 5 and s[2] == "S":
+            s.append("H")
+        # fixup "A SMY - ROM VIA"
+        if len(s) == 5 and s[-1] == "VIA":
+            s.pop()
+
+    loc_idx = {loc: i for i, loc in enumerate(LOCS)}
+    unit_idx = {"A": 0, "F": 1}
+    order_type_idx = {
+        t: i for i, t in enumerate(sorted(list(set([s[2] for s in order_split if len(s) > 2]))))
+    }
+
+    num_locs = len(loc_idx)
+    feats = []
+    srcs, dsts = [], []
+    for o in order_split:
+        u = o[3:] if len(o) >= 6 else o
+        srcT = torch.zeros(num_locs)
+        dstT = torch.zeros(num_locs)
+        unitT = torch.zeros(len(unit_idx))
+        orderT = torch.zeros(len(order_type_idx))
+        underlyingT = torch.zeros(len(order_type_idx))
+
+        if not o[2].startswith("B"):  # lets ignore the concatenated builds, they're tricky
+            src_loc = loc_idx[u[1]]
+            dst_loc = loc_idx[u[3]] if len(u) >= 4 else loc_idx[u[1]]
+            srcT[src_loc] = 1
+            dstT[dst_loc] = 1
+            unitT[
+                unit_idx[o[0]]
+            ] = 1  # FIXME: this is wrong! should be u[0]. But too late for backwards compatibility
+            orderT[order_type_idx[o[2]]] = 1
+            underlyingT[order_type_idx[u[2]]] = 1
+            srcs.append(src_loc)
+            dsts.append(dst_loc)
+        else:
+            srcs.append(-1)
+            dsts.append(-1)
+
+        feats.append(torch.cat((srcT, dstT, unitT, orderT, underlyingT), dim=-1))
+
+    feats = torch.stack(feats, dim=0)
+    # FIXME: this could be done better
+
+    return feats, torch.tensor(srcs, dtype=torch.long), torch.tensor(dsts, dtype=torch.long)
