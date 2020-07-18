@@ -1,4 +1,5 @@
 import requests
+import os
 import argparse
 import time
 import json
@@ -244,7 +245,7 @@ def play_webdip(
         try:
             agent_orders = agent.get_orders(game, power)
         except:
-            tmp_path = "game_exception.%s.json" % next_game["gameID"]
+            tmp_path = os.path.abspath("game_exception.%s.json" % next_game["gameID"])
             logging.error(
                 f"Got exception while trying to get actions for {power}."
                 f" Saving game to {tmp_path}"
