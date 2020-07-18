@@ -64,7 +64,7 @@ class Game(diplomacy.Game):
         }
         game = Game(**kwargs)
 
-        clone_phases = other.get_phase_history()
+        clone_phases = other.get_phase_history() + [other.get_phase_data()]
         if up_to_phase is not None:
             up_to_phase_key = sort_phase_key(up_to_phase)
             clone_phases = [p for p in clone_phases if sort_phase_key(p.name) <= up_to_phase_key]
