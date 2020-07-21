@@ -88,6 +88,13 @@ def build_db_cache(cfg):
 
 
 @_register
+def build_press_db_cache(cfg):
+    from press_diplomacy.data.dataset import build_press_db_cache_from_cfg
+
+    build_press_db_cache_from_cfg(cfg)
+
+
+@_register
 def situation_check(cfg):
 
     agent = build_agent_from_cfg(cfg.agent)

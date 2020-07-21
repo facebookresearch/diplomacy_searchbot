@@ -448,37 +448,7 @@ def run_with_cfg(args):
     else:
         assert args.metadata_path is not None
         assert args.data_dir is not None
-        with open(args.metadata_path) as meta_f:
-            game_metadata = json.load(meta_f)
-
-        # convert to int game keys
-        game_metadata = {int(k): v for k, v in game_metadata.items()}
-        game_ids = list(game_metadata.keys())
-
-        # compute min rating
-        if args.min_rating_percentile > 0:
-            ratings = torch.tensor(
-                [
-                    game[pwr]["logit_rating"]
-                    for game in game_metadata.values()
-                    for pwr in POWERS
-                    if pwr in game
-                ]
-            )
-            min_rating = ratings.sort()[0][int(len(ratings) * args.min_rating_percentile)]
-            print(
-                f"Only training on games with min rating of {min_rating} ({args.min_rating_percentile * 100} percentile)"
-            )
-        else:
-            min_rating = -1e9
-
-        if args.max_games > 0:
-            game_ids = game_ids[: args.max_games]
-
-        assert len(game_ids) > 0
-        logger.info(f"Found dataset of {len(game_ids)} games...")
-        val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * args.val_set_pct)))
-        train_game_ids = list(set(game_ids) - set(val_game_ids))
+        game_metadata, min_rating, train_game_ids, val_game_ids = get_db_cache_args(args)
 
         train_dataset = Dataset(
             game_ids=train_game_ids,
@@ -519,3 +489,35 @@ def run_with_cfg(args):
         torch.multiprocessing.spawn(
             main_subproc, nprocs=n_gpus, args=(n_gpus, args, train_dataset, val_dataset)
         )
+
+
+def get_db_cache_args(args):
+    with open(args.metadata_path) as meta_f:
+        game_metadata = json.load(meta_f)
+    # convert to int game keys
+    game_metadata = {int(k): v for k, v in game_metadata.items()}
+    game_ids = list(game_metadata.keys())
+    # compute min rating
+    if args.min_rating_percentile > 0:
+        ratings = torch.tensor(
+            [
+                game[pwr]["logit_rating"]
+                for game in game_metadata.values()
+                for pwr in POWERS
+                if pwr in game
+            ]
+        )
+        min_rating = ratings.sort()[0][int(len(ratings) * args.min_rating_percentile)]
+        print(
+            f"Only training on games with min rating of {min_rating} ({args.min_rating_percentile * 100} percentile)"
+        )
+    else:
+        min_rating = -1e9
+    if args.max_games > 0:
+        game_ids = game_ids[: args.max_games]
+    assert len(game_ids) > 0
+    logger.info(f"Found dataset of {len(game_ids)} games...")
+    val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * args.val_set_pct)))
+    train_game_ids = list(set(game_ids) - set(val_game_ids))
+
+    return game_metadata, min_rating, train_game_ids, val_game_ids

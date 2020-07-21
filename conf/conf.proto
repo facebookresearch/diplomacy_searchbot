@@ -366,7 +366,7 @@ message TrainTask {
   // Path to load/save the model.
   optional string checkpoint = 8;
 
-  // Lercentage of games to use as val set.
+  // Percentage of games to use as val set.
   optional float val_set_pct = 9;
 
   // Prob[teacher forcing] during training.
@@ -666,6 +666,57 @@ message BuildDbCacheTask {
   optional int32 n_parallel_jobs = 6 [ default = -1 ];
 }
 
+message BuildPressDbCacheTask {
+
+  // Required. Path to save db cache
+  optional string out_path = 1;
+
+  // Minimal score (num SC) of the at the end of the game needed to include the
+  // power into the training set.
+  optional uint32 only_with_min_final_score = 2 [ default = 7 ];
+
+  // Optional. If specified, use this agent's orders instead of the orders in
+  // the game.json
+  optional Agent cf_agent = 3;
+
+  // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
+  // times, saving each as a separate row in the db.
+  optional uint32 n_cf_agent_samples = 4 [ default = 1 ];
+
+  // Optional, # of parallel encoding processes. Default = #cpu
+  optional int32 n_parallel_jobs = 5 [ default = -1 ];
+
+  optional string parlai_agent_file = 6;
+
+  // Path to dir containing game.json files.
+  optional string data_dir = 7;
+
+  // Path to dir containing dataset cache.
+  optional string data_cache = 8;
+
+  // Dataloader procs (1 means load in the main process).
+  optional int32 num_dataloader_workers = 9;
+
+  // Path to file containing game metadata.
+  optional string metadata_path = 10;
+
+  // Max gamesto include in dataset (for testing only)
+  optional int32 max_games = 11 [default = -1];
+
+  // cut this percentile of games based on player rating
+  // (only for dataset with player ratings)
+  optional float min_rating_percentile = 12 [default = 0];
+
+  // exclude actions with >=n units, all holds, from the dataset
+  optional int32 exclude_n_holds = 13 [default = -1];
+
+  // Factor used in exponential weighted average of sum of squares scores
+  optional float value_decay_alpha = 14 [ default = 1.0 ];
+
+  // Percentage of games to use as val set.
+  optional float val_set_pct = 15;
+}
+
 // Root config to compare agents.
 message SituationCheckTask {
   optional Agent agent = 1;
@@ -723,6 +774,7 @@ message MetaCfg {
     SituationCheckTask situation_check = 106;
     BenchmarkAgent benchmark_agent = 107;
     PlayWebdipTask play_webdip = 108;
+    BuildPressDbCacheTask build_press_db_cache = 109;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }
