@@ -110,11 +110,6 @@ const std::vector<Loc> LOCS{
     Loc::BUD,    Loc::SER,    Loc::ANK,   Loc::SMY, Loc::SYR,    Loc::BUL,
     Loc::BUL_EC, Loc::CON,    Loc::BUL_SC};
 
-const std::vector<Loc> ONLY_COAST_LOCS{
-    Loc::BUL_EC, Loc::BUL_SC, Loc::SPA_NC,
-    Loc::SPA_SC, Loc::STP_NC, Loc::STP_SC,
-};
-
 const std::vector<std::string> LOC_STRS{
     "NONE",   "YOR", "EDI",    "LON", "LVP", "NTH", "WAL", "CLY",    "NWG",
     "ENG",    "IRI", "NAO",    "BEL", "DEN", "HEL", "HOL", "NWY",    "SKA",

@@ -118,9 +118,14 @@ unordered_map<string, vector<string>> Game::py_get_all_possible_orders() {
 
   for (const auto &p : all_possible_orders) {
     std::string loc = loc_str(p.first);
+    std::string rloc = loc_str(root_loc(p.first));
     r[loc].reserve(p.second.size());
+    r[rloc].reserve(p.second.size());
     for (const Order &order : p.second) {
       r[loc].push_back(order.to_string());
+      if (loc != rloc) {
+        r[rloc].push_back(order.to_string());
+      }
     }
   }
   return r;

@@ -8,18 +8,9 @@ from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.data.dataset import get_valid_orders_impl, encode_state, DataFields
 from fairdiplomacy.models.consts import SEASONS, POWERS
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
-from fairdiplomacy.models.dipnet.order_vocabulary import (
-    get_order_vocabulary,
-    get_order_vocabulary_idxs_len,
-    EOS_IDX,
-)
-import pydipcc
+from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
 
 ORDER_VOCABULARY = get_order_vocabulary()
-ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(get_order_vocabulary())}
-VALID_ORDERS_ENCODER = pydipcc.ValidOrdersEncoder(
-    ORDER_VOCABULARY_TO_IDX, get_order_vocabulary_idxs_len()
-)
 
 
 class DipnetAgent(BaseAgent):
@@ -147,13 +138,9 @@ def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_loc
     if all_orderable_locations is None:
         all_orderable_locations = game.get_orderable_locations()
 
-    if type(game) == pydipcc.Game:
-        order_idxs, loc_idxs, n = VALID_ORDERS_ENCODER.encode_valid_orders_from_game(power, game)
-        return torch.from_numpy(order_idxs), torch.from_numpy(loc_idxs), n
-    else:
-        return get_valid_orders_impl(
-            power, all_possible_orders, all_orderable_locations, game.get_state()
-        )
+    return get_valid_orders_impl(
+        power, all_possible_orders, all_orderable_locations, game.get_state()
+    )
 
 
 DEFAULT_INPUTS = encode_inputs(Game())

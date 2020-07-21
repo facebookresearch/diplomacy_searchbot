@@ -100,8 +100,6 @@ extern const std::vector<std::string> LOC_STRS;
 
 extern const std::unordered_map<std::string, Loc> LOC_FROM_STR;
 
-extern const std::vector<Loc> ONLY_COAST_LOCS;
-
 // Return true if loc is open water
 bool is_water(Loc);
 

@@ -28,8 +28,7 @@ Unit::Unit(const std::string &s) {
 }
 
 std::string Unit::to_string() const {
-  JCHECK(this->type != UnitType::NONE,
-         "Called NONE Unit to_string, Loc=" + loc_str(this->loc));
+  JCHECK(this->type != UnitType::NONE, "Called NONE Unit to_string");
   JCHECK(this->loc != Loc::NONE, "Called NONE Unit to_string");
 
   std::string s;

@@ -497,7 +497,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
             for x in product(*c)
         ]
         order_idxs = torch.tensor([ORDER_VOCABULARY_TO_IDX[x] for x in orders], dtype=torch.int32)
-        all_order_idxs[0, :1, : len(order_idxs)] = order_idxs.sort().values.unsqueeze(0)
+        all_order_idxs[0, :1, : len(order_idxs)] = order_idxs.unsqueeze(0)
         loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_builds
 

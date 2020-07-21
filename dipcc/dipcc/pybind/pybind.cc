@@ -3,13 +3,11 @@
 
 #include "../cc/game.h"
 #include "encoding.h"
-#include "valid_orders_encoder.h"
 
 namespace py = pybind11;
 using namespace dipcc;
 
 PYBIND11_MODULE(pydipcc, m) {
-  // class Game
   py::class_<Game>(m, "Game")
       .def(py::init<>())
       .def("process", &Game::process)
@@ -28,14 +26,12 @@ PYBIND11_MODULE(pydipcc, m) {
       .def_property_readonly("current_short_phase", &Game::get_phase_short)
       .def_readwrite("game_id", &Game::game_id);
 
-  // class PhaseData
   py::class_<PhaseData>(m, "PhaseData")
       .def_property_readonly("name", &PhaseData::get_name)
       .def_property_readonly("state", &PhaseData::py_get_state)
       .def_property_readonly("orders", &PhaseData::py_get_orders)
       .def("to_dict", &PhaseData::to_dict);
 
-  // encoding functions
   m.def("encode_board_state", &encode_board_state,
         py::return_value_policy::move);
   m.def("encode_board_state_from_json", &encode_board_state_from_json,
@@ -44,11 +40,4 @@ PYBIND11_MODULE(pydipcc, m) {
         py::return_value_policy::move);
   m.def("encode_prev_orders", &encode_prev_orders,
         py::return_value_policy::move);
-
-  // class ValidOrdersEncoder
-  py::class_<ValidOrdersEncoder>(m, "ValidOrdersEncoder")
-      .def(py::init<std::unordered_map<std::string, int>, int>())
-      .def("encode_valid_orders_from_game",
-           &ValidOrdersEncoder::encode_valid_orders_from_game,
-           py::return_value_policy::move);
 }
