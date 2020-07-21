@@ -82,7 +82,16 @@ py::dict py_state_to_dict(GameState &state) {
   }
   if (state.get_phase().phase_type == 'R') {
     for (auto &p : all_possible_orders) {
+      if (p.second.size() == 0) {
+        LOG(WARNING) << "Skipping code that probably would have bugged. Please "
+                        "tell jgray you saw this.";
+        continue;
+      }
       OwnedUnit unit = state.get_unit_rooted(p.first);
+      if (unit.type == UnitType::NONE) {
+        LOG(WARNING) << "UnitType::NONE in py_state_to_dict retreats: "
+                     << p.first;
+      }
       auto key = py::cast<std::string>(unit.unowned().to_string());
       py::list retreats;
       for (auto &order : p.second) {
@@ -102,11 +111,19 @@ py::dict py_state_to_dict(GameState &state) {
   }
   for (auto &p : state.get_units()) {
     OwnedUnit unit = p.second;
+    if (unit.type == UnitType::NONE) {
+      LOG(WARNING) << "UnitType::NONE in py_state_to_dict units, loc="
+                   << (unit.loc == Loc::NONE ? "NONE" : loc_str(unit.loc));
+    }
     static_cast<py::list>(
         d["units"][py::cast<std::string>(power_str(unit.power))])
         .append(unit.unowned().to_string());
   }
   for (OwnedUnit unit : state.get_dislodged_units()) {
+    if (unit.type == UnitType::NONE) {
+      LOG(WARNING) << "UnitType::NONE in py_state_to_dict dislodged_units, loc="
+                   << (unit.loc == Loc::NONE ? "NONE" : loc_str(unit.loc));
+    }
     static_cast<py::list>(
         d["units"][py::cast<std::string>(power_str(unit.power))])
         .append("*" + unit.unowned().to_string());
