@@ -636,10 +636,13 @@ json GameState::to_json() {
         std::map<string, string>(); // init with arbitrary empty map
   }
   if (this->get_phase().phase_type == 'R') {
-    for (auto &p : all_possible_orders) {
-      OwnedUnit unit = this->get_unit_rooted(p.first);
+    for (OwnedUnit &unit : this->get_dislodged_units()) {
       auto key = unit.unowned().to_string();
-      for (auto &order : p.second) {
+      auto orders_it = all_possible_orders.find(unit.loc);
+      JCHECK(orders_it != all_possible_orders.end(),
+             "Dislodged unit has no retreat orders in to_json: " +
+                 loc_str(unit.loc));
+      for (auto &order : orders_it->second) {
         if (order.get_type() == OrderType::R) {
           j["retreats"][power_str(unit.power)][key].push_back(
               loc_str(order.get_dest()));
