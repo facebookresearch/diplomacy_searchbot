@@ -15,5 +15,5 @@ def register_all_agents():
 
 
 def register_all_tasks():
-    # ist all tasks here
+    # list all tasks here
     import parlai_diplomacy.tasks.language_diplomacy.agents  # noqa: F401
