@@ -58,6 +58,8 @@ def resample_duplicate_disbands_inplace(
     """
     # Resample all multiple disbands. Since builds are a 1-step decode, any 2+
     # step adj-phase is a disband.
+    if sampled_idxs.shape[2] < 2:
+        return
     mask = (sampled_idxs[:, :, 1] != -1) & x_in_adj_phase.bool().unsqueeze(1)
     if not mask.any():
         return
