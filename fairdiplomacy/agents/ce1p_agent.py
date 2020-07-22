@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import List, Tuple, Dict
 
 from fairdiplomacy.game import Game
-from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
+from fairdiplomacy.agents.multiproc_search_agent import MultiprocSearchAgent
 from fairdiplomacy.models.consts import POWERS
 
 
@@ -12,7 +12,7 @@ Action = Tuple[str]  # a set of orders
 Power = str
 
 
-class CE1PAgent(BaseSearchAgent):
+class CE1PAgent(MultiprocSearchAgent):
     """One-ply correlated equilibrium cfr with dipnet-policy rollouts"""
 
     def __init__(

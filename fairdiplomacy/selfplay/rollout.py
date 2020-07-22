@@ -15,13 +15,13 @@ import torch
 
 import postman
 
-from fairdiplomacy.agents.base_search_agent import run_server, cat_pad_inputs
 from fairdiplomacy.agents.dipnet_agent import (
     encode_inputs,
     encode_state,
     decode_order_idxs,
     resample_duplicate_disbands_inplace,
 )
+from fairdiplomacy.agents.multiproc_search_agent import run_server, cat_pad_inputs
 from fairdiplomacy.game import Game
 from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS, N_SCS
@@ -316,7 +316,7 @@ def yield_rollouts(
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
-                batch_inputs, _ = cat_pad_inputs(xs)
+                batch_inputs = cat_pad_inputs(xs)
 
             with timings("model"):
                 if mode != RolloutMode.SELFPLAY:

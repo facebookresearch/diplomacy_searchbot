@@ -269,4 +269,15 @@ void Game::rollback_to_phase(const std::string &phase_s) {
   }
 }
 
+GameState *Game::get_last_movement_phase() {
+  for (auto it = state_history_.rbegin(); it != state_history_.rend(); ++it) {
+    if (it->first.phase_type == 'M') {
+      return &state_history_[it->first];
+    }
+  }
+
+  // no previous move phases
+  return nullptr;
+}
+
 } // namespace dipcc

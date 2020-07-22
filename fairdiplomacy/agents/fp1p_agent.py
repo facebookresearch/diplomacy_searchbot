@@ -5,7 +5,7 @@ import torch
 from collections import defaultdict, OrderedDict
 from typing import List, Tuple, Dict, Set
 
-from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
+from fairdiplomacy.agents.multiproc_search_agent import MultiprocSearchAgent
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.sampling import sample_p_dict
@@ -17,7 +17,7 @@ Policy = List[Tuple[Action, float]]
 JointPolicy = Dict[Power, Policy]
 
 
-class FP1PAgent(BaseSearchAgent):
+class FP1PAgent(MultiprocSearchAgent):
     """One-ply fictitious play with dipnet-policy rollouts"""
 
     def __init__(

@@ -3,14 +3,25 @@ import torch
 import numpy as np
 from typing import List
 
-from fairdiplomacy.game import Game, sort_phase_key
+from fairdiplomacy.game import sort_phase_key
 from fairdiplomacy.agents.base_agent import BaseAgent
-from fairdiplomacy.data.dataset import get_valid_orders_impl, encode_state, DataFields
-from fairdiplomacy.models.consts import SEASONS, POWERS
+from fairdiplomacy.data.dataset import (
+    get_valid_orders_impl,
+    encode_state,
+    DataFields,
+    MAX_VALID_LEN,
+)
+from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN
 from fairdiplomacy.models.dipnet.load_model import load_dipnet_model
-from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
+from fairdiplomacy.models.dipnet.order_vocabulary import (
+    get_order_vocabulary,
+    get_order_vocabulary_idxs_len,
+    EOS_IDX,
+)
+import pydipcc
 
 ORDER_VOCABULARY = get_order_vocabulary()
+ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(get_order_vocabulary())}
 
 
 class DipnetAgent(BaseAgent):
@@ -19,6 +30,9 @@ class DipnetAgent(BaseAgent):
         self.temperature = temperature
         self.device = device
         self.top_p = top_p
+        self.thread_pool = pydipcc.ThreadPool(
+            1, ORDER_VOCABULARY_TO_IDX, get_order_vocabulary_idxs_len()
+        )
 
     def get_orders(self, game, power, *, temperature=None, top_p=None):
         if len(game.get_orderable_locations().get(power, [])) == 0:
@@ -26,7 +40,7 @@ class DipnetAgent(BaseAgent):
 
         temperature = temperature if temperature is not None else self.temperature
         top_p = top_p if top_p is not None else self.top_p
-        inputs = encode_inputs(game)
+        inputs = encode_batch_inputs(self.thread_pool, [game])
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
@@ -115,6 +129,105 @@ def resample_duplicate_disbands_inplace(
     logits[mask] = logits[mask][:, 0].unsqueeze(1)
 
 
+def encode_batch_inputs(thread_pool, games) -> DataFields:
+    B = len(games)
+
+    batch = DataFields(
+        x_board_state=np.empty((B, 81, 35), dtype=np.float32),
+        x_prev_state=np.empty((B, 81, 35), dtype=np.float32),
+        x_prev_orders=np.empty((B, 2, 100), dtype=np.long),
+        x_season=np.empty((B, 3), dtype=np.float32),
+        x_in_adj_phase=np.empty((B, 1), dtype=np.float32),
+        x_build_numbers=np.empty((B, 7), dtype=np.float32),
+        x_loc_idxs=np.empty((B, 7, 81), dtype=np.int8),
+        x_possible_actions=np.empty((B, 7, MAX_SEQ_LEN, MAX_VALID_LEN), dtype=np.int32),
+        x_max_seq_len=np.empty((B, 1), dtype=np.int32),
+    )
+
+    inputs = [
+        [batch[key][b] for b in range(B)]
+        for key in [
+            "x_board_state",
+            "x_prev_state",
+            "x_prev_orders",
+            "x_season",
+            "x_in_adj_phase",
+            "x_build_numbers",
+            "x_loc_idxs",
+            "x_possible_actions",
+            "x_max_seq_len",
+        ]
+    ]
+
+    thread_pool.encode_inputs_multi(games, *inputs)
+
+    # FIXME: just remove x_max_seq_len entirely
+    del batch["x_max_seq_len"]
+    batch["x_in_adj_phase"] = batch["x_in_adj_phase"].squeeze(1)
+    for k, v in batch.items():
+        if type(v) == np.ndarray:
+            batch[k] = torch.from_numpy(v)
+
+    return batch
+
+
+# TODO: deprecated, migrate callers to encode_batch_inputs
+def encode_inputs_multi(thread_pool, games) -> List[DataFields]:
+    all_data_fields = []
+    for game in games:
+        x_board_state = np.empty((1, 81, 35), dtype=np.float32)
+        x_prev_state = np.empty((1, 81, 35), dtype=np.float32)
+        x_prev_orders = np.empty((1, 2, 100), dtype=np.long)
+        x_season = np.empty((1, 3), dtype=np.float32)
+        x_in_adj_phase = np.empty((1,), dtype=np.float32)
+        x_build_numbers = np.empty((1, 7), dtype=np.float32)
+        x_loc_idxs = np.empty((1, 7, 81), dtype=np.int8)
+        x_possible_actions = np.empty((1, 7, MAX_SEQ_LEN, MAX_VALID_LEN), dtype=np.int32)
+        x_max_seq_len = np.empty((1,), dtype=np.int32)
+
+        all_data_fields.append(
+            DataFields(
+                x_board_state=x_board_state,
+                x_prev_state=x_prev_state,
+                x_prev_orders=x_prev_orders,
+                x_season=x_season,
+                x_in_adj_phase=x_in_adj_phase,
+                x_build_numbers=x_build_numbers,
+                x_loc_idxs=x_loc_idxs,
+                x_possible_actions=x_possible_actions,
+                x_max_seq_len=x_max_seq_len,
+            )
+        )
+
+    thread_pool.encode_inputs_multi(
+        games,
+        *[
+            [x[key] for x in all_data_fields]
+            for key in [
+                "x_board_state",
+                "x_prev_state",
+                "x_prev_orders",
+                "x_season",
+                "x_in_adj_phase",
+                "x_build_numbers",
+                "x_loc_idxs",
+                "x_possible_actions",
+                "x_max_seq_len",
+            ]
+        ],
+    )
+
+    for d in all_data_fields:
+        # d["x_possible_actions"] = d["x_possible_actions"][:, :, : d["x_max_seq_len"][0], :]
+        del d["x_max_seq_len"]
+        for k, v in d.items():
+            if type(v) == np.ndarray:
+                d[k] = torch.from_numpy(v)
+
+    return all_data_fields
+
+
+# TODO: deprecated, migrate callers to encode_batch_inputs
 def encode_inputs(game, *, all_possible_orders=None, game_state=None):
     """Return a 6-tuple of tensors
 
@@ -165,21 +278,11 @@ def get_valid_orders(game, power, *, all_possible_orders=None, all_orderable_loc
     )
 
 
-DEFAULT_INPUTS = encode_inputs(Game())
-
-
-def zero_inputs():
-    """Return empty input encodings"""
-    r = {k: torch.zeros_like(v) for k, v in DEFAULT_INPUTS.items()}
-    r["x_loc_idxs"].fill_(-1)
-    return r
-
-
 if __name__ == "__main__":
-    game = Game()
+    game = pydipcc.Game()
     print(
         DipnetAgent(
             model_path="/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best",
             temperature=1.0,
-        ).get_orders(game, "AUSTRIA")
+        ).get_orders(game, "RUSSIA")
     )

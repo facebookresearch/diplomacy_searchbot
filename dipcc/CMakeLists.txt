@@ -23,19 +23,19 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -pg")
 # Compile dipcc
 file(GLOB SOURCES "dipcc/cc/*.cc")
 add_library(dipcc ${SOURCES})
-target_link_libraries(dipcc glog)
+target_link_libraries(dipcc glog pthread)
 
 # Compile pybind
 file(GLOB PY_SOURCES "dipcc/pybind/*.cc")
 pybind11_add_module(pydipcc ${PY_SOURCES} ${SOURCES})
 set_target_properties(pydipcc PROPERTIES LIBRARY_OUTPUT_DIRECTORY "dipcc/python/")
-target_link_libraries(pydipcc PRIVATE glog)
+target_link_libraries(pydipcc PRIVATE glog pthread)
 
 # Compile profiling
 IF(CMAKE_BUILD_TYPE MATCHES RELEASE)
     file(GLOB PROFILE_SRC "dipcc/profiling/*.cc")
     add_executable(profile_dipcc ${PROFILE_SRC} ${SOURCES})
-    target_link_libraries(profile_dipcc dipcc glog)
+    target_link_libraries(profile_dipcc dipcc glog pthread)
 ENDIF(CMAKE_BUILD_TYPE MATCHES RELEASE)
 
 # Compile tests

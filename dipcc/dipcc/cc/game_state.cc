@@ -748,4 +748,38 @@ void GameState::debug_log_all_possible_orders() {
   }
 }
 
+std::vector<float> GameState::get_square_scores() const {
+  std::vector<float> scores(7, 0);
+
+  // get SC counts
+  for (auto &p : centers_) {
+    scores[static_cast<size_t>(p.second) - 1] += 1;
+  }
+
+  // check for winner
+  for (int i = 0; i < 7; ++i) {
+    if (scores[i] > 17.5) {
+      // there is a winner, return 1-hot
+      for (int j = 0; j < 7; ++j) {
+        scores[j] = i == j ? 1 : 0;
+      }
+      return scores;
+    }
+  }
+
+  // no winner: square scores
+  float sumsq = 0;
+  for (int i = 0; i < 7; ++i) {
+    scores[i] = scores[i] * scores[i];
+    sumsq += scores[i];
+  }
+
+  // divide by sumsq
+  for (int i = 0; i < 7; ++i) {
+    scores[i] /= sumsq;
+  }
+
+  return scores;
+};
+
 } // namespace dipcc

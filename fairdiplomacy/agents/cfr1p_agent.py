@@ -5,8 +5,9 @@ import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
 import random
-import postman
-from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
+
+import pydipcc
+from fairdiplomacy.agents.threaded_search_agent import ThreadedSearchAgent
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.selfplay.metrics import MultiStopWatchTimer
 from fairdiplomacy.utils.sampling import sample_p_dict
@@ -16,7 +17,7 @@ Action = Tuple[str]  # a set of orders
 Power = str
 
 
-class CFR1PAgent(BaseSearchAgent):
+class CFR1PAgent(ThreadedSearchAgent):
     """One-ply cfr with dipnet-policy rollouts"""
 
     def __init__(
@@ -26,7 +27,6 @@ class CFR1PAgent(BaseSearchAgent):
         cache_rollout_results=False,
         enable_compute_nash_conv=False,
         n_plausible_orders,
-        postman_sync_batches=False,
         use_optimistic_cfr=True,
         use_final_iter=True,
         use_pruning=False,
@@ -42,25 +42,12 @@ class CFR1PAgent(BaseSearchAgent):
         loser_bp_iter=64,
         **kwargs,
     ):
-        super().__init__(
-            **kwargs,
-            n_rollout_procs=(
-                n_plausible_orders * len(POWERS) if postman_sync_batches else n_rollout_procs
-            ),
-            max_batch_size=(
-                n_plausible_orders * len(POWERS) if postman_sync_batches else max_batch_size
-            ),
-            postman_wait_till_full=postman_sync_batches,
-        )
-
-        if postman_sync_batches:
-            assert n_rollout_procs >= n_plausible_orders * len(POWERS)
+        super().__init__(**kwargs, n_rollout_procs=n_rollout_procs, max_batch_size=max_batch_size)
 
         self.n_rollouts = n_rollouts
         self.cache_rollout_results = cache_rollout_results
         self.enable_compute_nash_conv = enable_compute_nash_conv
         self.n_plausible_orders = n_plausible_orders
-        self.postman_sync_batches = postman_sync_batches
         self.use_optimistic_cfr = use_optimistic_cfr
         self.use_final_iter = use_final_iter
         self.use_pruning = use_pruning
@@ -108,9 +95,6 @@ class CFR1PAgent(BaseSearchAgent):
         if self.cache_rollout_results:
             rollout_results_cache = RolloutResultsCache()
 
-        if self.postman_sync_batches:
-            self.client.set_batch_size(torch.LongTensor([self.plausible_orders_req_size]))
-
         # Determine the set of plausible actions to consider for each power
         power_n_units = [num_orderable_units(game_state, p) for p in POWERS]
         power_plausible_orders = self.get_plausible_orders(
@@ -129,13 +113,6 @@ class CFR1PAgent(BaseSearchAgent):
             p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()
         }
 
-        logging.debug(f"{phase} power_plausible_orders: {power_plausible_orders}")
-
-        if self.postman_sync_batches:
-            self.client.set_batch_size(
-                torch.LongTensor([sum(map(len, power_plausible_orders.values()))])
-            )
-
         if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 0:
             return {early_exit_for_power: {tuple(): 1.0}}
         if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 1:
@@ -144,12 +121,6 @@ class CFR1PAgent(BaseSearchAgent):
                     tuple(list(power_plausible_orders[early_exit_for_power]).pop()): 1.0
                 }
             }
-
-        if self.reset_seed_on_rollout:
-            assert self.n_server_procs == 1
-            client = postman.Client(self.hostports[0])
-            client.connect(3)
-            client.set_seed(torch.zeros(1, dtype=torch.long) + random.randint(0, 1000000000))
 
         timing_logger = logging.getLogger("timing")
         timings = MultiStopWatchTimer()
@@ -266,14 +237,14 @@ class CFR1PAgent(BaseSearchAgent):
 
             # run rollouts or get from cache
             def on_miss():
-                return self.distribute_rollouts(
+                return self.do_rollouts(
                     game,
                     set_orders_dicts,
                     average_n_rollouts=self.average_n_rollouts,
                     log_timings=verbose_log_iter,
                 )
 
-            timings.start("distribute_rollouts")
+            timings.start("rollouts")
             all_rollout_results = (
                 rollout_results_cache.get(set_orders_dicts, on_miss)
                 if self.cache_rollout_results
@@ -451,7 +422,7 @@ class CFR1PAgent(BaseSearchAgent):
                 for pwr, actions in power_plausible_orders.items()
                 for action in actions
             ]
-            all_rollout_results = self.distribute_rollouts(
+            all_rollout_results = self.do_rollouts(
                 game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
             )
 
@@ -562,23 +533,22 @@ def num_orderable_units(game_state, power):
 
 
 if __name__ == "__main__":
-    from fairdiplomacy.game import Game
-
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
     np.random.seed(0)
     torch.manual_seed(0)
 
+    game = pydipcc.Game()
+
     agent = CFR1PAgent(
         n_rollouts=10,
         max_rollout_length=3,
         model_path="/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best",
-        postman_sync_batches=False,
         rollout_temperature=0.5,
         n_rollout_procs=24 * 7,
         rollout_top_p=0.9,
         mix_square_ratio_scoring=0.1,
-        n_plausible_orders=24,
-        average_n_rollouts=1,
+        n_plausible_orders=8,
+        average_n_rollouts=3,
     )
-    print(agent.get_orders(Game(), "AUSTRIA"))
+    print(agent.get_orders(game, "AUSTRIA"))

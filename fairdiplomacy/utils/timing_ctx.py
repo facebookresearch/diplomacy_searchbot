@@ -57,7 +57,7 @@ class TimingCtx:
             n = sum(t.ns[k] for t in timings) / len(timings)
             data.append((t_mean, t_max, k, n))
 
-        log_fn(f"TimingCtx summary of {len(timings)} timings:")
+        log_fn(f"TimingCtx summary of {len(timings)} timings (mean/max shown over this group):")
         ind_log_fn = lambda x: log_fn("  " + x)
         ind_log_fn(
             "{:^24}|{:^8}|{:^18}|{:^18}".format("Key", "N_mean", "t_mean (ms)", "t_max (ms)")
@@ -71,6 +71,27 @@ class TimingCtx:
 
         sum_t_mean = sum(t_mean for t_mean, _, _, _ in data)
         ind_log_fn("{:^24}|{:^8}|{:^18.1f}|{:^18}".format("Total", "", sum_t_mean * 1e3, ""))
+
+    def pprint(self, log_fn):
+        data = []
+        for k in self.timings.keys():
+            n = self.ns[k]
+            t_total = self.timings[k]
+            t_mean = t_total / n
+            data.append((t_total, t_mean, k, n))
+
+        log_fn(f"TimingCtx summary:")
+        ind_log_fn = lambda x: log_fn("  " + x)
+        ind_log_fn("{:^24}|{:^8}|{:^18}|{:^18}".format("Key", "N", "t_total (ms)", "t_mean (ms)"))
+        ind_log_fn("-" * (24 + 8 + 18 + 18))
+        for t_total, t_mean, k, n in sorted(data, reverse=True):
+            ind_log_fn(
+                "{:^24}|{:^8.1f}|{:^18.1f}|{:^18.1f}".format(k, n, t_total * 1e3, t_mean * 1e3)
+            )
+        ind_log_fn("-" * (24 + 8 + 18 + 18))
+
+        sum_t_total = sum(t_total for t_total, _, _, _ in data)
+        ind_log_fn("{:^24}|{:^8}|{:^18.1f}|{:^18}".format("Total", "", sum_t_total * 1e3, ""))
 
 
 class DummyCtx:

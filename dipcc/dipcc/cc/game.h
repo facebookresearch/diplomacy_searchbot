@@ -42,11 +42,23 @@ public:
 
   bool is_game_done() const;
 
+  GameState *get_last_movement_phase(); // can return nullptr
+
   std::string game_id;
 
   std::string to_json();
 
   void rollback_to_phase(const std::string &phase_s);
+
+  std::map<Phase, GameState> &get_state_history() { return state_history_; }
+  std::map<Phase, std::unordered_map<Power, std::vector<Order>>> &
+  get_order_history() {
+    return order_history_;
+  }
+
+  std::vector<float> get_square_scores() const {
+    return state_.get_square_scores();
+  }
 
   // python
 

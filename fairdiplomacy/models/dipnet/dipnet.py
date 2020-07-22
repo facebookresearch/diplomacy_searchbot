@@ -672,7 +672,7 @@ class LSTMDipNetDecoder(nn.Module):
             stacked_sampled_idxs = torch.stack(all_sampled_idxs, dim=1)
             stacked_logits = cat_pad_sequences(
                 [x.unsqueeze(1) for x in all_logits], seq_dim=2, cat_dim=1, pad_value=-1e8
-            )[0]
+            )
             r = stacked_order_idxs, stacked_sampled_idxs, stacked_logits
 
         logging.debug(f"Timings[dec, {enc.shape[0]}x{step}] {timings}")

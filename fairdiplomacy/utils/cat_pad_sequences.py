@@ -11,7 +11,6 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None, seq_dim=2, cat_dim=
     Returns:
     - the result of torch.cat(tensors, dim=cat_dim) where each sequence has been
       padded to pad_to_len or the largest S
-    - a list of S values for each tensor
     """
     seq_lens = [t.shape[seq_dim] for t in tensors]
     max_len = max(seq_lens) if pad_to_len is None else pad_to_len
@@ -34,4 +33,4 @@ def cat_pad_sequences(tensors, pad_value=0, pad_to_len=None, seq_dim=2, cat_dim=
         else t
         for t in tensors
     ]
-    return torch.cat(padded, dim=cat_dim), seq_lens
+    return torch.cat(padded, dim=cat_dim)

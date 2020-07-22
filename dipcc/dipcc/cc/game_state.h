@@ -51,6 +51,8 @@ public:
   void do_civil_disorder(Power power, int n);
   void maybe_skip_winter_or_finish();
 
+  std::vector<float> get_square_scores() const;
+
   GameState
   process(const std::unordered_map<Power, std::vector<Order>> &orders);
 
@@ -60,6 +62,7 @@ private:
   void load_all_possible_orders_m();
   void load_all_possible_orders_r();
   void load_all_possible_orders_a();
+  void copy_possible_orders_to_root_loc();
 
   GameState
   process_m(const std::unordered_map<Power, std::vector<Order>> &orders);

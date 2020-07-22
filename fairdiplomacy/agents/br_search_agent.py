@@ -2,10 +2,10 @@ import logging
 from collections import Counter
 from typing import List, Tuple, Dict
 
-from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
+from fairdiplomacy.agents.multiproc_search_agent import MultiprocSearchAgent
 
 
-class BRSearchAgent(BaseSearchAgent):
+class BRSearchAgent(MultiprocSearchAgent):
     """One-ply search with dipnet-policy rollouts
 
     ## Policy
