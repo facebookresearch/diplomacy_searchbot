@@ -11,8 +11,9 @@ Utils for loading agents and tasks, etc.
 
 def register_all_agents():
     # list all agents here
-    pass
+    import parlai_diplomacy.agents.special_tok_generator.agents  # noqa: F401
 
 
 def register_all_tasks():
+    # ist all tasks here
     import parlai_diplomacy.tasks.language_diplomacy.agents  # noqa: F401
