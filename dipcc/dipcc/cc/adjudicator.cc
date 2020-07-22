@@ -171,7 +171,7 @@ public:
       Loc dest_root = root_loc(order.get_dest());
       Loc src_root = root_loc(order.get_target().loc);
       map<Loc, LocCandidate> &dest_cands = cands_.at(dest_root);
-      LocCandidate &supportee = dest_cands.at(root_loc(src_root));
+      LocCandidate &supportee = dest_cands.at(src_root);
       supportee.max -= 1;
     } else {
       // support-hold
@@ -766,17 +766,20 @@ public:
     LocCandidate &a_dest_hold_cand = a_dest_cands.at(a_dest);
     LocCandidate &b_dest_hold_cand = b_dest_cands.at(b_dest);
 
-    // move h2h strength to hold candidates instead: these units will not
-    // swap,
+    // move h2h strength to hold candidates instead: these units will not swap,
     // but third party invaders must still beat these strengths to dislodge
     a_dest_hold_cand.min = a_min_pending_h2h;
     a_dest_hold_cand.max = a_min_pending_h2h;
     b_dest_hold_cand.min = b_min_pending_h2h;
     b_dest_hold_cand.max = b_min_pending_h2h;
 
-    // delete move cands
-    a_dest_cands.erase(b_dest);
-    b_dest_cands.erase(a_dest);
+    // zero/delete move cands
+    auto &move_cand_a = a_dest_cands.at(b_dest);
+    auto &move_cand_b = b_dest_cands.at(a_dest);
+    move_cand_a.min = 0;
+    move_cand_a.max = 0;
+    move_cand_b.min = 0;
+    move_cand_b.max = 0;
     move_reqs_.erase(a_dest);
     move_reqs_.erase(b_dest);
   }
