@@ -756,8 +756,8 @@ public:
   }
 
   void _resolve_h2h_bounce(LocCandidate &a, LocCandidate &b) {
-    int a_min_pending_h2h = a.min_pending_h2h;
-    int b_min_pending_h2h = b.min_pending_h2h;
+    int a_min_pending_h2h = a.min + a.min_pending_h2h;
+    int b_min_pending_h2h = b.min + b.min_pending_h2h;
 
     Loc a_dest = root_loc(a.dest);
     Loc b_dest = root_loc(b.dest);

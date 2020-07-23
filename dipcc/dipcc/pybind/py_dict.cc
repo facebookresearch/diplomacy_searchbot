@@ -134,7 +134,7 @@ py::dict Game::py_get_state() {
   if (this->get_state().get_phase().phase_type == 'R') {
     for (auto &p : this->get_state().get_all_possible_orders()) {
       if (this->get_state().get_unit_rooted(p.first).type == UnitType::NONE) {
-        LOG(WARNING) << "Found weird case, logging crash dump";
+        LOG(WARNING) << "Found weird case, logging crash dump: " << p.first;
         this->crash_dump();
       }
     }
