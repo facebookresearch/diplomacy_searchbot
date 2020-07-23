@@ -23,7 +23,7 @@ NOTEBOOK_ADDRESS = "localhost:8892"
 def save_pandas_table(dataframes, project_name, table_name, offset=0, start=10):
     """Saves/updates a sheet with the dataframe."""
     if pygsheets is None:
-        warnings.warn("Failed to import. save_pandas_table will do nothing")
+        warnings.warn("Failed to import 'pygsheets'. save_pandas_table will do nothing")
         return
     try:
         client = pygsheets.authorize()
