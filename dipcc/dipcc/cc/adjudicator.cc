@@ -537,7 +537,7 @@ public:
             _resolve_dislodge(r, loser_loc);
           }
         }
-      } else {
+      } else if (loser.second.max > 0) {
         // loser mover now tries to hold their former position if it is not
         // already resolved, otherwise they are dislodged
         if (map_contains(r.winners, loser_loc)) {
