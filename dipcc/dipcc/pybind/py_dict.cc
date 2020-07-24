@@ -1,7 +1,9 @@
 #include "py_dict.h"
+#include "../cc/checks.h"
 #include "../cc/game.h"
 #include "../cc/game_state.h"
 #include "../cc/power.h"
+#include <glog/logging.h>
 
 using namespace std;
 namespace py = pybind11;
@@ -81,11 +83,13 @@ py::dict py_state_to_dict(GameState &state) {
     d["retreats"][py::cast<std::string>(power_str(power))] = py::dict();
   }
   if (state.get_phase().phase_type == 'R') {
-    for (auto &p : all_possible_orders) {
-      OwnedUnit unit = state.get_unit_rooted(p.first);
+    for (OwnedUnit &unit : state.get_dislodged_units()) {
       auto key = py::cast<std::string>(unit.unowned().to_string());
       py::list retreats;
-      for (auto &order : p.second) {
+      auto orders_it = all_possible_orders.find(unit.loc);
+      JCHECK(orders_it != all_possible_orders.end(),
+             "Dislodged unit has no retreat orders: " + loc_str(unit.loc));
+      for (const Order &order : orders_it->second) {
         if (order.get_type() == OrderType::R) {
           retreats.append(loc_str(order.get_dest()));
         }
@@ -102,11 +106,19 @@ py::dict py_state_to_dict(GameState &state) {
   }
   for (auto &p : state.get_units()) {
     OwnedUnit unit = p.second;
+    if (unit.type == UnitType::NONE) {
+      LOG(WARNING) << "UnitType::NONE in py_state_to_dict units, loc="
+                   << (unit.loc == Loc::NONE ? "NONE" : loc_str(unit.loc));
+    }
     static_cast<py::list>(
         d["units"][py::cast<std::string>(power_str(unit.power))])
         .append(unit.unowned().to_string());
   }
   for (OwnedUnit unit : state.get_dislodged_units()) {
+    if (unit.type == UnitType::NONE) {
+      LOG(WARNING) << "UnitType::NONE in py_state_to_dict dislodged_units, loc="
+                   << (unit.loc == Loc::NONE ? "NONE" : loc_str(unit.loc));
+    }
     static_cast<py::list>(
         d["units"][py::cast<std::string>(power_str(unit.power))])
         .append("*" + unit.unowned().to_string());
@@ -115,6 +127,21 @@ py::dict py_state_to_dict(GameState &state) {
   return d;
 }
 
-py::dict Game::py_get_state() { return py_state_to_dict(this->get_state()); }
+py::dict Game::py_get_state() {
+  auto d(py_state_to_dict(this->get_state()));
+
+  // DEBUGGING
+  if (this->get_state().get_phase().phase_type == 'R') {
+    for (auto &p : this->get_state().get_all_possible_orders()) {
+      if (this->get_state().get_unit_rooted(p.first).type == UnitType::NONE) {
+        LOG(WARNING) << "Found weird case, logging crash dump: " << p.first;
+        this->crash_dump();
+      }
+    }
+  }
+  // !DEBUGGING
+
+  return d;
+}
 
 }; // namespace dipcc

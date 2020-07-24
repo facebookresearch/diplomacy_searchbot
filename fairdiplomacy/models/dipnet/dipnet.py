@@ -1,6 +1,8 @@
 from typing import Union
 import logging
 import math
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -46,6 +48,7 @@ class DipNet(nn.Module):
         featurize_prev_orders=False,
         residual_linear=False,
         merged_gnn=False,
+        encoder_layerdrop=0,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -71,6 +74,7 @@ class DipNet(nn.Module):
             learnable_A=learnable_A,
             residual_linear=residual_linear,
             merged_gnn=merged_gnn,
+            layerdrop=encoder_layerdrop,
         )
 
         self.policy_decoder = LSTMDipNetDecoder(
@@ -701,6 +705,7 @@ class DipNetEncoder(nn.Module):
         learnable_A=False,
         residual_linear=False,
         merged_gnn=False,
+        layerdrop=0,
     ):
         super().__init__()
 
@@ -729,6 +734,13 @@ class DipNetEncoder(nn.Module):
                     residual_linear=residual_linear,
                 )
             )
+
+        if layerdrop > 1e-5:
+            assert 0 < layerdrop <= 1., layerdrop
+            self.layerdrop_rng = np.random.RandomState(0)
+        else:
+            self.layerdrop_rng = None
+        self.layerdrop = layerdrop
 
         # prev orders blocks
         self.prev_orders_blocks = nn.ModuleList()
@@ -773,20 +785,28 @@ class DipNetEncoder(nn.Module):
                 )
 
     def forward(self, x_bo, x_po):
+        def apply_blocks_with_layerdrop(blocks, tensor):
+            for i, block in enumerate(blocks):
+                drop = (
+                    i > 0
+                    and self.training
+                    and self.layerdrop_rng is not None
+                    and self.layerdrop_rng.uniform() < self.layerdrop
+                )
+                if drop:
+                    # To make distrubited happy we need to have grads for all params.
+                    dummy = sum(w.sum() * 0 for w in block.parameters())
+                    tensor = dummy + tensor
+                else:
+                    tensor = block(tensor)
+            return tensor
 
-        y_bo = x_bo
-        for block in self.board_blocks:
-            y_bo = block(y_bo)
-
-        y_po = x_po
-        for block in self.prev_orders_blocks:
-            y_po = block(y_po)
-
+        y_bo = apply_blocks_with_layerdrop(self.board_blocks, x_bo)
+        y_po = apply_blocks_with_layerdrop(self.prev_orders_blocks, x_po)
         state_emb = torch.cat([y_bo, y_po], -1)
 
         if self.merged_gnn:
-            for block in self.merged_blocks:
-                state_emb = block(state_emb)
+            state_emb = apply_blocks_with_layerdrop(self.merged_blocks, state_emb)
         return state_emb
 
 

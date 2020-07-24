@@ -1,4 +1,5 @@
 import requests
+import os
 import argparse
 import time
 import json
@@ -241,7 +242,19 @@ def play_webdip(
 
         logger.info(f"Orderable locations: {game.get_orderable_locations(power)}")
 
-        agent_orders = agent.get_orders(game, power)
+        try:
+            agent_orders = agent.get_orders(game, power)
+        except:
+            tmp_path = os.path.abspath("game_exception.%s.json" % next_game["gameID"])
+            logging.error(
+                f"Got exception while trying to get actions for {power}."
+                f" Saving game to {tmp_path}"
+            )
+            game_json = game.to_saved_game_format()
+            with open(tmp_path, "w") as jf:
+                json.dump(game_json, jf)
+            raise
+
         logging.info(f"Power: {power}, Orders: {agent_orders}")
 
         if check_phase:

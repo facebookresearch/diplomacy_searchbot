@@ -463,6 +463,10 @@ message TrainTask {
 
   optional bool merged_gnn = 41 [default = false];
 
+  // Optional. If set to a positive value, will skip each residual layer in
+  // encoder with this probability.
+  optional float encoder_layerdrop = 42 [default = 0.0];
+
   optional Launcher launcher = 1000;
 }
 
@@ -664,6 +668,11 @@ message BuildDbCacheTask {
 
   // Optional, # of parallel encoding processes. Default = #cpu
   optional int32 n_parallel_jobs = 6 [ default = -1 ];
+
+  // Percentage of games to use as val set.
+  optional float val_set_pct = 7;
+
+  optional Launcher launcher = 100;
 }
 
 message BuildPressDbCacheTask {

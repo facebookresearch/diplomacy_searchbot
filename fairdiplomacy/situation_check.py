@@ -14,15 +14,17 @@ def order_prob(prob_distributions, *expected_orders):
 
 
 def run_situation_check(meta, agent):
+    results = {}
     for name, config in meta.items():
         logging.info("=" * 80)
         comment = config.get("comment", "")
-        logging.info(f"{name}: {comment} ({config['phase']})")
+        logging.info(f"{name}: {comment} (phase={config.get('phase')})")
         logging.info(f"path: {config['game_path']}")
         with open(config["game_path"]) as f:
             j = json.load(f)
         game = Game.from_saved_game_format(j)
-        game = Game.clone_from(game, up_to_phase=config["phase"])
+        if "phase" in config:
+            game = Game.clone_from(game, up_to_phase=config["phase"])
 
         prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
         logging.info("CFR strategy:")
@@ -36,9 +38,13 @@ def run_situation_check(meta, agent):
                     break
                 logging.info(f"       {prob:5.2f} {order}")
 
-        for test_desc, test_func_str in config.get("tests", {}).items():
+        for i, (test_desc, test_func_str) in enumerate(config.get("tests", {}).items()):
             test_func = eval(test_func_str)
             passed = test_func(prob_distributions)
+            results[f"{name}.{i}"] = int(passed)
             res_string = "PASSED" if passed else "FAILED"
             logging.info(f"Result: {res_string:8s}  {name:20s} {test_desc}")
             logging.info(f"        {test_func_str}")
+    logging.info("Passed: %d/%d", sum(results.values()), len(results))
+    logging.info("JSON: %s", results)
+    return results

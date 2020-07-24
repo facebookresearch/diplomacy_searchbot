@@ -96,6 +96,28 @@ def _apply_scalar_override(cfg: ProtoMessage, mount: str, value: str) -> None:
     # type.
     mount_parent, key = mount.rsplit(".", 1) if "." in mount else ("", mount)
     subcfg = _get_sub_config(cfg, mount_parent)
+    print(mount_parent, type(subcfg).__name__)
+    if type(subcfg).__name__ == "ScalarMapContainer":
+        # Shortcut for maps.
+        subcfg[key] = value
+        return
+    if type(subcfg).__name__ == "RepeatedScalarContainer":
+        # Shortcut for arrays.
+        try:
+            key = int(key)
+        except ValueError:
+            raise ValueError(f"Got non-integer key {key} for repeated feild {mount_parent}")
+        if key != -1 and not 0 <= key <= len(subcfg):
+            raise ValueError(
+                f"Cannot acess element {key} in list {mount_parent} that has {len(subcfg)}"
+                " elements. Use '-1' to append an element"
+            )
+        if key == -1 or key == len(subcfg):
+            subcfg.append(value)
+        else:
+            subcfg[key] = value
+        return
+
     if not hasattr(subcfg, key):
         raise ValueError("Cannot resolve path '%s' in config:\n%s" % (mount, cfg))
     attr_type = type(getattr(subcfg, key))
