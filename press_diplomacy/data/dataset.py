@@ -30,6 +30,10 @@ logger.propagate = False
 
 
 class PressDataset(Dataset, ABC):
+    """
+    Abstract Press Dataset class that every Press Dataset variant needs to subclass
+    """
+
     def __init__(
         self,
         *,
@@ -73,6 +77,11 @@ class PressDataset(Dataset, ABC):
 
     @abstractmethod
     def _construct_message_dict(self, message_list):
+        """
+        Constructs message dict using raw message_list from the message db
+        :param message_list: List[dict]
+        :return:
+        """
         raise NotImplementedError("Subclasses must implement this. ")
 
     def _load_messages(self):
@@ -107,11 +116,23 @@ class PressDataset(Dataset, ABC):
         self.game_ids = set(self.messages.keys()) & set(self.game_ids)
 
     def encode_message(self, message):
+        """
+        Tokenizes message
+        :param message: input message, str
+        :return: Tensor
+        """
         # TODO(apjacob): Currently accessing a protected member. Fix?
         return self.dialogue_agent._vectorize_text(message, add_end=True)
 
     @abstractmethod
     def _encode_messages(self, game, game_id, phase_idx):
+        """
+        Encodes messages in game_id, phase_idx into a
+        :param game: Diplomacy.Game object
+        :param game_id: game id, int
+        :param phase_idx: phase id, int
+        :return: DataFields[TensorList]
+        """
         raise NotImplementedError("Subclass must implement.")
 
     def _encode_phase(self, game, game_id: int, phase_idx: int, input_valid_power_idxs):
@@ -187,6 +208,10 @@ class PressDataset(Dataset, ABC):
 
 
 class ListenerDataset(PressDataset):
+    """
+    Listener Dataset class
+    """
+
     def __init__(
         self,
         *,
@@ -266,6 +291,8 @@ class ListenerDataset(PressDataset):
         input_message = TensorList.from_padded(padded_tensors, padding_value=-1)
 
         return DataFields(x_input_message=input_message)
+
+    # TODO(apjacob): Finish __item__ implementation
 
 
 def build_press_db_cache_from_cfg(cfg):

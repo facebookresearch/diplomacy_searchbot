@@ -171,6 +171,11 @@ class Dataset(torch.utils.data.Dataset):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
 
     def _encode_game(self, game_id):
+        """
+        Encodes game_id game
+        :param game_id:
+        :return: Datafield or None
+        """
 
         game_path = os.path.join(f"{self.data_dir}", f"game_{game_id}.json")
 
@@ -202,14 +207,13 @@ class Dataset(torch.utils.data.Dataset):
 
         return stacked_encodings.to_storage_fmt_()
 
-    def _encode_phase(self, game, game_id, phase_idx: int, input_valid_power_idxs):
+    def _encode_phase(self, game, game_id: int, phase_idx: int, input_valid_power_idxs):
         """
         Arguments:
         - game: diplomacy.Game object
+        - game_id: int, game id
         - phase_idx: int, the index of the phase to encode
-        - only_with_min_final_score: if specified, only encode for powers who
-          finish the game with some # of supply centers (i.e. only learn from
-          winners). MILA uses 7.
+        - input_valid_power_idxs: valid input power ids
 
         Return: DataFields dict of tensors
         - board_state: shape=(81, 35)
