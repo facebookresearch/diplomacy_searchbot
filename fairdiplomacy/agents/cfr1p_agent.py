@@ -143,7 +143,7 @@ class CFR1PAgent(BaseSearchAgent):
         for cfr_iter in range(self.n_rollouts):
             # do verbose logging on 2^x iters
             verbose_log_iter = (
-                cfr_iter & (cfr_iter + 1) == 0 and cfr_iter > self.n_rollouts / 8
+                cfr_iter & (cfr_iter + 1) == 0  # and cfr_iter > self.n_rollouts / 8
             ) or cfr_iter == self.n_rollouts - 1
 
             timings.start("start")
@@ -277,7 +277,7 @@ class CFR1PAgent(BaseSearchAgent):
                 # log some action values
                 if verbose_log_iter:
                     logging.info(
-                        f"< {debug_iter+1} / {self.debug_repeat} > [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
+                        f"<> [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
                     )
                     logging.info(
                         f"     {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
