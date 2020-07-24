@@ -142,10 +142,15 @@ class BaseSearchAgent(BaseAgent):
         self.client.connect(20)
         logging.info(f"Connected to {self.hostports[0]}")
 
-        self.proc_pool = mp.Pool(n_rollout_procs)
-        logging.info("Warming up pool")
-        self.proc_pool.map(float, range(n_rollout_procs))
-        logging.info("Done warming up pool")
+        if n_rollout_procs > 0:
+            self.proc_pool = mp.Pool(n_rollout_procs)
+            logging.info("Warming up pool")
+            self.proc_pool.map(float, range(n_rollout_procs))
+            logging.info("Done warming up pool")
+        else:
+            logging.info("Debug mode: using fake process poll")
+            fake_pool_class = type("FakePool", (), {"map": lambda self, *a, **k: map(*a, **k)})
+            self.proc_pool = fake_pool_class()
 
     @classmethod
     def do_model_request(
