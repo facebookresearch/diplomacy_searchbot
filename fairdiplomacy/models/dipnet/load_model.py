@@ -43,6 +43,7 @@ def new_model(args):
         featurize_prev_orders=getattr(args, "featurize_prev_orders", False),
         residual_linear=getattr(args, "residual_linear", False),
         merged_gnn=getattr(args, "merged_gnn", False),
+        encoder_layerdrop=getattr(args, "encoder_layerdrop", 0.0),
     )
 
 
