@@ -668,53 +668,52 @@ message BuildDbCacheTask {
 
 message BuildPressDbCacheTask {
 
-  // Required. Path to save db cache
-  optional string out_path = 1;
-
   // Minimal score (num SC) of the at the end of the game needed to include the
   // power into the training set.
-  optional uint32 only_with_min_final_score = 2 [ default = 7 ];
+  optional uint32 only_with_min_final_score = 1 [ default = 7 ];
 
   // Optional. If specified, use this agent's orders instead of the orders in
   // the game.json
-  optional Agent cf_agent = 3;
+  optional Agent cf_agent = 2;
 
   // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
   // times, saving each as a separate row in the db.
-  optional uint32 n_cf_agent_samples = 4 [ default = 1 ];
+  optional uint32 n_cf_agent_samples = 3 [ default = 1 ];
 
   // Optional, # of parallel encoding processes. Default = #cpu
-  optional int32 n_parallel_jobs = 5 [ default = -1 ];
+  optional int32 n_parallel_jobs = 4 [ default = -1 ];
 
-  optional string parlai_agent_file = 6;
+  optional string parlai_agent_file = 5;
 
   // Path to dir containing game.json files.
-  optional string data_dir = 7;
+  optional string data_dir = 6;
 
   // Path to dir containing dataset cache.
-  optional string data_cache = 8;
+  optional string data_cache = 7;
 
   // Dataloader procs (1 means load in the main process).
-  optional int32 num_dataloader_workers = 9;
+  optional int32 num_dataloader_workers = 8;
 
   // Path to file containing game metadata.
-  optional string metadata_path = 10;
+  optional string metadata_path = 9;
 
   // Max gamesto include in dataset (for testing only)
-  optional int32 max_games = 11 [default = -1];
+  optional int32 max_games = 10 [default = -1];
 
   // cut this percentile of games based on player rating
   // (only for dataset with player ratings)
-  optional float min_rating_percentile = 12 [default = 0];
+  optional float min_rating_percentile = 11 [default = 0];
 
   // exclude actions with >=n units, all holds, from the dataset
-  optional int32 exclude_n_holds = 13 [default = -1];
+  optional int32 exclude_n_holds = 12 [default = -1];
 
   // Factor used in exponential weighted average of sum of squares scores
-  optional float value_decay_alpha = 14 [ default = 1.0 ];
+  optional float value_decay_alpha = 13 [ default = 1.0 ];
 
   // Percentage of games to use as val set.
-  optional float val_set_pct = 15;
+  optional float val_set_pct = 14;
+
+  optional string message_chunks = 15;
 }
 
 // Root config to compare agents.

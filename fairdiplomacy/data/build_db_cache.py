@@ -14,12 +14,13 @@ def build_db_cache_from_cfg(cfg):
 
     game_json_paths = glob.glob(cfg.glob)
 
+    # TODO(apjacob): Fix dataset
     dataset = Dataset(
         game_json_paths,
         only_with_min_final_score=cfg.only_with_min_final_score,
         cf_agent=(None if cfg.cf_agent is None else build_agent_from_cfg(cfg.cf_agent)),
         n_cf_agent_samples=cfg.n_cf_agent_samples,
-        n_jobs=cfg.n_parallel_jobs
+        n_jobs=cfg.n_parallel_jobs,
     )
 
     torch.save(dataset, cfg.out_path)

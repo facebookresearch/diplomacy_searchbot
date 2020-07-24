@@ -12,6 +12,7 @@ if __name__ == "__main__":
     k = 1
     tic = time.time()
     for _ in range(k):
+        # TODO(apjacob): Fix dataset
         cache = Dataset(game_jsons)
     delta = time.time() - tic
     print(f"Encoded {k*len(game_jsons)} games in {delta}s. {k*len(game_jsons)/delta} games/s")

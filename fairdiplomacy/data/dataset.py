@@ -76,33 +76,53 @@ class Dataset(torch.utils.data.Dataset):
         self.game_ids = game_ids
         self.data_dir = data_dir
         self.game_metadata = game_metadata
+        self.debug_only_opening_phase = debug_only_opening_phase
+        self.only_with_min_final_score = only_with_min_final_score
+        self.n_jobs = n_jobs
+        self.value_decay_alpha = value_decay_alpha
+        self.cf_agent = cf_agent
         self.n_cf_agent_samples = n_cf_agent_samples
         self.min_rating = min_rating
-        assert not debug_only_opening_phase, "FIXME"
+        self.exclude_n_holds = exclude_n_holds
+
+        # Pre-processing populates these fields
+        self.game_idxs = None
+        self.phase_idxs = None
+        self.power_idxs = None
+        self.x_idxs = None
+        self.encoded_games = None
+        self.num_games = None
+        self.num_phases = None
+        self.num_elements = None
+
+        self._preprocessed = False
+
+    @property
+    def preprocessed(self):
+        return self._preprocessed
+
+    def preprocess(self):
+        """
+        Pre-processes dataset
+        :return:
+        """
+        assert not self.debug_only_opening_phase, "FIXME"
 
         logging.info(
-            f"Building dataset from {len(game_ids)} games, only_with_min_final_score={only_with_min_final_score} value_decay_alpha={value_decay_alpha} cf_agent={cf_agent}"
+            f"Building dataset from {len(self.game_ids)} games, "
+            f"only_with_min_final_score={self.only_with_min_final_score} "
+            f"value_decay_alpha={self.value_decay_alpha} cf_agent={self.cf_agent}"
         )
 
         torch.set_num_threads(1)
-        encoded_games = joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(encode_game)(
-                f"{data_dir}/game_{game_id}.json",
-                only_with_min_final_score=only_with_min_final_score,
-                cf_agent=cf_agent,
-                n_cf_agent_samples=n_cf_agent_samples,
-                value_decay_alpha=value_decay_alpha,
-                input_valid_power_idxs=self.get_valid_power_idxs(game_id),
-                game_metadata=self.game_metadata[game_id],
-                exclude_n_holds=exclude_n_holds,
-            )
-            for game_id in game_ids
+        encoded_games = joblib.Parallel(n_jobs=self.n_jobs)(
+            joblib.delayed(self._encode_game)(game_id) for game_id in self.game_ids
         )
         encoded_games = [
             g for g in encoded_games if g is not None
         ]  # remove "empty" games (e.g. json didn't exist)
 
-        logging.info(f"Found data for {len(encoded_games)} / {len(game_ids)} games")
+        logging.info(f"Found data for {len(encoded_games)} / {len(self.game_ids)} games")
 
         encoded_games = [g for g in encoded_games if g["valid_power_idxs"][0].any()]
         logging.info(f"{len(encoded_games)} games had data for at least one power")
@@ -140,6 +160,8 @@ class Dataset(torch.utils.data.Dataset):
             else:
                 assert len(e) == self.num_phases
 
+        self._preprocessed = True
+
     def get_valid_power_idxs(self, game_id):
         return [
             self.game_metadata[game_id][pwr]["logit_rating"] >= self.min_rating for pwr in POWERS
@@ -148,7 +170,152 @@ class Dataset(torch.utils.data.Dataset):
     def stats_str(self):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
 
+    def _encode_game(self, game_id):
+
+        game_path = os.path.join(f"{self.data_dir}", f"game_{game_id}.json")
+
+        torch.set_num_threads(1)
+
+        try:
+            with open(game_path) as f:
+                j = json.load(f)
+            game = Game.from_saved_game_format(j)
+        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+            print(f"Error while loading game at {game_path}: {e}")
+            return None
+
+        num_phases = len(game.state_history)
+        logging.info(f"Encoding {game.game_id} with {num_phases} phases")
+
+        input_valid_power_idxs = self.get_valid_power_idxs(game_id)
+        phase_encodings = [
+            self._encode_phase(game, game_id, phase_idx, input_valid_power_idxs)
+            for phase_idx in range(num_phases)
+        ]
+
+        stacked_encodings = DataFields.cat(phase_encodings)
+
+        has_press = torch.zeros(num_phases, 1) + (
+            1 if self.game_metadata[game_id]["press_type"] != "NoPress" else 0
+        )
+        stacked_encodings["x_has_press"] = has_press
+
+        return stacked_encodings.to_storage_fmt_()
+
+    def _encode_phase(self, game, game_id, phase_idx: int, input_valid_power_idxs):
+        """
+        Arguments:
+        - game: diplomacy.Game object
+        - phase_idx: int, the index of the phase to encode
+        - only_with_min_final_score: if specified, only encode for powers who
+          finish the game with some # of supply centers (i.e. only learn from
+          winners). MILA uses 7.
+
+        Return: DataFields dict of tensors
+        - board_state: shape=(81, 35)
+        - prev_state: shape=(81, 35)
+        - prev_orders: shape=(2, 100)
+        - power: shape=(7, 7)
+        - season: shape=(3,)
+        - in_adj_phase: shape=(1,)
+        - has_press: shape=(L, 1)
+        - build_numbers: shape=(7,)
+        - final_scores: shape=(7,) int8
+        - possible_actions: Tensorlist shape=(7 x 17, 469)
+        - loc_idxs: shape=(7, 81), int8
+        - actions: shape=(7, N, 17) int order idxs, N=n_cf_agent_samples
+        - valid_power_idxs: shape=(7,) bool mask of valid powers at this phase
+        """
+        phase_name = game.get_phase_name(phase_idx)
+        phase_state = game.state_history[phase_name]
+
+        data_fields = encode_state(game, phase_idx)
+
+        # encode final scores
+        y_final_scores = encode_weighted_sos_scores(game, phase_idx, self.value_decay_alpha)
+
+        # encode possible actions
+        tmp_game = Game.clone_from(game, up_to_phase=phase_name)
+        all_possible_orders = tmp_game.get_all_possible_orders()
+        all_orderable_locations = tmp_game.get_orderable_locations()
+        x_possible_actions, x_loc_idxs = [
+            torch.stack(ts).squeeze(1)
+            for ts in zip(
+                *[
+                    get_valid_orders_impl(
+                        power, all_possible_orders, all_orderable_locations, phase_state
+                    )[:2]
+                    for power in POWERS
+                ]
+            )
+        ]
+
+        # encode actions
+        valid_power_idxs = torch.tensor(input_valid_power_idxs, dtype=torch.bool)
+        # print('valid_power_idxs', valid_power_idxs)
+        y_actions_lst = []
+        power_orders_samples = (
+            {power: [game.order_history[phase_name].get(power, [])] for power in POWERS}
+            if self.cf_agent is None
+            else get_cf_agent_order_samples(
+                tmp_game, phase_name, self.cf_agent, self.n_cf_agent_samples
+            )
+        )
+        for power_i, power in enumerate(POWERS):
+            orders_samples = power_orders_samples[power]
+            if len(orders_samples) == 0:
+                valid_power_idxs[0, power_i] = False
+                y_actions_lst.append(
+                    torch.empty(self.n_cf_agent_samples, MAX_SEQ_LEN, dtype=torch.int32).fill_(
+                        EOS_IDX
+                    )
+                )
+                continue
+            encoded_power_actions_lst = []
+            for orders in orders_samples:
+                encoded_power_actions, valid = encode_power_actions(
+                    orders, x_possible_actions[power_i]
+                )
+                encoded_power_actions_lst.append(encoded_power_actions)
+                if self.exclude_n_holds >= 0 and len(orders) >= self.exclude_n_holds:
+                    if all(o.endswith(" H") for o in orders):
+                        valid = 0
+                valid_power_idxs[power_i] &= valid
+            y_actions_lst.append(torch.stack(encoded_power_actions_lst, dim=0))  # [N, 17]
+
+        y_actions = torch.stack(y_actions_lst, dim=0)  # [7, N, 17]
+
+        # filter away powers that have no orders
+        valid_power_idxs &= (y_actions != EOS_IDX).any(dim=2).all(dim=1)
+        assert valid_power_idxs.ndimension() == 1
+
+        # Maybe filter away powers that don't finish with enough SC.
+        # If all players finish with fewer SC, include everybody.
+        # cf. get_top_victors() in mila's state_space.py
+        if self.only_with_min_final_score is not None:
+            final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
+            if max(final_score.values()) >= self.only_with_min_final_score:
+                for i, power in enumerate(POWERS):
+                    if final_score.get(power, 0) < self.only_with_min_final_score:
+                        valid_power_idxs[i] = 0
+
+        x_possible_actions = TensorList.from_padded(
+            x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN),
+            padding_value=EOS_IDX,
+        )
+
+        data_fields["x_power"] = torch.eye(len(POWERS), dtype=torch.bool).unsqueeze(0)
+        data_fields["y_final_scores"] = y_final_scores.unsqueeze(0)
+        data_fields["x_possible_actions"] = x_possible_actions
+        data_fields["x_loc_idxs"] = x_loc_idxs.unsqueeze(0)
+        data_fields["y_actions"] = y_actions.unsqueeze(0)
+        data_fields["valid_power_idxs"] = valid_power_idxs.unsqueeze(0)
+
+        return data_fields
+
     def __getitem__(self, idx: Union[int, torch.Tensor]):
+        assert self._preprocessed, "Dataset has not been pre-processed."
+
         if isinstance(idx, int):
             idx = torch.tensor([idx], dtype=torch.long)
 
@@ -199,77 +366,6 @@ class Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.num_elements * self.n_cf_agent_samples
-
-
-def encode_game(
-    game: Union[str, diplomacy.Game],
-    only_with_min_final_score=7,
-    *,
-    cf_agent=None,
-    n_cf_agent_samples=1,
-    input_valid_power_idxs,
-    value_decay_alpha,
-    game_metadata,
-    exclude_n_holds,
-):
-    """
-    Arguments:
-    - game: diplomacy.Game object
-    - only_with_min_final_score: if specified, only encode for powers who
-      finish the game with some # of supply centers (i.e. only learn from
-      winners). MILA uses 7.
-    - input_valid_power_idxs: bool tensor, true if power should a priori be included in
-      the dataset based on e.g. player rating)
-
-    Return: DataFields dict of tensors
-    L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
-    - board_state: shape=(L, 81, 35)
-    - prev_state: shape=(L, 81, 35)
-    - prev_orders: shape=(L, 2, 100), dtype=long
-    - power: shape=(L, 7, 7)
-    - season: shape=(L, 3)
-    - in_adj_phase: shape=(L, 1)
-    - has_press: shape=(L, 1)
-    - build_numbers: shape=(L, 7)
-    - final_scores: shape=(L, 7)
-    - possible_actions: TensorList shape=(L x 7, 17 x 469)
-    - loc_idxs: shape=(L, 7, 81), int8
-    - actions: shape=(L, 7, N, 17) int order idxs, N=n_cf_agent_samples
-    - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
-    """
-
-    torch.set_num_threads(1)
-    if isinstance(game, str):
-        try:
-            with open(game) as f:
-                j = json.load(f)
-            game = Game.from_saved_game_format(j)
-        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-            print(f"Error while loading game at {game}: {e}")
-            return None
-
-    num_phases = len(game.state_history)
-    logging.info(f"Encoding {game.game_id} with {num_phases} phases")
-    phase_encodings = [
-        encode_phase(
-            game,
-            phase_idx,
-            only_with_min_final_score=only_with_min_final_score,
-            cf_agent=cf_agent,
-            n_cf_agent_samples=n_cf_agent_samples,
-            value_decay_alpha=value_decay_alpha,
-            input_valid_power_idxs=input_valid_power_idxs,
-            exclude_n_holds=exclude_n_holds,
-        )
-        for phase_idx in range(num_phases)
-    ]
-
-    stacked_encodings = DataFields.cat(phase_encodings)
-
-    has_press = torch.zeros(num_phases, 1) + (1 if game_metadata["press_type"] != "NoPress" else 0)
-    stacked_encodings["x_has_press"] = has_press
-
-    return stacked_encodings.to_storage_fmt_()
 
 
 def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
@@ -335,123 +431,6 @@ def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
         x_in_adj_phase=x_in_adj_phase,
         x_build_numbers=x_build_numbers,
     )
-
-
-def encode_phase(
-    game,
-    phase_idx: int,
-    *,
-    only_with_min_final_score: Optional[int],
-    cf_agent=None,
-    n_cf_agent_samples=1,
-    value_decay_alpha,
-    input_valid_power_idxs,
-    exclude_n_holds,
-):
-    """
-    Arguments:
-    - game: diplomacy.Game object
-    - phase_idx: int, the index of the phase to encode
-    - only_with_min_final_score: if specified, only encode for powers who
-      finish the game with some # of supply centers (i.e. only learn from
-      winners). MILA uses 7.
-
-    Return: DataFields dict of tensors
-    - board_state: shape=(81, 35)
-    - prev_state: shape=(81, 35)
-    - prev_orders: shape=(2, 100)
-    - power: shape=(7, 7)
-    - season: shape=(3,)
-    - in_adj_phase: shape=(1,)
-    - has_press: shape=(L, 1)
-    - build_numbers: shape=(7,)
-    - final_scores: shape=(7,) int8
-    - possible_actions: Tensorlist shape=(7 x 17, 469)
-    - loc_idxs: shape=(7, 81), int8
-    - actions: shape=(7, N, 17) int order idxs, N=n_cf_agent_samples
-    - valid_power_idxs: shape=(7,) bool mask of valid powers at this phase
-    """
-    phase_name = str(list(game.state_history.keys())[phase_idx])
-    phase_state = game.state_history[phase_name]
-
-    data_fields = encode_state(game, phase_idx)
-
-    # encode final scores
-    y_final_scores = encode_weighted_sos_scores(game, phase_idx, value_decay_alpha)
-
-    # encode possible actions
-    tmp_game = Game.clone_from(game, up_to_phase=phase_name)
-    all_possible_orders = tmp_game.get_all_possible_orders()
-    all_orderable_locations = tmp_game.get_orderable_locations()
-    x_possible_actions, x_loc_idxs = [
-        torch.stack(ts).squeeze(1)
-        for ts in zip(
-            *[
-                get_valid_orders_impl(
-                    power, all_possible_orders, all_orderable_locations, phase_state
-                )[:2]
-                for power in POWERS
-            ]
-        )
-    ]
-
-    # encode actions
-    valid_power_idxs = torch.tensor(input_valid_power_idxs, dtype=torch.bool)
-    # print('valid_power_idxs', valid_power_idxs)
-    y_actions_lst = []
-    power_orders_samples = (
-        {power: [game.order_history[phase_name].get(power, [])] for power in POWERS}
-        if cf_agent is None
-        else get_cf_agent_order_samples(tmp_game, phase_name, cf_agent, n_cf_agent_samples)
-    )
-    for power_i, power in enumerate(POWERS):
-        orders_samples = power_orders_samples[power]
-        if len(orders_samples) == 0:
-            valid_power_idxs[0, power_i] = False
-            y_actions_lst.append(
-                torch.empty(n_cf_agent_samples, MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
-            )
-            continue
-        encoded_power_actions_lst = []
-        for orders in orders_samples:
-            encoded_power_actions, valid = encode_power_actions(
-                orders, x_possible_actions[power_i]
-            )
-            encoded_power_actions_lst.append(encoded_power_actions)
-            if exclude_n_holds >= 0 and len(orders) >= exclude_n_holds:
-                if all(o.endswith(" H") for o in orders):
-                    valid = 0
-            valid_power_idxs[power_i] &= valid
-        y_actions_lst.append(torch.stack(encoded_power_actions_lst, dim=0))  # [N, 17]
-
-    y_actions = torch.stack(y_actions_lst, dim=0)  # [7, N, 17]
-
-    # filter away powers that have no orders
-    valid_power_idxs &= (y_actions != EOS_IDX).any(dim=2).all(dim=1)
-    assert valid_power_idxs.ndimension() == 1
-
-    # Maybe filter away powers that don't finish with enough SC.
-    # If all players finish with fewer SC, include everybody.
-    # cf. get_top_victors() in mila's state_space.py
-    if only_with_min_final_score is not None:
-        final_score = {k: len(v) for k, v in game.get_state()["centers"].items()}
-        if max(final_score.values()) >= only_with_min_final_score:
-            for i, power in enumerate(POWERS):
-                if final_score.get(power, 0) < only_with_min_final_score:
-                    valid_power_idxs[i] = 0
-
-    x_possible_actions = TensorList.from_padded(
-        x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN), padding_value=EOS_IDX
-    )
-
-    data_fields["x_power"] = torch.eye(len(POWERS), dtype=torch.bool).unsqueeze(0)
-    data_fields["y_final_scores"] = y_final_scores.unsqueeze(0)
-    data_fields["x_possible_actions"] = x_possible_actions
-    data_fields["x_loc_idxs"] = x_loc_idxs.unsqueeze(0)
-    data_fields["y_actions"] = y_actions.unsqueeze(0)
-    data_fields["valid_power_idxs"] = valid_power_idxs.unsqueeze(0)
-
-    return data_fields
 
 
 def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, game_state):
