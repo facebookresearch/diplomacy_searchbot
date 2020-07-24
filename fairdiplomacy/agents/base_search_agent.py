@@ -411,6 +411,10 @@ class BaseSearchAgent(BaseAgent):
         rollout_start_phase = games[0].current_short_phase
         rollout_end_phase = n_move_phases_later(rollout_start_phase, max_rollout_length)
         while True:
+            if max_rollout_length == 0:
+                # Handled separately.
+                break
+
             # step games together at the pace of the slowest game, e.g. process
             # games with retreat phases alone before moving on to the next move phase
             min_phase = min([game.current_short_phase for game in games], key=sort_phase_key)
@@ -447,9 +451,6 @@ class BaseSearchAgent(BaseAgent):
                     cur_client, batch_inputs, temperature, top_p
                 )
 
-                assert (
-                    max_rollout_length > 0
-                ), "max_rollout_length = 0 doesn't even execute the orders..."
                 score_weight = remaining_score_weight
                 if (
                     min_phase == rollout_start_phase
@@ -490,6 +491,42 @@ class BaseSearchAgent(BaseAgent):
 
             if sort_phase_key(min_phase) >= sort_phase_key(rollout_end_phase):
                 break
+
+        if max_rollout_length == 0:
+            assert (
+                not other_powers
+            ), "If max_rollout_length=0 it's assumed that all orders are pre-defined."
+            # All orders are set. Step env. Now only need to get values.
+            game.process()
+
+            batch_data = []
+            for game in games:
+                if not game.is_game_done:
+                    with timings("encode.all_poss_orders"):
+                        all_possible_orders = game.get_all_possible_orders()
+                    with timings("encode.state"):
+                        encoded_state = encode_state(game)
+                    with timings("encode.inputs"):
+                        inputs = encode_inputs(
+                            game, all_possible_orders=all_possible_orders, game_state=encoded_state
+                        )
+                    batch_data.append((game, inputs))
+                else:
+                    est_final_scores[game.game_id] = get_square_scores_from_game(game)
+
+            if batch_data:
+                with timings("cat_pad"):
+                    xs: List[Tuple] = [b[1] for b in batch_data]
+                    batch_inputs, _ = cat_pad_inputs(xs)
+
+                with timings("model"):
+                    _, _, batch_est_final_scores = cls.do_model_request(
+                        value_client, batch_inputs, temperature, top_p
+                    )
+                    assert batch_est_final_scores.shape[0] == len(batch_data)
+                    assert batch_est_final_scores.shape[1] == len(POWERS)
+                    for game_idx, (game, _) in enumerate(batch_data):
+                        est_final_scores[game.game_id] = batch_est_final_scores[game_idx]
 
         with timings("final_scores"):
             # get GameScores objects for current game state
