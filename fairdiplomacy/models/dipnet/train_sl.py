@@ -448,7 +448,7 @@ def run_with_cfg(args):
     else:
         assert args.metadata_path is not None
         assert args.data_dir is not None
-        game_metadata, min_rating, train_game_ids, val_game_ids = get_db_cache_args(args)
+        game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(args)
 
         train_dataset = Dataset(
             game_ids=train_game_ids,
@@ -494,7 +494,12 @@ def run_with_cfg(args):
         )
 
 
-def get_db_cache_args(args):
+def get_sl_db_args(args):
+    """
+    Wrapper function to produce train, val game_ids.
+    :param args:
+    :return:
+    """
     with open(args.metadata_path) as meta_f:
         game_metadata = json.load(meta_f)
     # convert to int game keys

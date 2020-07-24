@@ -13,7 +13,7 @@ from fairdiplomacy.game import Game
 from typing import Any, Dict, Union, List, Optional, Tuple
 from fairdiplomacy.data.dataset import *
 from parlai.utils.torch import padded_tensor
-from fairdiplomacy.models.dipnet.train_sl import get_db_cache_args
+from fairdiplomacy.models.dipnet.train_sl import get_sl_db_args
 from parlai.core.agents import create_agent_from_model_file
 from glob import glob
 from parlai_diplomacy.tasks.language_diplomacy.utils import select_by_game_and_phase
@@ -296,7 +296,7 @@ class ListenerDataset(PressDataset):
 
 
 def build_press_db_cache_from_cfg(cfg):
-    game_metadata, min_rating, train_game_ids, val_game_ids = get_db_cache_args(cfg)
+    game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(cfg)
 
     train_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
@@ -305,7 +305,7 @@ def build_press_db_cache_from_cfg(cfg):
         data_dir=cfg.data_dir,
         game_metadata=game_metadata,
         only_with_min_final_score=cfg.only_with_min_final_score,
-        n_jobs=1,
+        n_jobs=cfg.num_dataloader_workers,
         value_decay_alpha=cfg.value_decay_alpha,
         min_rating=min_rating,
         exclude_n_holds=cfg.exclude_n_holds,
@@ -319,12 +319,11 @@ def build_press_db_cache_from_cfg(cfg):
         data_dir=cfg.data_dir,
         game_metadata=game_metadata,
         only_with_min_final_score=cfg.only_with_min_final_score,
-        n_jobs=1,
+        n_jobs=cfg.num_dataloader_workers,
         value_decay_alpha=cfg.value_decay_alpha,
         min_rating=min_rating,
         exclude_n_holds=cfg.exclude_n_holds,
     )
-
     val_dataset.preprocess()
 
     logger.info(f"Saving datasets to {cfg.data_cache}")
