@@ -68,7 +68,7 @@
         "powers": ["RUSSIA", "GERMANY", "FRANCE"],
         "tests": {
             "RUS should not move to SIL": "lambda r: order_prob(r, 'A WAR - SIL') < 0.25",
-            "RUS should not attack Germany": "lambda r: order_prob(r, 'F SWE - DEN') + order_prob(r, 'A EDI - DEN') < 0.1"
+            "RUS should not attack Germany": "lambda r: order_prob(r, 'F SWE - DEN') + order_prob(r, 'A EDI - DEN') + order_prob(r, 'F NTH - DEN') < 0.1"
         }
     },
     "russia_ally_germany_2": {

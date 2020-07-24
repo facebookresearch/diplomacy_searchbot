@@ -466,7 +466,7 @@ message BuildPressDbCacheTask {
 message SituationCheckTask {
   optional Agent agent = 1;
   optional string situation_json = 2;
-  optional int32 seed = 3 [ default = 0 ];
+  optional int32 seed = 3 [ default = -1 ];
   optional string selection = 4;
   optional Launcher launcher = 100;
 }

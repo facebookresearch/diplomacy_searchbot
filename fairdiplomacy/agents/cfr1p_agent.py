@@ -277,10 +277,10 @@ class CFR1PAgent(BaseSearchAgent):
                 # log some action values
                 if verbose_log_iter:
                     logging.info(
-                        f"[{cfr_iter+1}/{self.n_rollouts}] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
+                        f"< {debug_iter+1} / {self.debug_repeat} > [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
                     )
                     logging.info(
-                        f"    {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
+                        f"     {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
                     )
                     action_probs: List[float] = self.avg_strategy(pwr, power_plausible_orders[pwr])
                     bp_probs: List[float] = self.bp_strategy(pwr, power_plausible_orders[pwr])
@@ -294,7 +294,7 @@ class CFR1PAgent(BaseSearchAgent):
                     )
                     for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
                         logging.info(
-                            f"    {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}"
+                            f"|>  {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}"
                         )
 
                 # elif pwr == early_exit_for_power:

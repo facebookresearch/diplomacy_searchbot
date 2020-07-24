@@ -1,7 +1,8 @@
 import logging
 import os
 import json
-
+import torch
+import numpy as np
 
 from fairdiplomacy.agents import build_agent_from_cfg
 from fairdiplomacy.compare_agents import run_1v6_trial, run_1v6_trial_multiprocess
@@ -24,6 +25,13 @@ def _register(f):
 
 @_register
 def compare_agents(cfg):
+
+    # NEED TO SET THIS BEFORE CREATING THE AGENT!
+    if cfg.seed >= 0:
+        logging.info(f"Set seed to {cfg.seed}")
+        torch.manual_seed(cfg.seed)
+        np.random.seed(cfg.seed)
+
     agent_one = build_agent_from_cfg(cfg.agent_one)
     agent_six = build_agent_from_cfg(cfg.agent_six)
     if cfg.cf_agent.WhichOneof("agent") is not None:
@@ -95,6 +103,12 @@ def build_press_db_cache(cfg):
 
 @_register
 def situation_check(cfg):
+
+    # NEED TO SET THIS BEFORE CREATING THE AGENT!
+    if cfg.seed >= 0:
+        logging.info(f"Set seed to {cfg.seed}")
+        torch.manual_seed(cfg.seed)
+        np.random.seed(cfg.seed)
 
     agent = build_agent_from_cfg(cfg.agent)
 

@@ -41,7 +41,7 @@ if os.path.exists(diplomacy.utils.convoy_paths.EXTERNAL_CACHE_PATH):
         pass
 
 
-def make_server_process(*, model_path, device, max_batch_size, wait_till_full):
+def make_server_process(*, model_path, device, max_batch_size, wait_till_full, seed):
     q = mp.SimpleQueue()
     server = ExceptionHandlingProcess(
         target=run_server,
@@ -52,7 +52,7 @@ def make_server_process(*, model_path, device, max_batch_size, wait_till_full):
                 load_dipnet_model, model_path, map_location=f"cuda:{device}", eval=True
             ),
             output_transform=model_output_transform,
-            seed=0,
+            seed=seed,
             device=device,
             port_q=q,
             wait_till_full=wait_till_full,
@@ -122,6 +122,10 @@ class BaseSearchAgent(BaseAgent):
                         device=i % n_gpu if device is None else device,
                         max_batch_size=max_batch_size,
                         wait_till_full=postman_wait_till_full,
+                        # if torch's seed is set, then we want the server seed to be a deterministic
+                        # function of that. Yet we don't want it to be the same for each agent.
+                        # So pick a random number from the torch rng
+                        seed=int(torch.randint(1000000000, (1,))),
                     )
                     for i in range(n_server_procs)
                 ]
@@ -133,6 +137,7 @@ class BaseSearchAgent(BaseAgent):
                     device=n_server_procs % n_gpu if device is None else device,
                     max_batch_size=max_batch_size,
                     wait_till_full=postman_wait_till_full,
+                    seed=int(torch.randint(1000000000, (1,))),
                 )
             else:
                 self.value_hostport = None
@@ -604,8 +609,8 @@ def run_server(port, batch_size, port_q=None, **kwargs):
 def server_handler(
     q: postman.ComputationQueue,
     load_model_fn,
+    seed,
     output_transform=None,
-    seed=None,
     device=0,
     ckpt_sync_path=None,
     ckpt_sync_every=0,
@@ -619,9 +624,8 @@ def server_handler(
     model = load_model_fn()
     logging.info(f"Server {os.getpid()} loaded model, device={device}, seed={seed}")
 
-    if seed is not None:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     frame_count, batch_count, total_batches = 0, 0, 0
     timings = TimingCtx()
