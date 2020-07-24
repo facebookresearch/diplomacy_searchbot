@@ -146,13 +146,22 @@ public:
         UnresolvedSupport{order, supporter_power, pending_dislodge};
   }
 
-  void _resolve_support_if_exists(Loc dest) {
-    auto it = unresolved_supports_.find(dest);
+  void _resolve_support_if_exists(Resolution &r, Loc supporter_loc) {
+    auto it = unresolved_supports_.find(supporter_loc);
     if (it != unresolved_supports_.end()) {
-      DLOG(INFO) << "CONFIRM SUPPORT: " << dest;
       UnresolvedSupport unresolved_support = it->second;
       remove_unresolved_support(unresolved_support.order);
-      add_support(unresolved_support.order, unresolved_support.supporter_power);
+      Loc dest = unresolved_support.order.get_type() == OrderType::SM
+                     ? unresolved_support.order.get_dest()
+                     : root_loc(unresolved_support.order.get_target().loc);
+      if (!set_contains(r.contested, dest) && !map_contains(r.winners, dest)) {
+        DLOG(INFO) << "CONFIRM SUPPORT: " << dest;
+        add_support(unresolved_support.order,
+                    unresolved_support.supporter_power);
+      } else {
+        // Skip adding support since the support dest is already resolved
+        DLOG(INFO) << "SKIP CONFIRM SUPPORT FOR RESOLVED DEST: " << dest;
+      }
     }
   }
 
@@ -400,7 +409,7 @@ public:
           if (other_units_max == 0) {
             // no other unit managed to attack this loc: if the unit had an
             // unresolved support, resolve it
-            _resolve_support_if_exists(dest);
+            _resolve_support_if_exists(r, dest);
           }
 
           return true;
@@ -463,7 +472,7 @@ public:
     unresolved_units_.erase(winner_root);
 
     // If winner has an unresolved support, maybe resolve it
-    _confirm_supporter_not_dislodged(winner_root);
+    _confirm_supporter_not_dislodged(r, winner_root);
 
     // If this was previously an unresolved self-support or self-dislodge move,
     // it has clearly been resolved
@@ -573,7 +582,7 @@ public:
       if (cand_loc == dest) {
         // Unit already in this loc is not dislodged: if they have an
         // unresolved support, maybe confirm it.
-        _confirm_supporter_not_dislodged(dest);
+        _confirm_supporter_not_dislodged(r, dest);
 
         // Unit is not dislodged: if they are in a H2H, their attack has
         // effect
@@ -809,7 +818,7 @@ public:
       if (maybe_convoy_orders_by_dest_[dest].size() == 0 &&
           map_contains(r.winners, dest) &&
           root_loc(r.winners.at(dest).src) == dest) {
-        _resolve_support_if_exists(dest);
+        _resolve_support_if_exists(r, dest);
       }
     }
   }
@@ -889,18 +898,14 @@ public:
   }
 
   // Unit @ loc is not dislodged: maybe confirm unresolved support
-  void _confirm_supporter_not_dislodged(Loc loc) {
+  void _confirm_supporter_not_dislodged(Resolution &r, Loc loc) {
     auto unresolved_support_it = unresolved_supports_.find(loc);
     if (unresolved_support_it == unresolved_supports_.end()) {
       return;
     }
     if (maybe_convoy_orders_by_dest_[loc].size() == 0) {
       // support is not cut
-      Order support = unresolved_support_it->second.order;
-      Power supporter_power = unresolved_support_it->second.supporter_power;
-      remove_unresolved_support(support);
-      add_support(support, supporter_power);
-      DLOG(INFO) << "CONFIRM SUPPORT " << support.to_string();
+      _resolve_support_if_exists(r, loc);
     } else {
       // support may still be cut by convoyed army, so don't confirm it yet
       unresolved_support_it->second.pending_dislodge = false;
