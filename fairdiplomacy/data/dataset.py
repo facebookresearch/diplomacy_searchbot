@@ -191,7 +191,7 @@ class Dataset(torch.utils.data.Dataset):
             return None
 
         num_phases = len(game.state_history)
-        logging.info(f"Encoding {game.game_id} with {num_phases} phases")
+        print(f"Encoding {game.game_id} with {num_phases} phases")
 
         input_valid_power_idxs = self.get_valid_power_idxs(game_id)
         phase_encodings = [

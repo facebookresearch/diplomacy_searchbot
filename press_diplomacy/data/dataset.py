@@ -20,6 +20,7 @@ from parlai_diplomacy.tasks.language_diplomacy.utils import select_by_game_and_p
 from fairdiplomacy.data.build_dataset import COUNTRY_ID_TO_POWER
 from tqdm import tqdm
 from abc import ABC, abstractmethod
+import copy
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -71,9 +72,14 @@ class PressDataset(Dataset, ABC):
         else:
             raise FileNotFoundError("Message chunk glob is empty.")
 
+        # Due to the tokenizing overhead, num_jobs > 1 is not supported as it is a lot slower.
+        if self.n_jobs != 1:
+            logging.warning("num_dataloader_workers > 1 is not supported.")
+
         self.parlai_agent_file = parlai_agent_file
         self.dialogue_agent = create_agent_from_model_file(self.parlai_agent_file)
-        self.messages = None
+        self.default_tensor = self._encode_message(" ")
+        self.messages, self.tokenized_messages = self._load_messages()
 
     @abstractmethod
     def _construct_message_dict(self, message_list):
@@ -83,6 +89,14 @@ class PressDataset(Dataset, ABC):
         :return:
         """
         raise NotImplementedError("Subclasses must implement this. ")
+
+    @abstractmethod
+    def _tokenize_message_dict(self):
+        """
+        Tokenizes messages in self.messages as constructed by _construct_message_dict
+        :return:
+        """
+        raise NotImplementedError("Subclasses must implement this.")
 
     def _load_messages(self):
         """
@@ -112,16 +126,23 @@ class PressDataset(Dataset, ABC):
             [message for messages in messages_list for message in messages]
         )
 
+        self.tokenized_messages = self._tokenize_message_dict()
+        del self.dialogue_agent
         # Update game_ids
         self.game_ids = set(self.messages.keys()) & set(self.game_ids)
 
-    def encode_message(self, message):
+        return self.messages, self.tokenized_messages
+
+    def _encode_message(self, message):
         """
         Tokenizes message
         :param message: input message, str
         :return: Tensor
         """
         # TODO(apjacob): Currently accessing a protected member. Fix?
+        assert (
+            self.dialogue_agent is not None
+        ), "Dialogue agent needs to be loaded to use the tokenizer"
         return self.dialogue_agent._vectorize_text(message, add_end=True)
 
     @abstractmethod
@@ -147,8 +168,6 @@ class PressDataset(Dataset, ABC):
     def preprocess(self):
         if self._preprocessed:
             logging.warning("Dataset has previously been preprocessed.")
-
-        self._load_messages()
 
         assert not self.debug_only_opening_phase, "FIXME"
 
@@ -247,6 +266,8 @@ class ListenerDataset(PressDataset):
 
     def _construct_message_dict(self, message_list):
         message_dict = {}
+
+        logging.info("Constructing message dict.")
         for message in tqdm(message_list):
             from_cnt_id = int(message["fromCountryID"])
             to_cnt_id = int(message["toCountryID"])
@@ -274,19 +295,35 @@ class ListenerDataset(PressDataset):
 
         return message_dict
 
+    def _tokenize_message_dict(self):
+        assert self.messages is not None
+
+        # Setting default tensor to be used later.
+        self.tokenized_messages = copy.deepcopy(self.messages)
+        logging.info("Tokenizing messages.")
+        for game_id, phases in tqdm(self.messages.items()):
+            for phase_id, countries in phases.items():
+                for power_idx, power in enumerate(POWERS):
+                    # Encodes for all powers regardless of whether they have messages
+                    power_message_list = countries.get(power, [])
+                    power_message = " ".join(power_message_list)
+                    power_tensor = self._encode_message(power_message)
+                    self.tokenized_messages[game_id][phase_id][power] = power_tensor
+
+        return self.tokenized_messages
+
+    # Note: HuggingFace Tokenizer cannot be pickled for joblib :(
     def _encode_messages(self, game, game_id, phase_idx):
-        assert game_id in self.messages
+        assert game_id in self.tokenized_messages
 
         phase_name = game.get_phase_name(phase_idx)
-        power_tensors = []
-        phase_message_dict = self.messages[game_id].get(phase_name, dict())
+        phase_tensor_dict = self.tokenized_messages[game_id].get(phase_name, dict())
         # TODO(apjacob): Verify country idx mapping
-
-        for power_idx, power in enumerate(POWERS):
-            power_message_list = phase_message_dict.get(power, [])
-            power_message = " ".join(power_message_list)
-            power_tensor = self.encode_message(power_message)
-            power_tensors.append(power_tensor)
+        # Construct the tensor in the order that the countries are listed in POWERS
+        power_tensors = [
+            phase_tensor_dict.get(power, self.default_tensor)
+            for power_idx, power in enumerate(POWERS)
+        ]
         padded_tensors, _ = padded_tensor(power_tensors, pad_idx=-1)
         input_message = TensorList.from_padded(padded_tensors, padding_value=-1)
 
@@ -301,7 +338,7 @@ def build_press_db_cache_from_cfg(cfg):
     train_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
         message_chunks=cfg.message_chunks,
-        game_ids=train_game_ids,
+        game_ids=train_game_ids[:10],
         data_dir=cfg.data_dir,
         game_metadata=game_metadata,
         only_with_min_final_score=cfg.only_with_min_final_score,
