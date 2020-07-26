@@ -129,7 +129,7 @@ class PressDataset(Dataset, ABC):
         self.tokenized_messages = self._tokenize_message_dict()
         del self.dialogue_agent
         # Update game_ids
-        self.game_ids = set(self.messages.keys()) & set(self.game_ids)
+        self.game_ids = set(self.messages.keys()) & self.game_ids
 
         return self.messages, self.tokenized_messages
 
@@ -165,65 +165,16 @@ class PressDataset(Dataset, ABC):
 
         return data_fields
 
-    def preprocess(self):
-        if self._preprocessed:
-            logging.warning("Dataset has previously been preprocessed.")
-
-        assert not self.debug_only_opening_phase, "FIXME"
-
-        logging.info(
-            f"Building Press Dataset from {len(self.game_ids)} games, "
-            f"only_with_min_final_score={self.only_with_min_final_score} "
-            f"value_decay_alpha={self.value_decay_alpha} cf_agent={self.cf_agent}"
-        )
-
-        torch.set_num_threads(1)
-        encoded_games = joblib.Parallel(n_jobs=self.n_jobs)(
-            joblib.delayed(self._encode_game)(game_id) for game_id in self.game_ids
-        )
-        encoded_games = [
-            g for g in encoded_games if g is not None
-        ]  # remove "empty" games (e.g. json didn't exist)
-
-        logging.info(f"Found data for {len(encoded_games)} / {len(self.game_ids)} games")
-
-        encoded_games = [g for g in encoded_games if g["valid_power_idxs"][0].any()]
-        logging.info(f"{len(encoded_games)} games had data for at least one power")
-
-        game_idxs, phase_idxs, power_idxs, x_idxs = [], [], [], []
-        x_idx = 0
-        for game_idx, encoded_game in enumerate(encoded_games):
-            for phase_idx, valid_power_idxs in enumerate(encoded_game["valid_power_idxs"]):
-                assert valid_power_idxs.nelement() == len(POWERS), (
-                    encoded_game["valid_power_idxs"].shape,
-                    valid_power_idxs.shape,
-                )
-                for power_idx in valid_power_idxs.nonzero()[:, 0]:
-                    game_idxs.append(game_idx)
-                    phase_idxs.append(phase_idx)
-                    power_idxs.append(power_idx)
-                    x_idxs.append(x_idx)
-                x_idx += 1
-
-        self.game_idxs = torch.tensor(game_idxs, dtype=torch.long)
-        self.phase_idxs = torch.tensor(phase_idxs, dtype=torch.long)
-        self.power_idxs = torch.tensor(power_idxs, dtype=torch.long)
-        self.x_idxs = torch.tensor(x_idxs, dtype=torch.long)
-
-        # now collate the data into giant tensors!
-        self.encoded_games = DataFields.cat(encoded_games)
-
-        self.num_games = len(encoded_games)
-        self.num_phases = len(self.encoded_games["x_board_state"]) if self.encoded_games else 0
-        self.num_elements = len(self.x_idxs)
-
-        for i, e in enumerate(self.encoded_games.values()):
+    def validate_dataset(self):
+        logging.info("Validating dataset..")
+        for k, e in self.encoded_games.items():
             if isinstance(e, TensorList):
-                assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
+                if k == "x_input_message":
+                    assert len(e) == self.num_phases * len(POWERS)
+                else:
+                    assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
             else:
                 assert len(e) == self.num_phases
-
-        self._preprocessed = True
 
 
 class ListenerDataset(PressDataset):
@@ -329,7 +280,24 @@ class ListenerDataset(PressDataset):
 
         return DataFields(x_input_message=input_message)
 
-    # TODO(apjacob): Finish __item__ implementation
+    def __getitem__(self, idx: Union[int, torch.Tensor]):
+        assert self._preprocessed, "Dataset has not been pre-processed."
+
+        fields = super().__getitem__(idx)
+
+        if isinstance(idx, int):
+            idx = torch.tensor([idx], dtype=torch.long)
+
+        assert isinstance(idx, torch.Tensor) and idx.dtype == torch.long
+        assert idx.max() < len(self)
+
+        idx //= self.n_cf_agent_samples
+        x_idx = self.x_idxs[idx]
+        power_idx = self.power_idxs[idx]
+
+        x_input_message_idx = x_idx * len(POWERS) + power_idx
+        x_input_message = self.encoded_games["x_input_message"][x_input_message_idx]
+        fields["x_input_message"] = x_input_message.to_padded(padding_value=EOS_IDX).to(torch.long)
 
 
 def build_press_db_cache_from_cfg(cfg):
@@ -338,7 +306,7 @@ def build_press_db_cache_from_cfg(cfg):
     train_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
         message_chunks=cfg.message_chunks,
-        game_ids=train_game_ids[:10],
+        game_ids=train_game_ids[:5000],
         data_dir=cfg.data_dir,
         game_metadata=game_metadata,
         only_with_min_final_score=cfg.only_with_min_final_score,
@@ -348,6 +316,7 @@ def build_press_db_cache_from_cfg(cfg):
         exclude_n_holds=cfg.exclude_n_holds,
     )
     train_dataset.preprocess()
+    val = train_dataset[torch.tensor([1, 2, 3, 4, 5])]
 
     val_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,

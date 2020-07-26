@@ -4,7 +4,7 @@ build_press_db_cache {
     metadata_path: "/checkpoint/alerer/fairdiplomacy/facebook_notext/metadata.json";
     parlai_agent_file: "/checkpoint/edinan/diplomacy/400M_0701/model"
     message_chunks: "/checkpoint/fairdiplomacy/text_diplomacy_wyshi/processed_chat_jsons/game_phases/redacted_messages_runthree_4.json"
-    num_dataloader_workers: 20;
+    num_dataloader_workers: 1;
     val_set_pct: 0.01;
     value_decay_alpha: 1.0;
     min_rating_percentile: 0.5;

@@ -73,7 +73,7 @@ class Dataset(torch.utils.data.Dataset):
         min_rating=None,
         exclude_n_holds=-1,
     ):
-        self.game_ids = game_ids
+        self.game_ids = set(game_ids)
         self.data_dir = data_dir
         self.game_metadata = game_metadata
         self.debug_only_opening_phase = debug_only_opening_phase
@@ -116,17 +116,26 @@ class Dataset(torch.utils.data.Dataset):
 
         torch.set_num_threads(1)
 
-        encoded_games = joblib.Parallel(n_jobs=self.n_jobs)(
+        encoded_game_tuples = joblib.Parallel(n_jobs=self.n_jobs)(
             joblib.delayed(self._encode_game)(game_id) for game_id in self.game_ids
         )
         encoded_games = [
-            g for g in encoded_games if g is not None
+            g for (_, g) in encoded_game_tuples if g is not None
         ]  # remove "empty" games (e.g. json didn't exist)
 
         logging.info(f"Found data for {len(encoded_games)} / {len(self.game_ids)} games")
 
         encoded_games = [g for g in encoded_games if g["valid_power_idxs"][0].any()]
         logging.info(f"{len(encoded_games)} games had data for at least one power")
+
+        # Update game_ids
+        self.game_ids = set(
+            [
+                g_id
+                for (g_id, g) in encoded_game_tuples
+                if g_id is not None and g["valid_power_idxs"][0].any()
+            ]
+        )
 
         game_idxs, phase_idxs, power_idxs, x_idxs = [], [], [], []
         x_idx = 0
@@ -155,13 +164,16 @@ class Dataset(torch.utils.data.Dataset):
         self.num_phases = len(self.encoded_games["x_board_state"]) if self.encoded_games else 0
         self.num_elements = len(self.x_idxs)
 
+        self.validate_dataset()
+
+        self._preprocessed = True
+
+    def validate_dataset(self):
         for i, e in enumerate(self.encoded_games.values()):
             if isinstance(e, TensorList):
                 assert len(e) == self.num_phases * len(POWERS) * MAX_SEQ_LEN
             else:
                 assert len(e) == self.num_phases
-
-        self._preprocessed = True
 
     def get_valid_power_idxs(self, game_id):
         return [
@@ -188,7 +200,7 @@ class Dataset(torch.utils.data.Dataset):
             game = Game.from_saved_game_format(j)
         except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
             print(f"Error while loading game at {game_path}: {e}")
-            return None
+            return None, None
 
         num_phases = len(game.state_history)
         print(f"Encoding {game.game_id} with {num_phases} phases")
@@ -206,7 +218,7 @@ class Dataset(torch.utils.data.Dataset):
         )
         stacked_encodings["x_has_press"] = has_press
 
-        return stacked_encodings.to_storage_fmt_()
+        return game_id, stacked_encodings.to_storage_fmt_()
 
     def _encode_phase(self, game, game_id: int, phase_idx: int, input_valid_power_idxs):
         """
@@ -362,10 +374,11 @@ class Dataset(torch.utils.data.Dataset):
 
         # cast fields
         for k in fields:
-            if k in ("x_possible_actions", "y_actions", "x_prev_orders"):
-                fields[k] = fields[k].to(torch.long)
-            elif k != "prev_orders":
-                fields[k] = fields[k].to(torch.float32)
+            if isinstance(idx, torch.Tensor):
+                if k in ("x_possible_actions", "y_actions", "x_prev_orders"):
+                    fields[k] = fields[k].to(torch.long)
+                elif k != "prev_orders":
+                    fields[k] = fields[k].to(torch.float32)
 
         return fields.from_storage_fmt_()
 
