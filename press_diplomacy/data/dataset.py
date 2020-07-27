@@ -1,22 +1,9 @@
-import diplomacy
-import joblib
-import json
-import logging
-import os
-import torch
 import glob
-import logging
-
-from fairdiplomacy.agents import build_agent_from_cfg
-from itertools import combinations, product
-from fairdiplomacy.game import Game
-from typing import Any, Dict, Union, List, Optional, Tuple
 from fairdiplomacy.data.dataset import *
 from parlai.utils.torch import padded_tensor
 from fairdiplomacy.models.dipnet.train_sl import get_sl_db_args
 from parlai.core.agents import create_agent_from_model_file
 from glob import glob
-from parlai_diplomacy.tasks.language_diplomacy.utils import select_by_game_and_phase
 from fairdiplomacy.data.build_dataset import COUNTRY_ID_TO_POWER
 from tqdm import tqdm
 from abc import ABC, abstractmethod
@@ -306,7 +293,7 @@ def build_press_db_cache_from_cfg(cfg):
     train_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
         message_chunks=cfg.message_chunks,
-        game_ids=train_game_ids[:5000],
+        game_ids=train_game_ids,
         data_dir=cfg.data_dir,
         game_metadata=game_metadata,
         only_with_min_final_score=cfg.only_with_min_final_score,
@@ -316,7 +303,6 @@ def build_press_db_cache_from_cfg(cfg):
         exclude_n_holds=cfg.exclude_n_holds,
     )
     train_dataset.preprocess()
-    val = train_dataset[torch.tensor([1, 2, 3, 4, 5])]
 
     val_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
@@ -332,5 +318,5 @@ def build_press_db_cache_from_cfg(cfg):
     )
     val_dataset.preprocess()
 
-    logger.info(f"Saving datasets to {cfg.data_cache}")
+    logger.info(f"Saving press datasets to {cfg.data_cache}")
     torch.save((train_dataset, val_dataset), cfg.data_cache)
