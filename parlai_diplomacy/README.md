@@ -4,8 +4,6 @@ Folder for all of the language related diplomacy code.
 
 I import parlai here so there are a few caveats/changes/tricks to using ParlAI inside this repo, please read below. All commands should be run from inside the `parlai_diplomacy` directory.
 
-**NOTE: the dialogue chunk teacher (for faster streaming) does not currently work as the ParlAI pip package needs to be updated to include my latest changes. It should be updated sometime next week (Week of July 13).**
-
 ## Creating tasks and agents
 We use the "register" syntax so that new agents and tasks are visible to the parlai module. Note, however,
 that in any script that uses these tasks or agents, you will have to make a call to the functions `register_all_agents()` and `register_all_tasks()` which can be found in `utils/loading.py`.
@@ -43,7 +41,6 @@ python scripts/display_data.py -t message_order
 ```
 
 ### Dialogue chunk teacher
-**(CURRENTLY NOT WORKING) TODO: update this once the parlai pip package is update.**
 To view the train data using the CHUNK teacher (streams in small files to load the data quickly) run:
 ```
 python scripts/display_data.py -t dialogue_chunk -dt train:stream
@@ -67,6 +64,11 @@ Other sweeps can be found in this folder.
 Example command for training a model on your devfair that is initialized with weights from a pre-trained Reddit model:
 ```
 python -u scripts/train.py -t dialogue --min-turns 3 -veps 0.1 --attention-dropout 0.0 --dropout 0.1 --fp16 True --init-model /checkpoint/edinan/diplomacy/400M_0701/model --dict-file /checkpoint/edinan/diplomacy/400M_0701/model.dict -m transformer/generator --embedding-size 1024 --ffn-size 4096 --attention-dropout 0.1 --n-heads 16 --n-positions 2048 --variant prelayernorm --activation gelu --n-encoder-layers 2 --n-decoder-layers 22 --skip-generation True --fp16 True --fp16-impl mem_efficient --force-fp16-tokens True --optimizer mem_eff_adam --truncate 128 --dict-tokenizer bytelevelbpe --bpe-vocab /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-vocab.json --bpe-merge /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-merges.txt --label-truncate 128 --log_every_n_secs 10 -lr 7e-06 --lr-scheduler reduceonplateau --lr-scheduler-patience 3 --optimizer adam --relu-dropout 0.0 --activation gelu --model-parallel True --save-after-valid True --text-truncate 128 --truncate 128 --warmup_updates 100 --fp16-impl mem_efficient --update-freq 2 --gradient-clip 0.1 --skip-generation True -vp 10 --max-train-time 27647.999999999996 -vmt ppl -vmm min -stim 360 -vme 10000 -bs 4 -mf /tmp/fairdip_traintest
+```
+
+Similar command as above, but instead train the model with special diplomacy specific tokens:
+```
+python scripts/train.py -t dialogue_chunk -m special_tok_generator --attention-dropout 0.0 --dropout 0.1 --fp16 True --init-model /checkpoint/edinan/diplomacy/400M_0701/model --dict-file /checkpoint/edinan/diplomacy/400M_0701/model.dict -m transformer/generator --embedding-size 1024 --ffn-size 4096 --attention-dropout 0.1 --n-heads 16 --n-positions 2048 --variant prelayernorm --activation gelu --n-encoder-layers 2 --n-decoder-layers 22 --skip-generation True --fp16 True --fp16-impl mem_efficient --force-fp16-tokens True --optimizer mem_eff_adam --truncate 128 --dict-tokenizer bytelevelbpe --bpe-vocab /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-vocab.json --bpe-merge /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-merges.txt --label-truncate 128 --log_every_n_secs 10 -lr 7e-06 --lr-scheduler reduceonplateau --lr-scheduler-patience 3 --optimizer adam --relu-dropout 0.0 --activation gelu --model-parallel True --save-after-valid True --text-truncate 128 --truncate 128 --warmup_updates 100 --fp16-impl mem_efficient --update-freq 2 --gradient-clip 0.1 --skip-generation True -vp 10 --max-train-time 27647.999999999996 -vmt ppl -vmm min -stim 360 -vme 10000 -bs 4 -mf /tmp/fairdip_traintest_special_toks -dt train:stream
 ```
 
 ## Talking to models that are already trained (interactive)
