@@ -348,6 +348,14 @@ message TrainTask {
   // Path to dir containing dataset cache.
   optional string data_cache = 2;
 
+  // Optional. Paths to additional datasets. Only validation part of these
+  // datasets will be used. The key is used for reporting.
+  map<string, string> extra_val_data_caches = 43;
+
+  // Optional. Paths to additional train datasets. Will be concatenated to the
+  // main dataset.
+  repeated string extra_train_data_caches = 44;
+
   // Dataloader procs (1 means load in the main process).
   optional int32 num_dataloader_workers = 3;
 
@@ -405,7 +413,7 @@ message TrainTask {
   // Max number of epochs to train
   optional int32 num_epochs = 21;
 
-  // If set, will write a jsonl file with metrics in the current folder.
+  // Stale. Always enabled.
   optional bool write_jsonl = 22;
 
   // Weight of value loss relative to policy loss, between 0 and 1
@@ -670,7 +678,7 @@ message BuildDbCacheTask {
   optional int32 n_parallel_jobs = 6 [ default = -1 ];
 
   // Percentage of games to use as val set.
-  optional float val_set_pct = 7;
+  optional float val_set_pct = 7 [default = 0.01];
 
   optional Launcher launcher = 100;
 }

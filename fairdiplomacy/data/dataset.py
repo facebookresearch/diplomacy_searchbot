@@ -5,7 +5,7 @@ import logging
 import os
 import torch
 from itertools import combinations, product
-from typing import Any, Dict, Union, List, Optional, Tuple
+from typing import Any, Dict, Union, List, Optional, Sequence, Tuple
 
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
@@ -199,6 +199,25 @@ class Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.num_elements * self.n_cf_agent_samples
+
+    @classmethod
+    def from_merge(cls, datasets: Sequence["Dataset"]) -> torch.utils.data.Dataset:
+        return MyConcatDataset(datasets)
+
+
+class MyConcatDataset(torch.utils.data.ConcatDataset):
+    """Concat dataset that support indexing by tensors."""
+
+    def __getitem__(self, index):
+        """This function returns elements from the index without order guarantees!."""
+        if isinstance(index, int):
+            return super().__getitem__(index)
+        chunks = []
+        for i, (start, end) in enumerate(zip([0] + self.cumulative_sizes, self.cumulative_sizes)):
+            subindices = index[(index >= start) & (index < end)]
+            if len(subindices):
+                chunks.append(self.datasets[i][subindices - start])
+        return DataFields.cat(chunks)
 
 
 def encode_game(
