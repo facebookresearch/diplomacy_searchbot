@@ -117,7 +117,6 @@ class PressDataset(Dataset, ABC):
         )
 
         self.tokenized_messages = self._tokenize_message_dict()
-        del self.dialogue_agent
         # Update game_ids
         self.game_ids = set(self.messages.keys()) & self.game_ids
 
