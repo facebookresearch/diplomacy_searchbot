@@ -448,7 +448,9 @@ def run_with_cfg(args):
     else:
         assert args.metadata_path is not None
         assert args.data_dir is not None
-        game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(args)
+        game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
+            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct
+        )
 
         train_dataset = Dataset(
             game_ids=train_game_ids,
@@ -494,19 +496,21 @@ def run_with_cfg(args):
         )
 
 
-def get_sl_db_args(args):
+def get_sl_db_args(metadata_path, min_rating_percentile, max_games, val_set_pct):
     """
-    Wrapper function to produce train, val game_ids.
-    :param args:
-    :return:
+    :param metadata_path:
+    :param min_rating_percentile:
+    :param max_games:
+    :param val_set_pct:
+    :return: game_metadata, min_rating, train_game_ids and val_game_ids
     """
-    with open(args.metadata_path) as meta_f:
+    with open(metadata_path) as meta_f:
         game_metadata = json.load(meta_f)
     # convert to int game keys
     game_metadata = {int(k): v for k, v in game_metadata.items()}
     game_ids = list(game_metadata.keys())
     # compute min rating
-    if args.min_rating_percentile > 0:
+    if min_rating_percentile > 0:
         ratings = torch.tensor(
             [
                 game[pwr]["logit_rating"]
@@ -515,17 +519,17 @@ def get_sl_db_args(args):
                 if pwr in game
             ]
         )
-        min_rating = ratings.sort()[0][int(len(ratings) * args.min_rating_percentile)]
+        min_rating = ratings.sort()[0][int(len(ratings) * min_rating_percentile)]
         print(
-            f"Only training on games with min rating of {min_rating} ({args.min_rating_percentile * 100} percentile)"
+            f"Only training on games with min rating of {min_rating} ({min_rating_percentile * 100} percentile)"
         )
     else:
         min_rating = -1e9
-    if args.max_games > 0:
-        game_ids = game_ids[: args.max_games]
+    if max_games > 0:
+        game_ids = game_ids[:max_games]
     assert len(game_ids) > 0
     logger.info(f"Found dataset of {len(game_ids)} games...")
-    val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * args.val_set_pct)))
+    val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * val_set_pct)))
     train_game_ids = list(set(game_ids) - set(val_game_ids))
 
     return game_metadata, min_rating, train_game_ids, val_game_ids

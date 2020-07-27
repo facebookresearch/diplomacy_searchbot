@@ -1,15 +1,18 @@
-import glob
-from fairdiplomacy.data.dataset import *
-from parlai.utils.torch import padded_tensor
-from fairdiplomacy.models.dipnet.train_sl import get_sl_db_args
-from parlai.core.agents import create_agent_from_model_file
-from glob import glob
-from fairdiplomacy.data.build_dataset import COUNTRY_ID_TO_POWER
-from tqdm import tqdm
-from abc import ABC, abstractmethod
 import copy
+import glob
+import torch
+from abc import ABC, abstractmethod
+from glob import glob
 
-logger = logging.getLogger(__name__)
+from parlai.core.agents import create_agent_from_model_file
+from parlai.utils.torch import padded_tensor
+from tqdm import tqdm
+
+from fairdiplomacy.data.build_dataset import COUNTRY_ID_TO_POWER
+from fairdiplomacy.data.dataset import *
+from fairdiplomacy.models.dipnet.train_sl import get_sl_db_args
+
+logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
@@ -69,7 +72,7 @@ class PressDataset(Dataset, ABC):
         self.messages, self.tokenized_messages = self._load_messages()
 
     @abstractmethod
-    def _construct_message_dict(self, message_list):
+    def _construct_message_dict(self, message_list: List[List[str]]) -> Dict:
         """
         Constructs message dict using raw message_list from the message db
         :param message_list: List[dict]
@@ -78,14 +81,14 @@ class PressDataset(Dataset, ABC):
         raise NotImplementedError("Subclasses must implement this. ")
 
     @abstractmethod
-    def _tokenize_message_dict(self):
+    def _tokenize_message_dict(self) -> Dict:
         """
         Tokenizes messages in self.messages as constructed by _construct_message_dict
         :return:
         """
         raise NotImplementedError("Subclasses must implement this.")
 
-    def _load_messages(self):
+    def _load_messages(self) -> Tuple[Dict, Dict]:
         """
         Loads message data
         """
@@ -120,7 +123,7 @@ class PressDataset(Dataset, ABC):
 
         return self.messages, self.tokenized_messages
 
-    def _encode_message(self, message):
+    def _encode_message(self, message: str) -> torch.Tensor:
         """
         Tokenizes message
         :param message: input message, str
@@ -133,7 +136,7 @@ class PressDataset(Dataset, ABC):
         return self.dialogue_agent._vectorize_text(message, add_end=True)
 
     @abstractmethod
-    def _encode_messages(self, game, game_id, phase_idx):
+    def _encode_messages(self, game, game_id: int, phase_idx: int):
         """
         Encodes messages in game_id, phase_idx into a
         :param game: Diplomacy.Game object
@@ -165,10 +168,6 @@ class PressDataset(Dataset, ABC):
 
 
 class ListenerDataset(PressDataset):
-    """
-    Listener Dataset class
-    """
-
     def __init__(
         self,
         *,
@@ -251,7 +250,7 @@ class ListenerDataset(PressDataset):
         return self.tokenized_messages
 
     # Note: HuggingFace Tokenizer cannot be pickled for joblib :(
-    def _encode_messages(self, game, game_id, phase_idx):
+    def _encode_messages(self, game, game_id: int, phase_idx: int) -> DataFields:
         assert game_id in self.tokenized_messages
 
         phase_name = game.get_phase_name(phase_idx)
@@ -286,9 +285,13 @@ class ListenerDataset(PressDataset):
         x_input_message = self.encoded_games["x_input_message"][x_input_message_idx]
         fields["x_input_message"] = x_input_message.to_padded(padding_value=EOS_IDX).to(torch.long)
 
+        return fields
+
 
 def build_press_db_cache_from_cfg(cfg):
-    game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(cfg)
+    game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
+        cfg.metadata_path, cfg.min_rating_percentile, cfg.max_games, cfg.val_set_pct
+    )
 
     train_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,

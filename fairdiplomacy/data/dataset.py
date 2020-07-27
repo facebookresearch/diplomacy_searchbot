@@ -84,7 +84,6 @@ class Dataset(torch.utils.data.Dataset):
         self.n_cf_agent_samples = n_cf_agent_samples
         self.min_rating = min_rating
         self.exclude_n_holds = exclude_n_holds
-
         # Pre-processing populates these fields
         self.game_idxs = None
         self.phase_idxs = None
@@ -94,7 +93,6 @@ class Dataset(torch.utils.data.Dataset):
         self.num_games = None
         self.num_phases = None
         self.num_elements = None
-
         self._preprocessed = False
 
     @property
@@ -183,7 +181,7 @@ class Dataset(torch.utils.data.Dataset):
     def stats_str(self):
         return f"Dataset: {self.num_games} games, {self.num_phases} phases, and {self.num_elements} elements."
 
-    def _encode_game(self, game_id):
+    def _encode_game(self, game_id: int):
         """
         Encodes game_id game
         :param game_id:
@@ -374,7 +372,7 @@ class Dataset(torch.utils.data.Dataset):
 
         # cast fields
         for k in fields:
-            if isinstance(idx, torch.Tensor):
+            if isinstance(k, torch.Tensor):
                 if k in ("x_possible_actions", "y_actions", "x_prev_orders"):
                     fields[k] = fields[k].to(torch.long)
                 elif k != "prev_orders":
