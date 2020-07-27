@@ -135,7 +135,7 @@ class PressDataset(Dataset, ABC):
         return self.dialogue_agent._vectorize_text(message, add_end=True)
 
     @abstractmethod
-    def _encode_messages(self, game, game_id: int, phase_idx: int):
+    def _encode_messages(self, game, game_id: int, phase_idx: int) -> DataFields[TensorList]:
         """
         Encodes messages in game_id, phase_idx into a
         :param game: Diplomacy.Game object
@@ -304,7 +304,6 @@ def build_press_db_cache_from_cfg(cfg):
         min_rating=min_rating,
         exclude_n_holds=cfg.exclude_n_holds,
     )
-    train_dataset.preprocess()
 
     val_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
@@ -318,7 +317,6 @@ def build_press_db_cache_from_cfg(cfg):
         min_rating=min_rating,
         exclude_n_holds=cfg.exclude_n_holds,
     )
-    val_dataset.preprocess()
 
     logger.info(f"Saving press datasets to {cfg.data_cache}")
     torch.save((train_dataset, val_dataset), cfg.data_cache)

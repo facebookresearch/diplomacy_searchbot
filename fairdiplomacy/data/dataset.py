@@ -95,6 +95,8 @@ class Dataset(torch.utils.data.Dataset):
         self.num_elements = None
         self._preprocessed = False
 
+        self.preprocess()
+
     @property
     def preprocessed(self):
         return self._preprocessed

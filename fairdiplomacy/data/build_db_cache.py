@@ -61,10 +61,8 @@ def build_db_cache_from_cfg(cfg):
 
     logging.info("Building val dataset")
     val_dataset = Dataset(game_ids=val_game_ids, **kwargs)
-    val_dataset.preprocess()
     logging.info("Building train dataset")
     train_dataset = Dataset(game_ids=train_game_ids, **kwargs)
-    train_dataset.preprocess()
 
     logging.info("Saving")
     torch.save((train_dataset, val_dataset), cfg.out_path)

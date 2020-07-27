@@ -473,8 +473,6 @@ def run_with_cfg(args):
             exclude_n_holds=args.exclude_n_holds,
         )
 
-        train_dataset.preprocess()
-        val_dataset.preprocess()
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")
             torch.save((train_dataset, val_dataset), args.data_cache)
