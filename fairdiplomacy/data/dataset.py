@@ -73,7 +73,7 @@ class Dataset(torch.utils.data.Dataset):
         min_rating=None,
         exclude_n_holds=-1,
     ):
-        self.game_ids = set(game_ids)
+        self.game_ids = game_ids
         self.data_dir = data_dir
         self.game_metadata = game_metadata
         self.debug_only_opening_phase = debug_only_opening_phase
@@ -129,13 +129,11 @@ class Dataset(torch.utils.data.Dataset):
         logging.info(f"{len(encoded_games)} games had data for at least one power")
 
         # Update game_ids
-        self.game_ids = set(
-            [
-                g_id
-                for (g_id, g) in encoded_game_tuples
-                if g_id is not None and g["valid_power_idxs"][0].any()
-            ]
-        )
+        self.game_ids = [
+            g_id
+            for (g_id, g) in encoded_game_tuples
+            if g_id is not None and g["valid_power_idxs"][0].any()
+        ]
 
         game_idxs, phase_idxs, power_idxs, x_idxs = [], [], [], []
         x_idx = 0

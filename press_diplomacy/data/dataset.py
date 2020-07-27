@@ -25,36 +25,8 @@ class PressDataset(Dataset, ABC):
     Abstract Press Dataset class that every Press Dataset variant needs to subclass
     """
 
-    def __init__(
-        self,
-        *,
-        parlai_agent_file: str,
-        message_chunks: str,
-        game_ids: List[int],
-        data_dir: str,
-        game_metadata: Dict[int, Any],
-        debug_only_opening_phase=False,
-        only_with_min_final_score=7,
-        n_jobs=20,
-        value_decay_alpha=1.0,
-        cf_agent=None,
-        n_cf_agent_samples=1,
-        min_rating=None,
-        exclude_n_holds=-1,
-    ):
-        super().__init__(
-            game_ids=game_ids,
-            data_dir=data_dir,
-            game_metadata=game_metadata,
-            debug_only_opening_phase=debug_only_opening_phase,
-            only_with_min_final_score=only_with_min_final_score,
-            n_jobs=n_jobs,
-            value_decay_alpha=value_decay_alpha,
-            cf_agent=cf_agent,
-            n_cf_agent_samples=n_cf_agent_samples,
-            min_rating=min_rating,
-            exclude_n_holds=exclude_n_holds,
-        )
+    def __init__(self, *, parlai_agent_file: str, message_chunks: str, **kwargs):
+        super().__init__(**kwargs)
 
         message_files = glob(message_chunks)
         if len(message_files):
@@ -118,7 +90,7 @@ class PressDataset(Dataset, ABC):
 
         self.tokenized_messages = self._tokenize_message_dict()
         # Update game_ids
-        self.game_ids = set(self.messages.keys()) & self.game_ids
+        self.game_ids = sorted(set(self.messages.keys()) & set(self.game_ids))
 
         return self.messages, self.tokenized_messages
 
@@ -135,7 +107,7 @@ class PressDataset(Dataset, ABC):
         return self.dialogue_agent._vectorize_text(message, add_end=True)
 
     @abstractmethod
-    def _encode_messages(self, game, game_id: int, phase_idx: int) -> DataFields[TensorList]:
+    def _encode_messages(self, game, game_id: int, phase_idx: int) -> DataFields:
         """
         Encodes messages in game_id, phase_idx into a
         :param game: Diplomacy.Game object
@@ -167,38 +139,8 @@ class PressDataset(Dataset, ABC):
 
 
 class ListenerDataset(PressDataset):
-    def __init__(
-        self,
-        *,
-        parlai_agent_file: str,
-        message_chunks: str,
-        game_ids: List[int],
-        data_dir: str,
-        game_metadata: Dict[int, Any],
-        debug_only_opening_phase=False,
-        only_with_min_final_score=7,
-        n_jobs=20,
-        value_decay_alpha=1.0,
-        cf_agent=None,
-        n_cf_agent_samples=1,
-        min_rating=None,
-        exclude_n_holds=-1,
-    ):
-        super().__init__(
-            parlai_agent_file=parlai_agent_file,
-            message_chunks=message_chunks,
-            game_ids=game_ids,
-            data_dir=data_dir,
-            game_metadata=game_metadata,
-            debug_only_opening_phase=debug_only_opening_phase,
-            only_with_min_final_score=only_with_min_final_score,
-            n_jobs=n_jobs,
-            value_decay_alpha=value_decay_alpha,
-            cf_agent=cf_agent,
-            n_cf_agent_samples=n_cf_agent_samples,
-            min_rating=min_rating,
-            exclude_n_holds=exclude_n_holds,
-        )
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def _construct_message_dict(self, message_list):
         message_dict = {}
