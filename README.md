@@ -85,7 +85,7 @@ To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slur
 ## Nothing works
 If you get error about failed import `conf.conf_pb2` or about missing fields in the config, run:
 ```
-protoc conf/conf.proto --python_out ./
+protoc conf/*.proto --python_out ./
 ```
 
 ## How do I do `--help`

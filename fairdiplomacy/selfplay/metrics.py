@@ -8,7 +8,10 @@ import pathlib
 import subprocess
 import time
 
+import heyhi
+
 import torch
+import torch.utils.tensorboard
 
 
 def _sanitize(value):
@@ -131,22 +134,30 @@ class MaxCounter:
 
 
 class Logger:
-    def __init__(self):
-        # TODO(akhti): rank 0!
-        self.writer = torch.utils.tensorboard.SummaryWriter(log_dir="tb")
-        self.jsonl_writer = open("metrics.jsonl", "a")
+    def __init__(self, is_master=None):
+        if is_master is None:
+            self.is_master = heyhi.is_master()
+        else:
+            self.is_master = is_master
+        if self.is_master:
+            self.writer = torch.utils.tensorboard.SummaryWriter(log_dir="tb")
+            self.jsonl_writer = open("metrics.jsonl", "a")
 
-    def log_metrics(self, metrics, step):
+    def log_metrics(self, metrics, step, sanitize=False):
+        if not self.is_master:
+            return
+        if sanitize:
+            metrics = {k: _sanitize(v) for k, v in metrics.items()}
         for key, value in metrics.items():
             self.writer.add_scalar(key, value, global_step=step)
         created_at = datetime.datetime.utcnow().isoformat()
-        print(
-            json.dumps(dict(epoch=step, created_at=created_at, **metrics)),
-            file=self.jsonl_writer,
-            flush=True,
-        )
+        json_metrics = dict(global_step=step, created_at=created_at)
+        json_metrics.update(metrics)
+        print(json.dumps(json_metrics), file=self.jsonl_writer, flush=True)
 
     def close(self):
+        if not self.is_master:
+            return
         if self.writer is not None:
             self.writer.close()
             self.writer = None

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from typing import Optional
 import atexit
 import json
 import logging
@@ -10,13 +11,14 @@ from functools import reduce
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, DataFields
-from fairdiplomacy.models.dipnet.load_model import new_model
+from fairdiplomacy.models.dipnet.load_model import new_model, load_dipnet_model
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
     EOS_IDX,
 )
+from fairdiplomacy.selfplay.metrics import Logger
 
 
 logger = logging.getLogger(__name__)
@@ -176,7 +178,14 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
     return counts
 
 
-def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float):
+def validate(
+    net,
+    val_set,
+    policy_loss_fn,
+    value_loss_fn,
+    batch_size,
+    value_loss_weight: float,
+):
     net_device = next(net.parameters()).device
 
     with torch.no_grad():
@@ -240,41 +249,17 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
     return valid_loss, p_loss, v_loss, valid_p_accuracy, valid_v_accuracy, split_pcts
 
 
-def maybe_build_jsonl_logger(fpath, do_log):
-    """Returns a function that either dumps scalar values to a file or noop.
-
-    Returned function has signature:
-
-        def log(**kwargs):
-            ....
-
-    If do_log is False, then the function is doing nothing. Otherwise, the
-    function expectes to get a dict of json-serializable values and will
-    append them to fpath as a jsonl.
-    """
-    stream = open(fpath, "a") if do_log else None
-
-    def sanitize(value):
-        if hasattr(value, "item"):
-            return value.item()
-        return value
-
-    def log(**kwargs):
-        if stream is not None:
-            record = {k: sanitize(v) for k, v in kwargs.items()}
-            print(json.dumps(record), file=stream, flush=True)
-
-    return log
-
-
-def main_subproc(rank, world_size, args, train_set, val_set):
+def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets):
     # distributed training setup
     mp_setup(rank, world_size)
     atexit.register(mp_cleanup)
     torch.cuda.set_device(rank)
 
-    write_jsonl = rank == 0 and getattr(args, "write_jsonl", False)
-    log_scalars = maybe_build_jsonl_logger("metrics.jsonl", write_jsonl)
+    metric_logger = Logger(is_master=rank == 0)
+    global_step = 0
+    log_scalars = lambda **scalars: metric_logger.log_metrics(
+        scalars, step=global_step, sanitize=True
+    )
 
     # load checkpoint if specified
     if args.checkpoint and os.path.isfile(args.checkpoint):
@@ -366,6 +351,7 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                     "epoch {} batch {} / {}, ".format(epoch, batch_i, len(batches))
                     + " ".join(f"{k}= {v}" for k, v in scalars.items())
                 )
+            global_step += 1
 
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:
@@ -393,6 +379,23 @@ def main_subproc(rank, world_size, args, train_set, val_set):
                 valid_p_accuracy=valid_p_accuracy,
                 valid_v_accuracy=valid_v_accuracy,
             )
+            for name, extra_val_set in extra_val_datasets.items():
+                (
+                    scalars[f"valid_{name}/loss"],
+                    scalars[f"valid_{name}/p_loss"],
+                    scalars[f"valid_{name}/v_loss"],
+                    scalars[f"valid_{name}/p_accuracy"],
+                    scalars[f"valid_{name}/v_accuracy"],
+                    _,
+                ) = validate(
+                    net,
+                    extra_val_set,
+                    policy_loss_fn,
+                    value_loss_fn,
+                    args.batch_size,
+                    value_loss_weight=args.value_loss_weight,
+                )
+
             log_scalars(**scalars)
             logger.info("Validation " + " ".join([f"{k}= {v}" for k, v in scalars.items()]))
             for k, v in sorted(split_pcts.items()):
@@ -441,10 +444,17 @@ def run_with_cfg(args):
     n_gpus = torch.cuda.device_count()
     logger.info("Using {} GPUs".format(n_gpus))
 
+    cache = {}
+
+    def cached_torch_load(fpath):
+        if fpath not in cache:
+            cache[fpath] = torch.load(fpath)
+        return cache[fpath]
+
     # search for data and create train/val splits
     if args.data_cache and os.path.exists(args.data_cache):
         logger.info(f"Found dataset cache at {args.data_cache}")
-        train_dataset, val_dataset = torch.load(args.data_cache)
+        train_dataset, val_dataset = cached_torch_load(args.data_cache)
     else:
         assert args.metadata_path is not None
         assert args.data_dir is not None
@@ -480,6 +490,21 @@ def run_with_cfg(args):
     logger.info(f"Train dataset: {train_dataset.stats_str()}")
     logger.info(f"Val dataset: {val_dataset.stats_str()}")
 
+    if args.extra_train_data_caches:
+        train_dataset = [train_dataset]
+        for path in args.extra_train_data_caches:
+            train_dataset.append(cached_torch_load(path)[0])
+            logger.info(f"Extra train dataset: {train_dataset[-1].stats_str()}")
+        train_dataset = Dataset.from_merge(train_dataset)
+
+    extra_val_datasets = {}
+    for name, path in args.extra_val_data_caches.items():
+        extra_val_datasets[name] = cached_torch_load(path)[1]
+        logger.info(f"Extra val dataset ({name}): {extra_val_datasets[name].stats_str()}")
+
+    # Clear the cache.
+    cache = {}
+
     # required when using multithreaded DataLoader
     try:
         torch.multiprocessing.set_start_method("spawn")
@@ -487,10 +512,12 @@ def run_with_cfg(args):
         pass
 
     if args.debug_no_mp:
-        main_subproc(0, 1, args, train_dataset, val_dataset)
+        main_subproc(0, 1, args, train_dataset, val_dataset, extra_val_datasets)
     else:
         torch.multiprocessing.spawn(
-            main_subproc, nprocs=n_gpus, args=(n_gpus, args, train_dataset, val_dataset)
+            main_subproc,
+            nprocs=n_gpus,
+            args=(n_gpus, args, train_dataset, val_dataset, extra_val_datasets),
         )
 
 

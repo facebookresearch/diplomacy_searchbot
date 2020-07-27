@@ -1,280 +1,9 @@
 // Format this file with clang after editing:
-//   clang-format-8 conf/conf.proto -i
+//   clang-format-8 conf/*.proto -i
 syntax = "proto2";
 package fairdiplomacy;
 
-message MilaSlAgent {
-  // Optional. Softmax temperature
-  optional float temperature = 1;
-}
-
-message RandomAgent {}
-
-message DipnetAgent {
-  // Required. Path to DipNet checkpoint.
-  optional string model_path = 1;
-
-  // Optional. Softmax temperature
-  optional float temperature = 2;
-
-  // Optional. Share of probability mass to keep for sampling.
-  optional float top_p = 3 [ default = 1.0 ];
-}
-
-message CFR1PAgent {
-  // Path to DipNet checkpoint.
-  optional string model_path = 1;
-
-  // Size of rollout process pool
-  optional uint32 n_rollout_procs = 2;
-
-  // Number of postman server processes to launch
-  optional uint32 n_server_procs = 3;
-
-  // Distribute server processes over multiple GPUs
-  optional uint32 n_gpu = 4;
-
-  // Model server maximum batch size
-  optional uint32 max_batch_size = 5;
-
-  // Number of CFR iterations
-  optional uint32 n_rollouts = 6;
-
-  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
-  optional uint32 max_rollout_length = 7;
-
-  // If true, use model predicted final scores in heuristic evalauation
-  // If false, use current SC counts after max_rollout_length steps
-  optional bool use_predicted_final_scores = 8;
-
-  // Number of order-sets (actions) to consider at each step in search code
-  optional uint32 n_plausible_orders = 9;
-
-  // Temperature used for rollouts
-  optional float rollout_temperature = 10;
-
-  // If true, set postman batch size and use wait_till_full
-  optional bool postman_sync_batches = 11;
-
-  // Optional host:port for model server
-  optional string use_server_addr = 12;
-
-  // CUDA device to use, if > 0
-  optional int32 device = 13 [ default = -1 ];
-
-  // Optional float 0 - 1 to mix in raw sum of squares ratio
-  optional float mix_square_ratio_scoring = 14;
-
-  // Optional, # of rollouts to run in parallel for each possible action
-  optional uint32 average_n_rollouts = 15;
-
-  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
-  // smallest subset of actions that has probability at least top_p is
-  // considered. All other actions are never sampled.
-  optional float rollout_top_p = 16;
-
-  // Optional, limit number of actions to consider as a ratio of # units
-  // # plausible actions = min(ceil(max_actions_units_ratio * #units),
-  // n_plausible_orders)
-  optional float max_actions_units_ratio = 17 [ default = -1 ];
-
-  // Optional, if True, sample from final iter instead of average iter
-  optional bool use_final_iter = 18 [ default = true ];
-
-  // Optional: separate model path to compute the value function
-  optional string value_model_path = 19;
-
-  // Optional host:port for value model server
-  optional string use_value_server_addr = 20;
-
-  optional uint32 plausible_orders_req_size = 21 [ default = 0 ];
-
-  // Optional, if True, prune actions after 1/4 of the number of iters
-  optional bool use_pruning = 22 [ default = false ];
-
-  // Optional, if >0 then play BP strategy for this many iters
-  optional int32 bp_iters = 23 [ default = 0 ];
-
-  // Optional, if >0 then play BP strategy for this many iters
-  optional float bp_prob = 24 [ default = 0 ];
-
-  // Optional, if >0, then at each rollout step will use the current
-  // model-predicted value as this fraction of the final estimate
-  // (i.e. exponentially decaying effect of rollouts of increasing length)
-  optional float rollout_value_frac = 25 [ default = 0 ];
-
-  optional bool cache_rollout_results = 26 [ default = false ];
-}
-
-message BRSearchAgent {
-  // Path to DipNet checkpoint.
-  optional string model_path = 1;
-
-  // Size of rollout process pool
-  optional uint32 n_rollout_procs = 2;
-
-  // Number of postman server processes to launch
-  optional uint32 n_server_procs = 3;
-
-  // Distribute server processes over multiple GPUs
-  optional uint32 n_gpu = 4;
-
-  // Model server maximum batch size
-  optional uint32 max_batch_size = 5;
-
-  // Number of rollouts per plausible order
-  optional uint32 rollouts_per_plausible_order = 6;
-
-  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
-  optional uint32 max_rollout_length = 7;
-
-  // If true, use model predicted final scores in heuristic evalauation
-  // If false, use current SC counts after max_rollout_length steps
-  optional bool use_predicted_final_scores = 8;
-
-  // Number of order-sets (actions) to consider at each step in search code
-  optional uint32 n_plausible_orders = 9;
-
-  // Temperature used for rollouts
-  optional float rollout_temperature = 10;
-}
-
-message CE1PAgent {
-  // Path to DipNet checkpoint.
-  optional string model_path = 1;
-
-  // Size of rollout process pool
-  optional uint32 n_rollout_procs = 2;
-
-  // Number of postman server processes to launch
-  optional uint32 n_server_procs = 3;
-
-  // Distribute server processes over multiple GPUs
-  optional uint32 n_gpu = 4;
-
-  // Model server maximum batch size
-  optional uint32 max_batch_size = 5;
-
-  // Number of CFR iterations
-  optional uint32 n_rollouts = 6;
-
-  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
-  optional uint32 max_rollout_length = 7;
-
-  // If true, use model predicted final scores in heuristic evalauation
-  // If false, use current SC counts after max_rollout_length steps
-  optional bool use_predicted_final_scores = 8;
-
-  // Number of order-sets (actions) to consider at each step in search code
-  optional uint32 n_plausible_orders = 9;
-
-  // Temperature used for rollouts
-  optional float rollout_temperature = 10;
-}
-
-message FP1PAgent {
-  // Path to DipNet checkpoint.
-  optional string model_path = 1;
-
-  // Size of rollout process pool
-  optional uint32 n_rollout_procs = 2;
-
-  // Number of postman server processes to launch
-  optional uint32 n_server_procs = 3;
-
-  // Distribute server processes over multiple GPUs
-  optional uint32 n_gpu = 4;
-
-  // Model server maximum batch size
-  optional uint32 max_batch_size = 5;
-
-  // Number of CFR iterations
-  optional uint32 n_rollouts = 6;
-
-  // Maximum rollout length in MOVEMENT PHASES heuristically evaluating the game
-  optional uint32 max_rollout_length = 7;
-
-  // If true, use model predicted final scores in heuristic evalauation
-  // If false, use current SC counts after max_rollout_length steps
-  optional bool use_predicted_final_scores = 8;
-
-  // Number of order-sets (actions) to consider at each step in search code
-  optional uint32 n_plausible_orders = 9;
-
-  // Temperature used for rollouts
-  optional float rollout_temperature = 10;
-
-  // If true, set postman batch size and use wait_till_full
-  optional bool postman_sync_batches = 11;
-
-  // Optional host:port for model server
-  optional string use_server_addr = 12;
-
-  // CUDA device to use, if > 0
-  optional int32 device = 13 [ default = -1 ];
-
-  // Optional float 0 - 1 to mix in raw sum of squares ratio
-  optional float mix_square_ratio_scoring = 14;
-
-  // Optional, # of rollouts to run in parallel for each possible action
-  optional uint32 average_n_rollouts = 15;
-
-  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
-  // smallest subset of actions that has probability at least top_p is
-  // considered. All other actions are never sampled.
-  optional float rollout_top_p = 16;
-
-  // Optional, limit number of actions to consider as a ratio of # units
-  // # plausible actions = min(ceil(max_actions_units_ratio * #units), n_plausible_orders)
-  optional float max_actions_units_ratio = 17 [ default = -1 ];
-
-  // Optional, if True, sample from final iter instead of average iter
-  optional bool use_final_iter = 18 [ default = true ];
-
-  // Optional: separate model path to compute the value function
-  optional string value_model_path = 19;
-
-  // Optional host:port for value model server
-  optional string use_value_server_addr = 20;
-
-  optional uint32 plausible_orders_req_size = 21 [ default = 0 ];
-
-  // Optional, if True, prune actions after 1/4 of the number of iters
-  // optional bool use_pruning = 22 [ default = false ];
-
-  // Optional, if >0 then play BP strategy for this many iters
-  optional int32 bp_iters = 23 [ default = 0 ];
-
-  // Optional, if >0 then play BP strategy for this many iters
-  optional float bp_prob = 24 [ default = 0 ];
-
-  // Optional, if >0, then at each rollout step will use the current
-  // model-predicted value as this fraction of the final estimate
-  // (i.e. exponentially decaying effect of rollouts of increasing length)
-  optional float rollout_value_frac = 25 [ default = 0 ];
-
-  // Optional. If >0 then cache results after averaging results
-  // for a set of orders this many times
-  optional uint32 cache_rollout_results = 26 [ default = 0 ];
-}
-
-message ReproAgent {
-  // Required, path to game.json file
-  optional string game_path = 1;
-}
-
-message Agent {
-  oneof agent {
-    MilaSlAgent mila = 1;
-    RandomAgent random = 2;
-    DipnetAgent dipnet = 3;
-    CFR1PAgent cfr1p = 4;
-    BRSearchAgent br_search = 5;
-    CE1PAgent ce1p = 6;
-    ReproAgent repro = 7;
-    FP1PAgent fp1p = 8;
-  }
-}
+import public "conf/agents.proto";
 
 // Launcher message defines how to launch the job. Two options are avilable -
 // locally or on slurm. Launcher information is expected to be a part of the
@@ -348,6 +77,14 @@ message TrainTask {
   // Path to dir containing dataset cache.
   optional string data_cache = 2;
 
+  // Optional. Paths to additional datasets. Only validation part of these
+  // datasets will be used. The key is used for reporting.
+  map<string, string> extra_val_data_caches = 43;
+
+  // Optional. Paths to additional train datasets. Will be concatenated to the
+  // main dataset.
+  repeated string extra_train_data_caches = 44;
+
   // Dataloader procs (1 means load in the main process).
   optional int32 num_dataloader_workers = 3;
 
@@ -405,7 +142,7 @@ message TrainTask {
   // Max number of epochs to train
   optional int32 num_epochs = 21;
 
-  // If set, will write a jsonl file with metrics in the current folder.
+  // Stale. Always enabled.
   optional bool write_jsonl = 22;
 
   // Weight of value loss relative to policy loss, between 0 and 1
@@ -670,7 +407,7 @@ message BuildDbCacheTask {
   optional int32 n_parallel_jobs = 6 [ default = -1 ];
 
   // Percentage of games to use as val set.
-  optional float val_set_pct = 7;
+  optional float val_set_pct = 7 [default = 0.01];
 
   optional Launcher launcher = 100;
 }
