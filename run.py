@@ -5,7 +5,6 @@ import json
 
 from fairdiplomacy.agents import build_agent_from_cfg
 from fairdiplomacy.compare_agents import run_1v6_trial, run_1v6_trial_multiprocess
-from fairdiplomacy.game import Game
 from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.models.dipnet import train_sl
 from fairdiplomacy.situation_check import run_situation_check
@@ -89,7 +88,7 @@ def build_db_cache(cfg):
 
 @_register
 def build_press_db_cache(cfg):
-    from press_diplomacy.data.dataset import build_press_db_cache_from_cfg
+    from fairdiplomacy.press.data.dataset import build_press_db_cache_from_cfg
 
     build_press_db_cache_from_cfg(cfg)
 
