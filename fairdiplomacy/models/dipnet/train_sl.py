@@ -1,25 +1,24 @@
 #!/usr/bin/env python
-from typing import Optional
 import atexit
 import json
 import logging
 import os
 import random
-import torch
 from collections import Counter
 from functools import reduce
+
+import torch
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, DataFields
-from fairdiplomacy.models.dipnet.load_model import new_model, load_dipnet_model
 from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.models.dipnet.load_model import new_model
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
     EOS_IDX,
 )
 from fairdiplomacy.selfplay.metrics import Logger
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -179,12 +178,7 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
 
 
 def validate(
-    net,
-    val_set,
-    policy_loss_fn,
-    value_loss_fn,
-    batch_size,
-    value_loss_weight: float,
+    net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float,
 ):
     net_device = next(net.parameters()).device
 
@@ -472,6 +466,7 @@ def run_with_cfg(args):
             min_rating=min_rating,
             exclude_n_holds=args.exclude_n_holds,
         )
+        train_dataset.preprocess()
         val_dataset = Dataset(
             game_ids=val_game_ids,
             data_dir=args.data_dir,
@@ -482,6 +477,7 @@ def run_with_cfg(args):
             min_rating=min_rating,
             exclude_n_holds=args.exclude_n_holds,
         )
+        val_dataset.preprocess()
 
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")

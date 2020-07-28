@@ -1,23 +1,16 @@
 import copy
 import glob
-import torch
+import logging
 from abc import ABC, abstractmethod
 from glob import glob
 
 from parlai.core.agents import create_agent_from_model_file
-from parlai.utils.torch import padded_tensor
 from tqdm import tqdm
 
 from fairdiplomacy.data.build_dataset import COUNTRY_ID_TO_POWER
 from fairdiplomacy.data.dataset import *
-from fairdiplomacy.models.dipnet.train_sl import get_sl_db_args
 
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s"))
-logger.addHandler(handler)
-logger.propagate = False
 
 
 class PressDataset(Dataset, ABC):
@@ -27,21 +20,19 @@ class PressDataset(Dataset, ABC):
 
     def __init__(self, *, parlai_agent_file: str, message_chunks: str, **kwargs):
         super().__init__(**kwargs)
-
         message_files = glob(message_chunks)
         if len(message_files):
             self.message_files = message_files
         else:
             raise FileNotFoundError("Message chunk glob is empty.")
 
-        # Due to the tokenizing overhead, num_jobs > 1 is not supported as it is a lot slower.
-        if self.n_jobs != 1:
-            logging.warning("num_dataloader_workers > 1 is not supported.")
-
         self.parlai_agent_file = parlai_agent_file
         self.dialogue_agent = create_agent_from_model_file(self.parlai_agent_file)
         self.default_tensor = self._encode_message(" ")
         self.messages, self.tokenized_messages = self._load_messages()
+        # Due to the tokenizing overhead, num_jobs > 1 is not supported as it is a lot slower.
+        if self.n_jobs != 1:
+            logging.warning("num_dataloader_workers > 1 is not supported.")
 
     @abstractmethod
     def _construct_message_dict(self, message_list: List[List[str]]) -> Dict:
@@ -106,26 +97,6 @@ class PressDataset(Dataset, ABC):
         ), "Dialogue agent needs to be loaded to use the tokenizer"
         return self.dialogue_agent._vectorize_text(message, add_end=True)
 
-    @abstractmethod
-    def _encode_messages(self, game, game_id: int, phase_idx: int) -> DataFields:
-        """
-        Encodes messages in game_id, phase_idx into a
-        :param game: Diplomacy.Game object
-        :param game_id: game id, int
-        :param phase_idx: phase id, int
-        :return: DataFields[TensorList]
-        """
-        raise NotImplementedError("Subclass must implement.")
-
-    def _encode_phase(self, game, game_id: int, phase_idx: int, input_valid_power_idxs):
-        data_fields = super(PressDataset, self)._encode_phase(
-            game, game_id, phase_idx, input_valid_power_idxs
-        )
-
-        data_fields.update(self._encode_messages(game, game_id, phase_idx))
-
-        return data_fields
-
     def validate_dataset(self):
         logging.info("Validating dataset..")
         for k, e in self.encoded_games.items():
@@ -141,6 +112,25 @@ class PressDataset(Dataset, ABC):
 class ListenerDataset(PressDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+    def mp_encode_games(self):
+        encoded_game_tuples = joblib.Parallel(n_jobs=self.n_jobs)(
+            joblib.delayed(encode_game)(
+                game_id=game_id,
+                data_dir=self.data_dir,
+                only_with_min_final_score=self.only_with_min_final_score,
+                cf_agent=self.cf_agent,
+                n_cf_agent_samples=self.n_cf_agent_samples,
+                value_decay_alpha=self.value_decay_alpha,
+                input_valid_power_idxs=self.get_valid_power_idxs(game_id),
+                game_metadata=self.game_metadata[game_id],
+                exclude_n_holds=self.exclude_n_holds,
+                tokenized_messages=self.tokenized_messages,
+            )
+            for game_id in self.game_ids
+        )
+
+        return encoded_game_tuples
 
     def _construct_message_dict(self, message_list):
         message_dict = {}
@@ -190,23 +180,6 @@ class ListenerDataset(PressDataset):
 
         return self.tokenized_messages
 
-    # Note: HuggingFace Tokenizer cannot be pickled for joblib :(
-    def _encode_messages(self, game, game_id: int, phase_idx: int) -> DataFields:
-        assert game_id in self.tokenized_messages
-
-        phase_name = game.get_phase_name(phase_idx)
-        phase_tensor_dict = self.tokenized_messages[game_id].get(phase_name, dict())
-        # TODO(apjacob): Verify country idx mapping
-        # Construct the tensor in the order that the countries are listed in POWERS
-        power_tensors = [
-            phase_tensor_dict.get(power, self.default_tensor)
-            for power_idx, power in enumerate(POWERS)
-        ]
-        padded_tensors, _ = padded_tensor(power_tensors, pad_idx=-1)
-        input_message = TensorList.from_padded(padded_tensors, padding_value=-1)
-
-        return DataFields(x_input_message=input_message)
-
     def __getitem__(self, idx: Union[int, torch.Tensor]):
         assert self._preprocessed, "Dataset has not been pre-processed."
 
@@ -246,6 +219,7 @@ def build_press_db_cache_from_cfg(cfg):
         min_rating=min_rating,
         exclude_n_holds=cfg.exclude_n_holds,
     )
+    train_dataset.preprocess()
 
     val_dataset = ListenerDataset(
         parlai_agent_file=cfg.parlai_agent_file,
@@ -259,6 +233,7 @@ def build_press_db_cache_from_cfg(cfg):
         min_rating=min_rating,
         exclude_n_holds=cfg.exclude_n_holds,
     )
+    val_dataset.preprocess()
 
     logger.info(f"Saving press datasets to {cfg.data_cache}")
     torch.save((train_dataset, val_dataset), cfg.data_cache)
