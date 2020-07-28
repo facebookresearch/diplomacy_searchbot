@@ -132,7 +132,6 @@ class Dataset(torch.utils.data.Dataset):
         )
 
         torch.set_num_threads(1)
-        print(f"num_jobs = {self.n_jobs}")
         encoded_game_tuples = self.mp_encode_games()
 
         encoded_games = [
@@ -272,6 +271,86 @@ class MyConcatDataset(torch.utils.data.ConcatDataset):
         return DataFields.cat(chunks)
 
 
+def encode_game(
+    game_id: Union[int, str],
+    data_dir: str,
+    only_with_min_final_score=7,
+    *,
+    cf_agent=None,
+    n_cf_agent_samples=1,
+    input_valid_power_idxs,
+    value_decay_alpha,
+    game_metadata,
+    exclude_n_holds,
+    tokenized_messages=None,
+):
+    """
+    Arguments:
+    - game: diplomacy.Game object
+    - only_with_min_final_score: if specified, only encode for powers who
+      finish the game with some # of supply centers (i.e. only learn from
+      winners). MILA uses 7.
+    - input_valid_power_idxs: bool tensor, true if power should a priori be included in
+      the dataset based on e.g. player rating)
+    Return: game_id, DataFields dict of tensors:
+    L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
+    - board_state: shape=(L, 81, 35)
+    - prev_state: shape=(L, 81, 35)
+    - prev_orders: shape=(L, 2, 100), dtype=long
+    - power: shape=(L, 7, 7)
+    - season: shape=(L, 3)
+    - in_adj_phase: shape=(L, 1)
+    - has_press: shape=(L, 1)
+    - build_numbers: shape=(L, 7)
+    - final_scores: shape=(L, 7)
+    - possible_actions: TensorList shape=(L x 7, 17 x 469)
+    - loc_idxs: shape=(L, 7, 81), int8
+    - actions: shape=(L, 7, N, 17) int order idxs, N=n_cf_agent_samples
+    - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
+    """
+
+    torch.set_num_threads(1)
+
+    if isinstance(game_id, str):
+        game_path = game_id
+    else:  # Hacky fix to handle game_ids that are paths.
+        game_path = os.path.join(f"{data_dir}", f"game_{game_id}.json")
+
+    try:
+        with open(game_path) as f:
+            j = json.load(f)
+        game = Game.from_saved_game_format(j)
+    except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+        print(f"Error while loading game at {game_path}: {e}")
+        return None, None
+
+    num_phases = len(game.state_history)
+    logging.info(f"Encoding {game.game_id} with {num_phases} phases")
+
+    phase_encodings = [
+        encode_phase(
+            game,
+            game_id,
+            phase_idx,
+            only_with_min_final_score=only_with_min_final_score,
+            cf_agent=cf_agent,
+            n_cf_agent_samples=n_cf_agent_samples,
+            value_decay_alpha=value_decay_alpha,
+            input_valid_power_idxs=input_valid_power_idxs,
+            exclude_n_holds=exclude_n_holds,
+            tokenized_messages=tokenized_messages,
+        )
+        for phase_idx in range(num_phases)
+    ]
+
+    stacked_encodings = DataFields.cat(phase_encodings)
+
+    has_press = torch.zeros(num_phases, 1) + (1 if game_metadata["press_type"] != "NoPress" else 0)
+    stacked_encodings["x_has_press"] = has_press
+
+    return game_id, stacked_encodings.to_storage_fmt_()
+
+
 def encode_phase(
     game,
     game_id,
@@ -403,83 +482,6 @@ def encode_phase(
     data_fields["valid_power_idxs"] = valid_power_idxs.unsqueeze(0)
 
     return data_fields
-
-
-def encode_game(
-    game_id: int,
-    data_dir: str,
-    only_with_min_final_score=7,
-    *,
-    cf_agent=None,
-    n_cf_agent_samples=1,
-    input_valid_power_idxs,
-    value_decay_alpha,
-    game_metadata,
-    exclude_n_holds,
-    tokenized_messages=None,
-):
-    """
-    Arguments:
-    - game: diplomacy.Game object
-    - only_with_min_final_score: if specified, only encode for powers who
-      finish the game with some # of supply centers (i.e. only learn from
-      winners). MILA uses 7.
-    - input_valid_power_idxs: bool tensor, true if power should a priori be included in
-      the dataset based on e.g. player rating)
-    Return: game_id, DataFields dict of tensors:
-    L is game length, P is # of powers above min_final_score, N is n_cf_agent_samples
-    - board_state: shape=(L, 81, 35)
-    - prev_state: shape=(L, 81, 35)
-    - prev_orders: shape=(L, 2, 100), dtype=long
-    - power: shape=(L, 7, 7)
-    - season: shape=(L, 3)
-    - in_adj_phase: shape=(L, 1)
-    - has_press: shape=(L, 1)
-    - build_numbers: shape=(L, 7)
-    - final_scores: shape=(L, 7)
-    - possible_actions: TensorList shape=(L x 7, 17 x 469)
-    - loc_idxs: shape=(L, 7, 81), int8
-    - actions: shape=(L, 7, N, 17) int order idxs, N=n_cf_agent_samples
-    - valid_power_idxs: shape=(L, 7) bool mask of valid powers at each phase
-    """
-
-    game_path = os.path.join(f"{data_dir}", f"game_{game_id}.json")
-
-    torch.set_num_threads(1)
-
-    try:
-        with open(game_path) as f:
-            j = json.load(f)
-        game = Game.from_saved_game_format(j)
-    except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-        print(f"Error while loading game at {game_path}: {e}")
-        return None, None
-
-    num_phases = len(game.state_history)
-    print(f"Encoding {game.game_id} with {num_phases} phases")
-
-    phase_encodings = [
-        encode_phase(
-            game,
-            game_id,
-            phase_idx,
-            only_with_min_final_score=only_with_min_final_score,
-            cf_agent=cf_agent,
-            n_cf_agent_samples=n_cf_agent_samples,
-            value_decay_alpha=value_decay_alpha,
-            input_valid_power_idxs=input_valid_power_idxs,
-            exclude_n_holds=exclude_n_holds,
-            tokenized_messages=tokenized_messages,
-        )
-        for phase_idx in range(num_phases)
-    ]
-
-    stacked_encodings = DataFields.cat(phase_encodings)
-
-    has_press = torch.zeros(num_phases, 1) + (1 if game_metadata["press_type"] != "NoPress" else 0)
-    stacked_encodings["x_has_press"] = has_press
-
-    return game_id, stacked_encodings.to_storage_fmt_()
 
 
 def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
