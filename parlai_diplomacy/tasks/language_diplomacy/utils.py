@@ -12,13 +12,14 @@ import os
 import time
 
 import parlai_diplomacy.tasks.language_diplomacy.config as cfg
+import parlai.utils.logging as logging
 
 ###########################################
 # CONSTANTS
 ###########################################
-
+CHUNK_DIALOGUE_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/chat_messages/chat_messages_jsons"
 DATAPATH = (
-    "/checkpoint/fairdiplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_*.json"
+    "/checkpoint/fairdiplomacy/press_diplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_*.json"
 )
 ORDER_PATH = (
     "/checkpoint/fairdiplomacy/processed_orders_jsons/game_*.json*"  # some are json.partial
@@ -113,7 +114,7 @@ def load_data():
     total_data = []
     tot = len(glob(DATAPATH))
     for i, fle in enumerate(glob(DATAPATH)):
-        print(f"[ Loading data from path {i} / {tot}: {fle} ... ]")
+        logging.info(f"[ Loading data from path {i} / {tot}: {fle} ... ]")
         with open(fle, "r") as f:
             database = json.load(f)
             data = database[2]["data"]
@@ -123,9 +124,12 @@ def load_data():
 
 
 def load_order_data():
+    """
+    Load order data
+    """
     total_data = {}
     tot = len(glob(ORDER_PATH))
-    print(f"[ Loading order data from path {ORDER_PATH}, {tot} games in total ... ]")
+    logging.info(f"[ Loading order data from path {ORDER_PATH}, {tot} games in total ... ]")
     for i, fle in enumerate(tqdm(glob(ORDER_PATH))):
         with open(fle, "r") as f:
             game_id = int(re.search("game_(.*).json", fle, re.IGNORECASE).group(1))
@@ -181,7 +185,7 @@ def join_order_and_msg(raw_order, raw_msg):
         return speaker_msgs
 
     joined_data = {}
-    print("[ Joining message and order by Phase ID ... ]")
+    logging.info("[ Joining message and order by Phase ID ... ]")
     for game_id in tqdm(raw_order):
         if game_id not in raw_msg:
             # inner join by game_id: game_id must be in both raw_order and raw_msg
@@ -218,12 +222,12 @@ def join_order_and_msg(raw_order, raw_msg):
                             "order": f"{speaker_order}",
                         }
 
-    print(f"[ Saving joined_json to {JOINED_JSON_PATH} ... ]")
+    logging.info(f"[ Saving joined_json to {JOINED_JSON_PATH} ... ]")
     time1 = time.time()
     with open(JOINED_JSON_PATH, "w") as fh:
         json.dump(joined_data, fh)
     time2 = time.time()
-    print(f"[ Saved to {JOINED_JSON_PATH}, took {(time2-time1)/60} mins ... ]")
+    logging.info(f"[ Saved to {JOINED_JSON_PATH}, took {(time2-time1)/60} mins ... ]")
 
     return joined_data
 
@@ -234,7 +238,7 @@ def select_by_game_and_turn(data):
 
     {Game ID --> {Turn ID: {Conversation ID: []}}}
     """
-    print("[ Re-ordering data by GAME ID and TURN ID ... ]")
+    logging.info("[ Re-ordering data by GAME ID and TURN ID ... ]")
     new_data = {}
     for entry in tqdm(data):
         # select keys
@@ -259,7 +263,7 @@ def select_by_game_and_phase(data):
     # TODO: currently keep conversations btw players to be
     # consistent with select_by_game_and_turn,
     # but could change to single user messages later
-    print("[ Re-ordering data by GAME ID and PHASE ID ... ]")
+    logging.info("[ Re-ordering data by GAME ID and PHASE ID ... ]")
     new_data = {}
     for entry in tqdm(data):
         # select keys
@@ -521,12 +525,12 @@ class MessageOrderDataIterator:
             overwrite = confirm_overwrite in ["Y", "y"]
 
         if os.path.exists(JOINED_JSON_PATH) and (not overwrite):
-            print(f"[ Loading {JOINED_JSON_PATH} ...]")
+            logging.info(f"[ Loading {JOINED_JSON_PATH} ...]")
             time1 = time.time()
             with open(JOINED_JSON_PATH, "r") as fh:
                 self.joined_data = json.load(fh)
             time2 = time.time()
-            print(f"[ Loading finished, took {(time2-time1)/60} mins ...]")
+            logging.info(f"[ Loading finished, took {(time2-time1)/60} mins ...]")
         else:
             if raw_order is None:
                 self.raw_order = load_order_data()
