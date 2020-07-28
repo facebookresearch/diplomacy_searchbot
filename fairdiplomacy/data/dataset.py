@@ -351,6 +351,71 @@ def encode_game(
     return game_id, stacked_encodings.to_storage_fmt_()
 
 
+def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
+    # encode board state
+    phase_history = game.get_phase_history()
+    if phase_idx is None:
+        phase_idx = len(phase_history)
+        phase = game.get_phase_data()
+        state = phase.state
+        season_char = game.phase[0]
+    else:
+        phase = phase_history[phase_idx]
+        state = phase_history[phase_idx].state
+        season_char = phase.name[0]
+
+    x_board_state = torch.from_numpy(board_state_to_np(phase)).unsqueeze(0)
+
+    prev_phases = []
+    for i in range(phase_idx - 1, -1, -1):
+        p = phase_history[i]
+        prev_phases.append(p)
+        if p.name.endswith("M"):
+            break
+
+    x_prev_orders = torch.zeros(1, 2, 100, dtype=torch.long)
+    if len(prev_phases) > 0:
+        prev_orders, prev_order_locs = [], []
+        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1])).unsqueeze(0)
+        for phase in prev_phases:
+            # print(phase.name, phase.orders)
+            for pwr in phase.orders:
+                prev_orders += [
+                    ORDER_VOCABULARY_TO_IDX[o]
+                    for o in phase.orders[pwr]
+                    if o in ORDER_VOCABULARY_TO_IDX
+                ]
+                prev_order_locs += [
+                    LOC_IDX[o.split()[1]]
+                    for o in phase.orders[pwr]
+                    if o in ORDER_VOCABULARY_TO_IDX
+                ]
+        num_orders = len(prev_orders)
+        x_prev_orders[0, 0, :num_orders] = torch.tensor(prev_orders, dtype=torch.long)
+        x_prev_orders[0, 1, :num_orders] = torch.tensor(prev_order_locs, dtype=torch.long)
+    else:
+        x_prev_state = torch.zeros(1, 81, 35)
+
+    x_season = torch.zeros(1, len(SEASONS))
+    x_season[0, ("S", "F", "W").index(season_char)] = 1
+
+    x_in_adj_phase = torch.zeros(1).fill_(state["name"][-1] == "A")
+
+    builds = state["builds"]
+    x_build_numbers = torch.tensor(
+        [[builds[p]["count"] if p in builds else 0 for p in POWERS]], dtype=torch.float32
+    )
+
+    return DataFields(
+        x_board_state=x_board_state,
+        x_prev_state=x_prev_state,
+        x_prev_orders=x_prev_orders,
+        x_season=x_season,
+        x_in_adj_phase=x_in_adj_phase,
+        x_build_numbers=x_build_numbers,
+    )
+
+
 def encode_phase(
     game,
     game_id,
@@ -482,71 +547,6 @@ def encode_phase(
     data_fields["valid_power_idxs"] = valid_power_idxs.unsqueeze(0)
 
     return data_fields
-
-
-def encode_state(game: diplomacy.Game, phase_idx: Optional[int] = None):
-    # encode board state
-    phase_history = game.get_phase_history()
-    if phase_idx is None:
-        phase_idx = len(phase_history)
-        phase = game.get_phase_data()
-        state = phase.state
-        season_char = game.phase[0]
-    else:
-        phase = phase_history[phase_idx]
-        state = phase_history[phase_idx].state
-        season_char = phase.name[0]
-
-    x_board_state = torch.from_numpy(board_state_to_np(phase)).unsqueeze(0)
-
-    prev_phases = []
-    for i in range(phase_idx - 1, -1, -1):
-        p = phase_history[i]
-        prev_phases.append(p)
-        if p.name.endswith("M"):
-            break
-
-    x_prev_orders = torch.zeros(1, 2, 100, dtype=torch.long)
-    if len(prev_phases) > 0:
-        prev_orders, prev_order_locs = [], []
-        x_prev_state = torch.from_numpy(board_state_to_np(prev_phases[-1])).unsqueeze(0)
-        for phase in prev_phases:
-            # print(phase.name, phase.orders)
-            for pwr in phase.orders:
-                prev_orders += [
-                    ORDER_VOCABULARY_TO_IDX[o]
-                    for o in phase.orders[pwr]
-                    if o in ORDER_VOCABULARY_TO_IDX
-                ]
-                prev_order_locs += [
-                    LOC_IDX[o.split()[1]]
-                    for o in phase.orders[pwr]
-                    if o in ORDER_VOCABULARY_TO_IDX
-                ]
-        num_orders = len(prev_orders)
-        x_prev_orders[0, 0, :num_orders] = torch.tensor(prev_orders, dtype=torch.long)
-        x_prev_orders[0, 1, :num_orders] = torch.tensor(prev_order_locs, dtype=torch.long)
-    else:
-        x_prev_state = torch.zeros(1, 81, 35)
-
-    x_season = torch.zeros(1, len(SEASONS))
-    x_season[0, ("S", "F", "W").index(season_char)] = 1
-
-    x_in_adj_phase = torch.zeros(1).fill_(state["name"][-1] == "A")
-
-    builds = state["builds"]
-    x_build_numbers = torch.tensor(
-        [[builds[p]["count"] if p in builds else 0 for p in POWERS]], dtype=torch.float32
-    )
-
-    return DataFields(
-        x_board_state=x_board_state,
-        x_prev_state=x_prev_state,
-        x_prev_orders=x_prev_orders,
-        x_season=x_season,
-        x_in_adj_phase=x_in_adj_phase,
-        x_build_numbers=x_build_numbers,
-    )
 
 
 def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, game_state):
