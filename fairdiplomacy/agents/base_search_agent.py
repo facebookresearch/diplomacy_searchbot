@@ -403,7 +403,8 @@ class BaseSearchAgent(BaseAgent):
             games = [pydipcc.Game.from_json(game_json) for _ in range(batch_size)]
             for i in range(len(games)):
                 games[i].game_id += f"_{i}"
-            est_final_scores = defaultdict(float)
+
+            est_final_scores = {}  # game id -> np.array len=7
 
             # set orders if specified
             for power, orders in set_orders_dict.items():
@@ -412,7 +413,6 @@ class BaseSearchAgent(BaseAgent):
 
             other_powers = [p for p in POWERS if p not in set_orders_dict]
 
-        remaining_score_weight = 1.0
         rollout_start_phase = games[0].current_short_phase
         rollout_end_phase = n_move_phases_later(rollout_start_phase, max_rollout_length)
         while True:
@@ -420,9 +420,16 @@ class BaseSearchAgent(BaseAgent):
                 # Handled separately.
                 break
 
+            # exit loop if all games are done before max_rollout_length
+            ongoing_game_phases = [
+                game.current_short_phase for game in games if not game.is_game_done
+            ]
+            if len(ongoing_game_phases) == 0:
+                break
+
             # step games together at the pace of the slowest game, e.g. process
             # games with retreat phases alone before moving on to the next move phase
-            min_phase = min([game.current_short_phase for game in games], key=sort_phase_key)
+            min_phase = min(ongoing_game_phases, key=sort_phase_key)
 
             batch_data = []
             for game in games:
@@ -436,9 +443,6 @@ class BaseSearchAgent(BaseAgent):
                             game, all_possible_orders=all_possible_orders, game_state=encoded_state
                         )
                     batch_data.append((game, inputs))
-
-            if len(batch_data) == 0:
-                break
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
@@ -456,24 +460,14 @@ class BaseSearchAgent(BaseAgent):
                     cur_client, batch_inputs, temperature, top_p
                 )
 
-                score_weight = remaining_score_weight
-                if (
-                    min_phase == rollout_start_phase
-                ):  # don't accumulate score on turn 0 when we haven't moved
-                    score_weight = 0
-                if min_phase != rollout_end_phase:
-                    score_weight *= rollout_value_frac
-                remaining_score_weight *= 1 - score_weight
+            if min_phase == rollout_end_phase:
+                with timings("score.accumulate"):
+                    for game_idx, (game, _) in enumerate(batch_data):
+                        est_final_scores[game.game_id] = np.array(batch_est_final_scores[game_idx])
 
-                assert batch_est_final_scores.shape[0] == len(batch_data)
-                assert batch_est_final_scores.shape[1] == len(POWERS)
-                for game_idx, (game, _) in enumerate(batch_data):
-                    cur_score_est = (
-                        batch_est_final_scores[game_idx]
-                        if not game.is_game_done
-                        else get_square_scores_from_game(game)
-                    )
-                    est_final_scores[game.game_id] += np.array(cur_score_est) * score_weight
+                # skip env step and exit loop once we've accumulated the estimated
+                # scores for all games up to max_rollout_length
+                break
 
             with timings("env"):
                 assert len(batch_data) == len(batch_orders), "{} != {}".format(
@@ -492,12 +486,20 @@ class BaseSearchAgent(BaseAgent):
                     assert game.current_short_phase == min_phase
                     game.process()
 
+            for (game, _) in batch_data:
+                if game.is_game_done:
+                    with timings("score.gameover"):
+                        final_scores = np.array(get_square_scores_from_game(game))
+                        est_final_scores[game.game_id] = final_scores
+
+
             other_powers = POWERS  # no set orders on subsequent turns
 
-            if sort_phase_key(min_phase) >= sort_phase_key(rollout_end_phase):
-                break
+        # out of rollout loop
 
-        if max_rollout_length == 0:
+        if max_rollout_length > 0:
+            assert len(est_final_scores) == len(games)
+        else:
             assert (
                 not other_powers
             ), "If max_rollout_length=0 it's assumed that all orders are pre-defined."
