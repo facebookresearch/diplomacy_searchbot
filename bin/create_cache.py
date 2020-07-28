@@ -20,6 +20,7 @@ def create_dataset(game_jsons, only_with_min_final_score, out_path):
     from fairdiplomacy.data.dataset import Dataset
     import torch
 
+    # Todo(apjacob): Fix dataset
     dataset = Dataset(game_jsons, only_with_min_final_score=only_with_min_final_score, n_jobs=10,)
     torch.save(dataset, out_path)
 
@@ -46,9 +47,7 @@ def main(src_dir, work_folder, only_with_min_final_score, chunks_train, chunks_v
     for i in range(chunks_train):
         out_path = chunk_folder / f"train_{i:06d}"
         if not out_path.exists():
-            tasks.append(
-                (train_game_jsons[i::chunks_train], only_with_min_final_score, out_path)
-            )
+            tasks.append((train_game_jsons[i::chunks_train], only_with_min_final_score, out_path))
     for i in range(chunks_val):
         out_path = chunk_folder / f"val_{i:06d}"
         if not out_path.exists():

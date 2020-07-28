@@ -1,25 +1,24 @@
 #!/usr/bin/env python
-from typing import Optional
 import atexit
 import json
 import logging
 import os
 import random
-import torch
 from collections import Counter
 from functools import reduce
+
+import torch
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, DataFields
-from fairdiplomacy.models.dipnet.load_model import new_model, load_dipnet_model
 from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.models.dipnet.load_model import new_model
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_by_unit,
     EOS_IDX,
 )
 from fairdiplomacy.selfplay.metrics import Logger
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -179,12 +178,7 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
 
 
 def validate(
-    net,
-    val_set,
-    policy_loss_fn,
-    value_loss_fn,
-    batch_size,
-    value_loss_weight: float,
+    net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float,
 ):
     net_device = next(net.parameters()).device
 
@@ -458,37 +452,9 @@ def run_with_cfg(args):
     else:
         assert args.metadata_path is not None
         assert args.data_dir is not None
-        with open(args.metadata_path) as meta_f:
-            game_metadata = json.load(meta_f)
-
-        # convert to int game keys
-        game_metadata = {int(k): v for k, v in game_metadata.items()}
-        game_ids = list(game_metadata.keys())
-
-        # compute min rating
-        if args.min_rating_percentile > 0:
-            ratings = torch.tensor(
-                [
-                    game[pwr]["logit_rating"]
-                    for game in game_metadata.values()
-                    for pwr in POWERS
-                    if pwr in game
-                ]
-            )
-            min_rating = ratings.sort()[0][int(len(ratings) * args.min_rating_percentile)]
-            print(
-                f"Only training on games with min rating of {min_rating} ({args.min_rating_percentile * 100} percentile)"
-            )
-        else:
-            min_rating = -1e9
-
-        if args.max_games > 0:
-            game_ids = game_ids[: args.max_games]
-
-        assert len(game_ids) > 0
-        logger.info(f"Found dataset of {len(game_ids)} games...")
-        val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * args.val_set_pct)))
-        train_game_ids = list(set(game_ids) - set(val_game_ids))
+        game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
+            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct
+        )
 
         train_dataset = Dataset(
             game_ids=train_game_ids,
@@ -500,6 +466,7 @@ def run_with_cfg(args):
             min_rating=min_rating,
             exclude_n_holds=args.exclude_n_holds,
         )
+        train_dataset.preprocess()
         val_dataset = Dataset(
             game_ids=val_game_ids,
             data_dir=args.data_dir,
@@ -510,6 +477,8 @@ def run_with_cfg(args):
             min_rating=min_rating,
             exclude_n_holds=args.exclude_n_holds,
         )
+        val_dataset.preprocess()
+
         if args.data_cache:
             logger.info(f"Saving datasets to {args.data_cache}")
             torch.save((train_dataset, val_dataset), args.data_cache)
@@ -546,3 +515,42 @@ def run_with_cfg(args):
             nprocs=n_gpus,
             args=(n_gpus, args, train_dataset, val_dataset, extra_val_datasets),
         )
+
+
+def get_sl_db_args(metadata_path, min_rating_percentile, max_games, val_set_pct):
+    """
+    :param metadata_path:
+    :param min_rating_percentile:
+    :param max_games:
+    :param val_set_pct:
+    :return: game_metadata, min_rating, train_game_ids and val_game_ids
+    """
+    with open(metadata_path) as meta_f:
+        game_metadata = json.load(meta_f)
+    # convert to int game keys
+    game_metadata = {int(k): v for k, v in game_metadata.items()}
+    game_ids = list(game_metadata.keys())
+    # compute min rating
+    if min_rating_percentile > 0:
+        ratings = torch.tensor(
+            [
+                game[pwr]["logit_rating"]
+                for game in game_metadata.values()
+                for pwr in POWERS
+                if pwr in game
+            ]
+        )
+        min_rating = ratings.sort()[0][int(len(ratings) * min_rating_percentile)]
+        print(
+            f"Only training on games with min rating of {min_rating} ({min_rating_percentile * 100} percentile)"
+        )
+    else:
+        min_rating = -1e9
+    if max_games > 0:
+        game_ids = game_ids[:max_games]
+    assert len(game_ids) > 0
+    logger.info(f"Found dataset of {len(game_ids)} games...")
+    val_game_ids = random.sample(game_ids, max(1, int(len(game_ids) * val_set_pct)))
+    train_game_ids = list(set(game_ids) - set(val_game_ids))
+
+    return game_metadata, min_rating, train_game_ids, val_game_ids

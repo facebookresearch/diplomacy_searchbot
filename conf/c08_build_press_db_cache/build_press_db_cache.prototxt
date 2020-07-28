@@ -1,0 +1,11 @@
+build_press_db_cache {
+    data_dir: "/checkpoint/alerer/fairdiplomacy/facebook_notext/games"
+    data_cache: "/checkpoint/apjacob/press_db_cache.pt"
+    metadata_path: "/checkpoint/alerer/fairdiplomacy/facebook_notext/metadata.json"
+    parlai_agent_file: "/checkpoint/edinan/diplomacy/400M_0701/model"
+    message_chunks: "/checkpoint/fairdiplomacy/press_diplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_4.json"
+    num_dataloader_workers: 20
+    val_set_pct: 0.01
+    value_decay_alpha: 1.0
+    min_rating_percentile: 0.5
+}

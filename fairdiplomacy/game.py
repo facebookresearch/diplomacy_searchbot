@@ -18,6 +18,9 @@ class Game(diplomacy.Game):
             kwargs["ignore_multiple_disbands_per_unit"] = True
         super().__init__(**kwargs)
 
+    def get_phase_name(self, phase_idx):
+        return str(list(self.state_history.keys())[phase_idx])
+
     @property
     def is_game_done(self):
         return super().is_game_done or int(self.phase.split()[1]) >= 1935
