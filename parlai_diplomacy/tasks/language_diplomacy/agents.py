@@ -7,9 +7,9 @@
 from parlai.core.loader import register_teacher
 from parlai.core.message import Message
 from parlai.core.teachers import FixedDialogTeacher, ChunkTeacher
+
 import parlai_diplomacy.tasks.language_diplomacy.utils as utls
 import parlai_diplomacy.tasks.language_diplomacy.config as cfg
-
 
 from glob import glob
 import json
