@@ -144,7 +144,7 @@ class DialogueChunkTeacher(ChunkTeacher):
         super().__init__(opt, shared)
 
     def _get_data_folder(self):
-        return "/checkpoint/fairdiplomacy/chat_messages_jsons"
+        return utls.CHUNK_DIALOGUE_PATH
 
     def get_num_samples(self, opt) -> Tuple[int, int]:
         """
