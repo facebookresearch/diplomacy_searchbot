@@ -22,9 +22,10 @@ import random
 import hashlib
 
 import parlai_diplomacy.agents as agents
+import parlai.utils.logging as logging
 
 
-DEFAULT_PARLAI_PATH = os.path.dirname(os.path.dirname(agents.__file__))
+DEFAULT_PARLAI_PATH = os.path.dirname(os.path.dirname(os.path.dirname(agents.__file__)))
 
 BASH_IF_CLAUSE = """
 if [[ "$SLURM_ARRAY_TASK_ID" == "{index}" ]]; then
@@ -116,7 +117,7 @@ fi
 # if in distributed, make sure we're using the actual network
 export NCCL_SOCKET_IFNAME=^docker0,lo
 cd {NEW_PARLAI_PATH}
-export PYTHONPATH={SAVE_ROOT}/ParlAI:$PYTHONPATH
+export PYTHONPATH={NEW_PARLAI_PATH}:$PYTHONPATH
 export PARLAI_DATAPATH={PARLAI_DATAPATH}
 export PARLAI_DOWNPATH={PARLAI_DOWNPATH}
 {python_cmd} &
@@ -320,21 +321,17 @@ def run_grid(
         print("[ Copying env... make take up to a minute ]")
         # Make ParlAI Diplomacy Dir
         bash("mkdir -p " + os.path.join(SAVE_ROOT, "ParlAI_Diplomacy"))
-        folders = ["agents", "scripts", "tasks", "utils"]
+        folders = ["parlai_diplomacy"]
         for folder in folders:
+            logging.info(f'Copying folder {PARLAI_PATH}/{folder}')
             cmd = (
                 f"rsync -av {PARLAI_PATH}/{folder} {SAVE_ROOT}/ParlAI_Diplomacy "
                 '--exclude .git --exclude "*.ipynb" '
             )
-            import ipdb
-
-            ipdb.set_trace()
             bash(cmd)
 
         NEW_PARLAI_PATH = "{SAVE_ROOT}/ParlAI_Diplomacy".format(**locals())
-        import ipdb
-
-        ipdb.set_trace()
+        logging.info(f'ParlAI path reset to: {NEW_PARLAI_PATH}')
     else:
         NEW_PARLAI_PATH = PARLAI_PATH
 
