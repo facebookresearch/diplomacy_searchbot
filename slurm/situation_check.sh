@@ -29,19 +29,22 @@ echo $(env) > $CHECKPOINT_DIR/env.inp
 git log --graph --decorate --pretty=oneline --abbrev-commit --all > $CHECKPOINT_DIR/gitlog.inp
 git diff $ROOT > $CHECKPOINT_DIR/gitdiff.inp
 
-FULL_NAME="${NAME}"
-
-    cat <<EOF | sbatch --job-name $FULL_NAME $SBATCH_ARGS
+for REP in {0..1}; do
+  FULL_NAME="${NAME}.${REP}"
+  
+  cat <<EOF | sbatch --job-name $FULL_NAME $SBATCH_ARGS
 #!/bin/bash
 
 python run.py \
   --adhoc \
   --cfg=$(pwd)/conf/c06_situation_check/cmp.prototxt \
   situation_json=$(pwd)/test_situations.json \
+  seed=\$SLURM_ARRAY_TASK_ID \
   I.agent=agents/cfr1p_webdip \
   agent.cfr1p.model_path=/checkpoint/alerer/fairdiplomacy/sl_fbdata_20200717_minscore0/checkpoint.pth.best \
   agent.cfr1p.use_final_iter=false \
+  agent.cfr1p.reset_seed_on_rollout=true \
   $@ \
-  > ${CHECKPOINT_DIR}/game_\$SLURM_ARRAY_TASK_ID.log 2>&1
-
+  > ${CHECKPOINT_DIR}/game_\$SLURM_ARRAY_TASK_ID.$REP.log 2>&1
 EOF
+done

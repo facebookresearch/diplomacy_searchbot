@@ -104,6 +104,8 @@ message CFR1PAgent {
   optional float rollout_value_frac = 25 [ default = 0 ];
 
   optional bool cache_rollout_results = 26 [ default = false ];
+
+  optional bool reset_seed_on_rollout = 27 [ default = false ];
 }
 
 message BRSearchAgent {

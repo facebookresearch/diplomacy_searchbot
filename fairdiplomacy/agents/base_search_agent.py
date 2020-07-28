@@ -323,6 +323,7 @@ class BaseSearchAgent(BaseAgent):
         """
         game_json = json.dumps(game.to_saved_game_format())
         # divide up the rollouts among the processes
+
         all_results, all_timings = zip(
             *self.proc_pool.map(
                 call,
@@ -571,6 +572,12 @@ class BaseSearchAgent(BaseAgent):
 
 
 def run_server(port, batch_size, port_q=None, **kwargs):
+    def set_seed(seed):
+        seed = seed.item()
+        logging.info(f"Set server seed to {seed}")
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
     logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
     max_port = port + 10
     try:
@@ -581,6 +588,7 @@ def run_server(port, batch_size, port_q=None, **kwargs):
             server.bind(
                 "set_batch_size", lambda x: eval_queue.set_batch_size(x.item()), batch_size=1
             )
+            server.bind("set_seed", set_seed, batch_size=1)
             server.bind_queue_batched("evaluate", eval_queue)
             try:
                 server.run()

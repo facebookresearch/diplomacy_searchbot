@@ -21,13 +21,15 @@ def print_situation_stats(paths):
     data = defaultdict(dict)
     cfr_iters = set()
     results = defaultdict(dict)
-    for game_idx, path in enumerate(paths):
+    for path in paths:
+        match = re.search(r"game_(\d+)\.(\d+).log$", path)
+        assert match
+        game_idx, repeat = int(match[1]), int(match[2])
         for line in open(path):
             fields = line.split()
-            if "> [" in line:
-                repeat = int(fields[4])
-                power = fields[13]
-                cfr_iter = int(fields[9])
+            if "<> [" in line:
+                power = fields[9]
+                cfr_iter = int(fields[5])
                 avg_utility = float(fields[-2].split("=")[1])
                 row_key = (game_idx, repeat, power, cfr_iter)
                 cfr_iters.add(cfr_iter)
@@ -43,7 +45,7 @@ def print_situation_stats(paths):
                 result = fields[4]
                 test = " ".join(fields[6:])
                 results[test][(game_idx, repeat)] = 1 if result == "PASSED" else 0
-
+    # print(data)
     M = max(cfr_iters)
     N = len(paths)
     for power in POWERS:
@@ -52,8 +54,8 @@ def print_situation_stats(paths):
         num_orders, num_common_orders, common_prob, common_bp = [], [], [], []
         for game_i in range(N):
             for game_j in range(N):
-                data_i = data[(game_i, 1, power, M)]
-                data_j = data[(game_j, 1, power, M)]
+                data_i = data[(game_i, 0, power, M)]
+                data_j = data[(game_j, 0, power, M)]
                 common_orders = set(data_i.keys()) & set(data_j.keys())
                 # print(len(data_i), len(common_orders))
                 num_orders.append(len(data_i))
@@ -68,30 +70,31 @@ def print_situation_stats(paths):
         # 2. calculate how consistent the values are between games, at different iters
         for cfr_iter in sorted(list(cfr_iters)):
             prob_mse, u_mse, r_mse, avg_cr = [], [], [], []
-            for game in range(N):
-                data_i = data[(game, 1, power, cfr_iter)]
-                data_j = data[(game, 2, power, cfr_iter)]
-                this_prob_mse, this_u_mse, this_r_mse, this_cr = 0, 0, 0, 0
-                for action in data_i.keys():
-                    prob_i = data_i[action]["prob"]
-                    prob_j = data_j[action]["prob"]
-                    u_i = data_i[action]["avg_u"]
-                    u_j = data_j[action]["avg_u"]
-                    r_i = data_i[action]["regret"]
-                    r_j = data_j[action]["regret"]
-                    this_prob_mse += (prob_i - prob_j) ** 2
-                    this_u_mse += (prob_i + prob_j) / 2 * (u_i - u_j) ** 2
-                    this_r_mse += (prob_i + prob_j) / 2 * (r_i - r_j) ** 2
-                    this_cr += ((prob_j - prob_i) * u_j + (prob_i - prob_j) * u_i) / 2
+            for game_i in range(N):
+                for game_j in range(N):
+                    data_i = data[(game_i, 0, power, cfr_iter)]
+                    data_j = data[(game_j, 0, power, cfr_iter)]
+                    this_prob_mse, this_u_mse, this_r_mse, this_cr = 0, 0, 0, 0
+                    for action in data_i.keys():
+                        prob_i = data_i[action]["prob"]
+                        prob_j = data_j[action]["prob"]
+                        u_i = data_i[action]["avg_u"]
+                        u_j = data_j[action]["avg_u"]
+                        r_i = data_i[action]["regret"]
+                        r_j = data_j[action]["regret"]
+                        this_prob_mse += (prob_i - prob_j) ** 2
+                        this_u_mse += (prob_i + prob_j) / 2 * (u_i - u_j) ** 2
+                        this_r_mse += (prob_i + prob_j) / 2 * (r_i - r_j) ** 2
+                        this_cr += ((prob_j - prob_i) * u_j + (prob_i - prob_j) * u_i) / 2
 
-                # print(
-                #     f"{power:8s} {game} {cfr_iter:4d}: prob_rmse= {this_prob_mse**0.5:6.3f}  u_rmse= {this_u_mse**0.5:6.3f}  r_rmse=  {this_r_mse**0.5:6.3f}"
-                # )
+                    # print(
+                    #     f"{power:8s} {game} {cfr_iter:4d}: prob_rmse= {this_prob_mse**0.5:6.3f}  u_rmse= {this_u_mse**0.5:6.3f}  r_rmse=  {this_r_mse**0.5:6.3f}"
+                    # )
 
-                prob_mse.append(this_prob_mse)
-                u_mse.append(this_u_mse)
-                r_mse.append(this_r_mse)
-                avg_cr.append(this_cr)
+                    prob_mse.append(this_prob_mse)
+                    u_mse.append(this_u_mse)
+                    r_mse.append(this_r_mse)
+                    avg_cr.append(this_cr)
 
             print(
                 f"{power:8s}  {cfr_iter:4d}: prob_rmse= {avg(prob_mse)**0.5:6.3f}  u_rmse= {avg(u_mse)**0.5:6.3f}  r_rmse=  {avg(r_mse)**0.5:7.4f}  avg_cr=  {avg(avg_cr):7.4f}"

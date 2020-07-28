@@ -62,7 +62,7 @@ message CompareAgentsTask {
   optional Power power_one = 5;
 
   optional string out = 6;
-  optional int32 seed = 7 [ default = 0 ];
+  optional int32 seed = 7 [ default = -1 ];
 
   optional int32 num_processes = 90
       [ default = 0 ];                            // for data collection only!

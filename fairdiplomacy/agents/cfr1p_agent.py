@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
-
+import random
+import postman
 from fairdiplomacy.agents.base_search_agent import BaseSearchAgent
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.selfplay.metrics import MultiStopWatchTimer
@@ -36,6 +37,7 @@ class CFR1PAgent(BaseSearchAgent):
         plausible_orders_req_size=None,
         bp_iters=0,
         bp_prob=0,
+        reset_seed_on_rollout=False,
         **kwargs,
     ):
         super().__init__(
@@ -69,6 +71,7 @@ class CFR1PAgent(BaseSearchAgent):
         )
         self.bp_iters = bp_iters
         self.bp_prob = bp_prob
+        self.reset_seed_on_rollout = reset_seed_on_rollout
 
         logging.info(f"Initialized CFR1P Agent: {self.__dict__}")
 
@@ -136,6 +139,12 @@ class CFR1PAgent(BaseSearchAgent):
                     tuple(list(power_plausible_orders[early_exit_for_power]).pop()): 1.0
                 }
             }
+
+        if self.reset_seed_on_rollout:
+            assert self.n_server_procs == 1
+            client = postman.Client(self.hostports[0])
+            client.connect(3)
+            client.set_seed(torch.zeros(1, dtype=torch.long) + random.randint(0, 1000000000))
 
         timing_logger = logging.getLogger("timing")
         timings = MultiStopWatchTimer()
