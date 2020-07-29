@@ -11,12 +11,14 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "diplomacy_basic_baseline_400M"
+sweep_name = "diplomacy_StateMsgOrder_400M_baseline"
+NUM_HOURS = 24
 
 # Define param grid
 grid = {
-    "-t": ["dialogue"],
-    "--min-turns": [3,],
+    "-t": ["message_order"],
+    # '--num-epochs': [5],
+    "--min-turns": [1,],
     "-veps": [0.1],
     "--attention-dropout": [0.00],
     "--dropout": [0.1],
@@ -32,7 +34,7 @@ grid = {
     ],
     "--label-truncate": [128],
     "--log_every_n_secs": [10],
-    "-lr": [1e-5],
+    "-lr": [7e-6, 1e-5],
     "--lr-scheduler": ["reduceonplateau"],
     "--lr-scheduler-patience": [3],
     "--optimizer": ["adam"],
@@ -48,12 +50,12 @@ grid = {
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
     "-vp": [10],
-    "--max-train-time": [0.96 * 8 * 60 * 60],  # just under 8 hours
+    "--max-train-time": [0.96 * NUM_HOURS * 60 * 60],  # just under 8 hours
     "-vmt": ["ppl"],
     "-vmm": ["min"],
     "-stim": [360],
     "-vme": [10000],
-    "-bs": [128],
+    "-bs": [256],
 }
 
 if __name__ == "__main__":
@@ -61,7 +63,7 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="dev",
+        partition="learnfair",
         jobtime="24:00:00",
         gpus=8,
         nodes=1,

@@ -24,7 +24,6 @@ import hashlib
 import parlai_diplomacy.agents as agents
 import parlai.utils.logging as logging
 
-
 DEFAULT_PARLAI_PATH = os.path.dirname(os.path.dirname(os.path.dirname(agents.__file__)))
 
 BASH_IF_CLAUSE = """
@@ -213,12 +212,29 @@ def run_grid(
     # same as one_job_per_node
     one_job_per_node = one_job_per_node or data_parallel
 
+    # fix the cpu number when one_job_per_node=True
+    if one_job_per_node and cpus == 10:
+        cpus = cpus * gpus
+        print(
+            f"Looks like one_job_per_node={one_job_per_node} and you didn't "
+            f"specify the cpu number (default=10), so changing cpu number to {cpus}, "
+            "but if you actually want the cpu number to be 10, please change the code in param_sweep.py\n"
+        )
+
     # default values that aren't mutable
     if hide_keys is None:
         hide_keys = {}
 
     if not hasattr(grid, "items"):
         raise TypeError("Grid should be a dict.")
+
+    # the condition should the same as the one used to generate --distributed-world-size in create_job_files
+    if ("distributed_train" in prefix) and not (nodes > 1 or (gpus > 1 and not one_job_per_node)):
+        raise ValueError(
+            f"Looks like you are using distributed training. "
+            f"But nodes={nodes}, gpus={gpus}, one_job_per_node={one_job_per_node}, "
+            f"so cannot disbutribute. Do you want to check the params again?"
+        )
 
     if not one_job_per_node and (gpus > 1 or nodes > 1) and ("train_model" in prefix):
         raise ValueError(
@@ -323,7 +339,7 @@ def run_grid(
         bash("mkdir -p " + os.path.join(SAVE_ROOT, "ParlAI_Diplomacy"))
         folders = ["parlai_diplomacy"]
         for folder in folders:
-            logging.info(f'Copying folder {PARLAI_PATH}/{folder}')
+            logging.info(f"Copying folder {PARLAI_PATH}/{folder}")
             cmd = (
                 f"rsync -av {PARLAI_PATH}/{folder} {SAVE_ROOT}/ParlAI_Diplomacy "
                 '--exclude .git --exclude "*.ipynb" '
@@ -331,7 +347,7 @@ def run_grid(
             bash(cmd)
 
         NEW_PARLAI_PATH = "{SAVE_ROOT}/ParlAI_Diplomacy".format(**locals())
-        logging.info(f'ParlAI path reset to: {NEW_PARLAI_PATH}')
+        logging.info(f"ParlAI path reset to: {NEW_PARLAI_PATH}")
     else:
         NEW_PARLAI_PATH = PARLAI_PATH
 

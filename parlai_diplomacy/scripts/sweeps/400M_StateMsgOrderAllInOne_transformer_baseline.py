@@ -6,54 +6,60 @@
 
 from parlai_diplomacy.utils.param_sweeps.param_sweep import run_grid
 import parlai_diplomacy.utils.loading as load
+import parlai_diplomacy.tasks.language_diplomacy.utils as utls
 
 load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "diplomacy_basic_baseline_400M"
+sweep_name = "dis_diplomacy_AllGame_distributed_train"
+NUM_HOURS = 72
 
 # Define param grid
 grid = {
-    "-t": ["dialogue"],
-    "--min-turns": [3,],
+    "--load-from-checkpoint": ["True"],
+    "--dynamic-batching": ["full"],
+    "-t": ["message_state_order"],
+    "--num-epochs": [10],
+    "--min-turns": [1,],
+    "--include-message-from": ["all_msg",],
     "-veps": [0.1],
     "--attention-dropout": [0.00],
     "--dropout": [0.1],
     "--fp16": [True],
     "--init-model": [
-        "/checkpoint/edinan/diplomacy/400M_0701/model --dict-file /checkpoint/edinan/diplomacy/400M_0701/model.dict "
+        "/checkpoint/wyshi/diplomacy/context512_test_model/newest/model --dict-file /checkpoint/wyshi/diplomacy/context512_test_model/newest/model.dict "
         "-m transformer/generator --embedding-size 1024 --ffn-size 4096 --attention-dropout 0.1 "
         "--n-heads 16 --n-positions 2048 --variant prelayernorm --activation gelu --n-encoder-layers 2 "
         "--n-decoder-layers 22 --skip-generation True --fp16 True --fp16-impl mem_efficient --force-fp16-tokens True "
-        "--optimizer mem_eff_adam --truncate 128 --dict-tokenizer bytelevelbpe "
-        "--bpe-vocab /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-vocab.json "
-        "--bpe-merge /checkpoint/edinan/20200625/reddit-400M-baseline/de8/model.dict-merges.txt"
+        "--optimizer mem_eff_adam --dict-tokenizer bytelevelbpe "
+        "--bpe-vocab /checkpoint/wyshi/diplomacy/context512_test_model/newest/model.dict-vocab.json "
+        "--bpe-merge /checkpoint/wyshi/diplomacy/context512_test_model/newest/model.dict-merges.txt"
     ],
-    "--label-truncate": [128],
+    "--label-truncate": [256],
     "--log_every_n_secs": [10],
-    "-lr": [1e-5],
-    "--lr-scheduler": ["reduceonplateau"],
+    "-lr": [5e-5, 1e-4],
+    "--lr-scheduler": ["linear"],
+    "--max-lr-steps": ["1_000_000"],
     "--lr-scheduler-patience": [3],
     "--optimizer": ["adam"],
     "--relu-dropout": [0.0],
     "--activation": ["gelu"],
-    "--model-parallel": [True],
+    "--model-parallel": [False],
     "--save-after-valid": [True],
-    "--text-truncate": [128],
-    "--truncate": [128],
-    "--warmup_updates": [100],
+    "--text-truncate": [2048],
+    "--warmup_updates": [5000],
     "--fp16-impl": ["mem_efficient"],
-    "--update-freq": [2],
+    "--update-freq": [1],
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
     "-vp": [10],
-    "--max-train-time": [0.96 * 8 * 60 * 60],  # just under 8 hours
+    "--max-train-time": [0.96 * NUM_HOURS * 60 * 60],  # just under 8 hours
     "-vmt": ["ppl"],
     "-vmm": ["min"],
     "-stim": [360],
-    "-vme": [10000],
-    "-bs": [128],
+    "-vme": [10_000],
+    "-bs": [8],
 }
 
 if __name__ == "__main__":
@@ -61,12 +67,14 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="dev",
-        jobtime="24:00:00",
+        partition="learnfair",
+        jobtime=f"{NUM_HOURS}:00:00",
+        # prefix="python -u parlai_diplomacy/scripts/profile_train.py",
+        prefix="python -u parlai_diplomacy/scripts/distributed_train.py",
         gpus=8,
-        nodes=1,
+        nodes=8,
         create_model_file=True,
-        data_parallel=True,
+        one_job_per_node=True,
         requeue=True,
         include_job_id=False,
         volta32=True,
