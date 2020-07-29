@@ -30,6 +30,7 @@ def make_ratings_table(game_jsons):
 def build_db_cache_from_cfg(cfg):
     assert cfg.glob, cfg
     assert cfg.out_path, cfg
+    no_press_cfg = cfg.dataset_params
 
     logging.info("Expanding the glob")
     game_json_paths = sorted(glob.glob(cfg.glob))
@@ -48,8 +49,8 @@ def build_db_cache_from_cfg(cfg):
         # Using full paths as game ids.
         data_dir="SHOULD_NOT_BE_USED",
         game_metadata=game_metadata,
-        only_with_min_final_score=cfg.only_with_min_final_score,
-        n_jobs=cfg.n_parallel_jobs,
+        only_with_min_final_score=no_press_cfg.only_with_min_final_score,
+        num_dataloader_workers=no_press_cfg.num_dataloader_workers,
         min_rating=-1e9,
         cf_agent=(
             None

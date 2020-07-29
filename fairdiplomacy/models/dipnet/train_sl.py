@@ -8,6 +8,7 @@ from collections import Counter
 from functools import reduce
 
 import torch
+from google.protobuf.json_format import MessageToDict
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, DataFields
@@ -450,32 +451,26 @@ def run_with_cfg(args):
         logger.info(f"Found dataset cache at {args.data_cache}")
         train_dataset, val_dataset = cached_torch_load(args.data_cache)
     else:
+        dataset_params = args.no_press_params
         assert args.metadata_path is not None
-        assert args.data_dir is not None
+        assert dataset_params.data_dir is not None
         game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
-            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct
+            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct,
         )
+        dataset_params_dict = MessageToDict(dataset_params, preserving_proto_field_name=True)
 
         train_dataset = Dataset(
             game_ids=train_game_ids,
-            data_dir=args.data_dir,
             game_metadata=game_metadata,
-            only_with_min_final_score=args.only_with_min_final_score,
-            n_jobs=args.num_dataloader_workers,
-            value_decay_alpha=args.value_decay_alpha,
             min_rating=min_rating,
-            exclude_n_holds=args.exclude_n_holds,
+            **dataset_params_dict,
         )
         train_dataset.preprocess()
         val_dataset = Dataset(
             game_ids=val_game_ids,
-            data_dir=args.data_dir,
             game_metadata=game_metadata,
-            only_with_min_final_score=args.only_with_min_final_score,
-            n_jobs=args.num_dataloader_workers,
-            value_decay_alpha=args.value_decay_alpha,
             min_rating=min_rating,
-            exclude_n_holds=args.exclude_n_holds,
+            **dataset_params_dict,
         )
         val_dataset.preprocess()
 

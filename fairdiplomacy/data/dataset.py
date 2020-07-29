@@ -67,7 +67,7 @@ class Dataset(torch.utils.data.Dataset):
         game_metadata: Dict[Union[int, str], Any],
         debug_only_opening_phase=False,
         only_with_min_final_score=7,
-        n_jobs=20,
+        num_dataloader_workers=20,
         value_decay_alpha=1.0,
         cf_agent=None,
         n_cf_agent_samples=1,
@@ -79,7 +79,7 @@ class Dataset(torch.utils.data.Dataset):
         self.game_metadata = game_metadata
         self.debug_only_opening_phase = debug_only_opening_phase
         self.only_with_min_final_score = only_with_min_final_score
-        self.n_jobs = n_jobs
+        self.n_jobs = num_dataloader_workers
         self.value_decay_alpha = value_decay_alpha
         self.cf_agent = cf_agent
         self.n_cf_agent_samples = n_cf_agent_samples
@@ -533,7 +533,7 @@ def encode_phase(
 
         # Construct the tensor in the order that the countries are listed in POWERS
         power_tensors = [
-            phase_tensor_dict.get(power, torch.LongTensor([228, 2], type=torch.int64))
+            phase_tensor_dict.get(power, torch.LongTensor([228, 2]))
             for power_idx, power in enumerate(POWERS)
         ]  # temporary fix with the [228, 2] tensor
         padded_tensors, _ = padded_tensor(power_tensors, pad_idx=-1)

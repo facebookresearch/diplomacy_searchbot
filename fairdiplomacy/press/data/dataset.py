@@ -1,14 +1,14 @@
 import copy
-import glob
-import logging
 from abc import ABC, abstractmethod
 from glob import glob
 
+from google.protobuf.json_format import MessageToDict
 from parlai.core.agents import create_agent_from_model_file
 from tqdm import tqdm
 
 from fairdiplomacy.data.build_dataset import COUNTRY_ID_TO_POWER
 from fairdiplomacy.data.dataset import *
+from fairdiplomacy.models.dipnet.train_sl import get_sl_db_args
 
 logger = logging.getLogger()
 
@@ -203,35 +203,32 @@ class ListenerDataset(PressDataset):
 
 
 def build_press_db_cache_from_cfg(cfg):
+    press_cfg = cfg.press_params
+    no_press_cfg = press_cfg.no_press_params
+
     game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
-        cfg.metadata_path, cfg.min_rating_percentile, cfg.max_games, cfg.val_set_pct
+        cfg.metadata_path, cfg.min_rating_percentile, cfg.max_games, cfg.val_set_pct,
     )
 
+    no_press_dict = MessageToDict(no_press_cfg, preserving_proto_field_name=True)
+
     train_dataset = ListenerDataset(
-        parlai_agent_file=cfg.parlai_agent_file,
-        message_chunks=cfg.message_chunks,
-        game_ids=train_game_ids,
-        data_dir=cfg.data_dir,
         game_metadata=game_metadata,
-        only_with_min_final_score=cfg.only_with_min_final_score,
-        n_jobs=cfg.num_dataloader_workers,
-        value_decay_alpha=cfg.value_decay_alpha,
+        game_ids=train_game_ids,
         min_rating=min_rating,
-        exclude_n_holds=cfg.exclude_n_holds,
+        parlai_agent_file=press_cfg.parlai_agent_file,
+        message_chunks=press_cfg.message_chunks,
+        **no_press_dict,
     )
     train_dataset.preprocess()
 
     val_dataset = ListenerDataset(
-        parlai_agent_file=cfg.parlai_agent_file,
-        message_chunks=cfg.message_chunks,
         game_ids=val_game_ids,
-        data_dir=cfg.data_dir,
-        game_metadata=game_metadata,
-        only_with_min_final_score=cfg.only_with_min_final_score,
-        n_jobs=cfg.num_dataloader_workers,
-        value_decay_alpha=cfg.value_decay_alpha,
         min_rating=min_rating,
-        exclude_n_holds=cfg.exclude_n_holds,
+        game_metadata=game_metadata,
+        parlai_agent_file=press_cfg.parlai_agent_file,
+        message_chunks=press_cfg.message_chunks,
+        **no_press_dict,
     )
     val_dataset.preprocess()
 

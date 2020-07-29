@@ -70,139 +70,152 @@ message CompareAgentsTask {
   optional Launcher launcher = 100;
 }
 
-message TrainTask {
-  // Path to dir containing game.json files.
-  optional string data_dir = 1;
-
-  // Path to dir containing dataset cache.
-  optional string data_cache = 2;
-
-  // Optional. Paths to additional datasets. Only validation part of these
-  // datasets will be used. The key is used for reporting.
-  map<string, string> extra_val_data_caches = 43;
-
-  // Optional. Paths to additional train datasets. Will be concatenated to the
-  // main dataset.
-  repeated string extra_train_data_caches = 44;
-
+message NoPressDatasetParams{
   // Dataloader procs (1 means load in the main process).
-  optional int32 num_dataloader_workers = 3;
-
-  // Batch size per GPU.
-  optional int32 batch_size = 4;
-
-  // Learning rate.
-  optional float lr = 5;
-
-  // Learning rate decay per epoch.
-  optional float lr_decay = 6;
-
-  // Max gradient norm.
-  optional float clip_grad_norm = 7;
-
-  // Path to load/save the model.
-  optional string checkpoint = 8;
-
-  // Percentage of games to use as val set.
-  optional float val_set_pct = 9;
-
-  // Prob[teacher forcing] during training.
-  optional float teacher_force = 10;
-
-  // LSTM dropout pct.
-  optional float lstm_dropout = 11;
-
-  // Encoder dropout pct.
-  optional float encoder_dropout = 12;
-
-  // If set, restrict data to S1901M.
-  optional bool debug_only_opening_phase = 13;
-
-  // If set, use a single process.
-  optional bool debug_no_mp = 14;
-
-  // Skip validation / save.
-  optional bool skip_validation = 15;
-
-  // Learn adjacency matrix.
-  optional bool learnable_A = 16;
-
-  // Obsolete.
-  optional bool fill_missing_orders = 17 [ default = false ];
-
-  // Learn attention alignment matrix.
-  optional bool learnable_alignments = 18;
-
-  // Average across location embedding instead of using attention.
-  optional bool avg_embedding = 19;
-
-  // Number of GCN layers in the encoder
-  optional int32 num_encoder_blocks = 20;
-
-  // Max number of epochs to train
-  optional int32 num_epochs = 21;
-
-  // Stale. Always enabled.
-  optional bool write_jsonl = 22;
-
-  // Weight of value loss relative to policy loss, between 0 and 1
-  optional float value_loss_weight = 23;
-
-  // Scale factor for initial value decoder weights
-  optional float value_decoder_init_scale = 24;
-
-  // Max gradient norm in value decoder params
-  optional float value_decoder_clip_grad_norm = 25;
+  optional int32 num_dataloader_workers = 1;
 
   // Minimal score (num SC) of the at the enf of the game needed to include the
   // power into the training set.
-  optional int32 only_with_min_final_score = 26 [ default = 7 ];
-
-  // Value head dropout pct.
-  optional float value_dropout = 27;
-
-  // Factor used in exponential weighted average of sum of squares scores
-  optional float value_decay_alpha = 28 [ default = 1.0 ];
-
-  // Path to file containing game metadata.
-  optional string metadata_path = 29;
-
-  // Max gamesto include in dataset (for testing only)
-  optional int32 max_games = 30 [default = -1];
-
-  // cut this percentile of games based on player rating
-  // (only for dataset with player ratings)
-  optional float min_rating_percentile = 31 [default = 0];
-  
-  // obsolete
-  optional bool graph_decoder = 32 [default = false];
-
-  // dimension of LSTM
-  optional int32 lstm_size = 33 [default = 200];
-
-  // number of LSTM layers
-  optional int32 lstm_layers = 34 [default = 1];
-
-  // if true, add features to output orders in the model
-  optional bool featurize_output = 35 [default = false];
-
-  // if true, add "relational" features to output orders in the model
-  optional bool relfeat_output = 36 [default = false];
+  optional int32 only_with_min_final_score = 2;
 
   // exclude actions with >=n units, all holds, from the dataset
-  optional int32 exclude_n_holds = 37 [default = -1];
+  optional int32 exclude_n_holds = 3 [default = -1];
 
-  optional bool shuffle_locs = 38 [default = false];
+  // If set, restrict data to S1901M.
+  optional bool debug_only_opening_phase = 4;
 
-  optional bool featurize_prev_orders = 39 [default = false];
+  // Factor used in exponential weighted average of sum of squares scores
+  optional float value_decay_alpha = 5 [ default = 1.0 ];
 
-  optional bool residual_linear = 40 [default = false];
+  // Path to dir containing game.json files.
+  optional string data_dir = 6;
+}
 
-  optional bool merged_gnn = 41 [default = false];
+message TrainTask {
+  // No Press dataset params
+  optional NoPressDatasetParams dataset_params = 1;
+
+  // Batch size per GPU.
+  optional int32 batch_size = 2;
+
+  // Learning rate.
+  optional float lr = 3;
+
+  // Learning rate decay per epoch.
+  optional float lr_decay = 4;
+
+  // Max gradient norm.
+  optional float clip_grad_norm = 5;
+
+  // Path to load/save the model.
+  optional string checkpoint = 6;
+
+  // Prob[teacher forcing] during training.
+  optional float teacher_force = 7;
+
+  // LSTM dropout pct.
+  optional float lstm_dropout = 8;
+
+  // Encoder dropout pct.
+  optional float encoder_dropout = 9;
+
+  // If set, use a single process.
+  optional bool debug_no_mp = 10;
+
+  // Skip validation / save.
+  optional bool skip_validation = 11;
+
+  // Learn adjacency matrix.
+  optional bool learnable_A = 12;
+
+  // Obsolete.
+  optional bool fill_missing_orders = 13 [ default = false ];
+
+  // Learn attention alignment matrix.
+  optional bool learnable_alignments = 14;
+
+  // Average across location embedding instead of using attention.
+  optional bool avg_embedding = 15;
+
+  // Number of GCN layers in the encoder
+  optional int32 num_encoder_blocks = 16;
+
+  // Max number of epochs to train
+  optional int32 num_epochs = 17;
+
+  // Stale. Always enabled.
+  optional bool write_jsonl = 18;
+
+  // Weight of value loss relative to policy loss, between 0 and 1
+  optional float value_loss_weight = 19;
+
+  // Scale factor for initial value decoder weights
+  optional float value_decoder_init_scale = 20;
+
+  // Max gradient norm in value decoder params
+  optional float value_decoder_clip_grad_norm = 21;
+
+  // Value head dropout pct.
+  optional float value_dropout = 22;
+
+  // obsolete
+  optional bool graph_decoder = 23 [default = false];
+
+  // dimension of LSTM
+  optional int32 lstm_size = 24 [default = 200];
+
+  // number of LSTM layers
+  optional int32 lstm_layers = 25 [default = 1];
+
+  // if true, add features to output orders in the model
+  optional bool featurize_output = 26 [default = false];
+
+  // if true, add "relational" features to output orders in the model
+  optional bool relfeat_output = 27 [default = false];
+
+  optional bool shuffle_locs = 28 [default = false];
+
+  optional bool featurize_prev_orders = 29 [default = false];
+
+  optional bool residual_linear = 30 [default = false];
+
+  optional bool merged_gnn = 31 [default = false];
 
   // Optional. If set to a positive value, will skip each residual layer in
   // encoder with this probability.
-  optional float encoder_layerdrop = 42 [default = 0.0];
+  optional float encoder_layerdrop = 32 [default = 0.0];
+
+    // Path to file containing game metadata.
+  optional string metadata_path = 33;
+
+  // cut this percentile of games based on player rating
+  // (only for dataset with player ratings)
+  optional float min_rating_percentile = 34 [default = 0];
+
+  // Max gamesto include in dataset (for testing only)
+  optional int32 max_games = 35 [default = -1];
+
+  // Percentage of games to use as val set.
+  optional float val_set_pct =  36 [default = 0.01];
+
+  // Optional. If specified, use this agent's orders instead of the orders in
+  // the game.json
+  optional Agent cf_agent = 37;
+
+  // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
+  // times, saving each as a separate row in the db.
+  optional uint32 n_cf_agent_samples = 38 [ default = 1 ];
+
+  // Path to dir containing dataset cache.
+  optional string data_cache = 39;
+
+  // Optional. Paths to additional datasets. Only validation part of these
+  // datasets will be used. The key is used for reporting.
+  map<string, string> extra_val_data_caches = 40;
+
+  // Optional. Paths to additional train datasets. Will be concatenated to the
+  // main dataset.
+  repeated string extra_train_data_caches = 41;
 
   optional Launcher launcher = 1000;
 }
@@ -384,16 +397,14 @@ message ExploitTask {
 }
 
 message BuildDbCacheTask {
+  //Dataset Params
+  optional NoPressDatasetParams dataset_params = 1;
 
   // Required. Glob pattern to game.json files
-  optional string glob = 1;
+  optional string glob = 2;
 
   // Required. Path to save db cache
-  optional string out_path = 2;
-
-  // Minimal score (num SC) of the at the end of the game needed to include the
-  // power into the training set.
-  optional uint32 only_with_min_final_score = 3 [ default = 7 ];
+  optional string out_path = 3;
 
   // Optional. If specified, use this agent's orders instead of the orders in
   // the game.json
@@ -403,63 +414,37 @@ message BuildDbCacheTask {
   // times, saving each as a separate row in the db.
   optional uint32 n_cf_agent_samples = 5 [ default = 1 ];
 
-  // Optional, # of parallel encoding processes. Default = #cpu
-  optional int32 n_parallel_jobs = 6 [ default = -1 ];
-
   // Percentage of games to use as val set.
-  optional float val_set_pct = 7 [default = 0.01];
+  optional float val_set_pct = 6 [default = 0.01];
 
   optional Launcher launcher = 100;
 }
 
+message PressDatasetParams {
+  optional NoPressDatasetParams no_press_params = 1;
+
+  // Parlai agent file
+  optional string parlai_agent_file = 2;
+
+  // Glob of raw message_chunks
+  optional string message_chunks = 3;
+}
+
 message BuildPressDbCacheTask {
-
-  // Minimal score (num SC) of the at the end of the game needed to include the
-  // power into the training set.
-  optional uint32 only_with_min_final_score = 1 [ default = 7 ];
-
-  // Optional. If specified, use this agent's orders instead of the orders in
-  // the game.json
-  optional Agent cf_agent = 2;
-
-  // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
-  // times, saving each as a separate row in the db.
-  optional uint32 n_cf_agent_samples = 3 [ default = 1 ];
-
-  // Optional, # of parallel encoding processes. Default = #cpu
-  optional int32 n_parallel_jobs = 4 [ default = -1 ];
-
-  optional string parlai_agent_file = 5;
-
-  // Path to dir containing game.json files.
-  optional string data_dir = 6;
-
-  // Path to dir containing dataset cache.
-  optional string data_cache = 7;
-
-  // Dataloader procs (1 means load in the main process).
-  optional int32 num_dataloader_workers = 8;
+  optional PressDatasetParams press_params = 1;
 
   // Path to file containing game metadata.
-  optional string metadata_path = 9;
-
-  // Max gamesto include in dataset (for testing only)
-  optional int32 max_games = 10 [default = -1];
+  optional string metadata_path = 2;
 
   // cut this percentile of games based on player rating
   // (only for dataset with player ratings)
-  optional float min_rating_percentile = 11 [default = 0];
+  optional float min_rating_percentile = 3 [default = 0];
 
-  // exclude actions with >=n units, all holds, from the dataset
-  optional int32 exclude_n_holds = 12 [default = -1];
+  // Max gamesto include in dataset (for testing only)
+  optional int32 max_games = 4 [default = -1];
 
-  // Factor used in exponential weighted average of sum of squares scores
-  optional float value_decay_alpha = 13 [ default = 1.0 ];
-
-  // Percentage of games to use as val set.
-  optional float val_set_pct = 14;
-
-  optional string message_chunks = 15;
+    // Percentage of games to use as val set.
+  optional float val_set_pct =  5 [default = 0.01];
 }
 
 // Root config to compare agents.
