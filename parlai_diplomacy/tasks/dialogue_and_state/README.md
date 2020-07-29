@@ -1,4 +1,4 @@
-# ParlAI Diplomacy
+# Dialogue and State Teachers
 
 * `-t` or `--task` indicates the task teacher. The name shows what's included in the input and output sequences, e.g. `message_state_order` means the `input_sequence = (message + state)`, and the `output_sequence = order`; `order_history_message_order` means the `input_sequence = (order_history + message)`, and the `output_sequence = order`
 

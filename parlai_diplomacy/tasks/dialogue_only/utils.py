@@ -10,9 +10,7 @@ from glob import glob
 import re
 import os
 import sys
-import torch
 import time
-from pathlib import Path
 import numpy as np
 from copy import deepcopy
 
@@ -22,8 +20,12 @@ import parlai.utils.logging as logging
 # CONSTANTS
 ###########################################
 
-# TODO better ways to organize the paths
-CHUNK_DIALOGUE_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/chat_messages/chat_messages_jsons"
+# TODO: better ways to organize the paths
+CHUNK_DIALOGUE_PATH = (
+    "/checkpoint/fairdiplomacy/press_diplomacy/chat_messages/chat_messages_jsons/"
+)
+CHUNK_ORDER_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/dumps_State_OrderHistory_MessageHistory-all-msg-SpecialToken-False_order/*.json"
+
 DATAPATH = "/checkpoint/fairdiplomacy/press_diplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_*.json"
 ORDER_PATH = (
     "/checkpoint/fairdiplomacy/processed_orders_jsons/game_*.json*"  # some are json.partial
@@ -468,7 +470,7 @@ def join_order_and_msg(
     """
     Join order and message information
 
-    Temporarily return (state+msg, orders) only 
+    Temporarily return (state+msg, orders) only
     """
 
     def get_msg_from_speaker(conv, speaker_id):
@@ -884,7 +886,7 @@ class DiplomacyMessageOrderPair:
     """
     Object representing a Diplomacy (state+message)-order pair.
 
-    Represents (state+message)-order pairs from all speakers 
+    Represents (state+message)-order pairs from all speakers
     in one phase in a single game of Diplomacy.
     """
 
@@ -1172,4 +1174,3 @@ class MessageOrderDataIterator:
         self.phase_idx += 1
 
         return curr_phase
-
