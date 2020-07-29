@@ -44,6 +44,7 @@ setup(
         "black",
         "ipdb",
         "joblib",
+        "flask",
         "pandas",
         "torch",
         "tqdm",

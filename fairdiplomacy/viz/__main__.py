@@ -15,8 +15,11 @@ import pathlib
 import urllib.parse
 
 import flask
+import pandas as pd
 
 import fairdiplomacy.game
+from fairdiplomacy.models.consts import POWERS
+import fairdiplomacy.utils.game_scoring
 
 TESTCASE_PATH = pathlib.Path(__file__).parent.parent.parent / "test_situations.json"
 
@@ -37,10 +40,10 @@ INDEX_HTML = """
             <a href="?" class="navbar-brand mb-0 h1">Diplomacy viz</a>
             {% if num_phases %}
             Phase: {{ phase_id + 1 }} / {{ num_phases }} ({{phase}})
-                {% if first_phase %}<a href="?game={{ game_json_path }}&phase={{ first_phase }}{{ url_suffix }}">first</a>{% else %}first{% endif %}
-                {% if prev_phase %}<a href="?game={{ game_json_path }}&phase={{ prev_phase }}{{ url_suffix }}">prev</a>{% else %}prev{% endif %}
-                {% if next_phase %}<a href="?game={{ game_json_path }}&phase={{ next_phase }}{{ url_suffix }}">next</a>{% else %}next{% endif %}
-                {% if last_phase %}<a href="?game={{ game_json_path }}&phase={{ last_phase }}{{ url_suffix }}">last</a>{% else %}last{% endif %}
+                {% if first_phase %}<a href="?phase={{ first_phase }}&game={{ game_json_path }}{{ url_suffix }}">first</a>{% else %}first{% endif %}
+                {% if prev_phase %}<a href="?phase={{ prev_phase }}&game={{ game_json_path }}{{ url_suffix }}">prev</a>{% else %}prev{% endif %}
+                {% if next_phase %}<a href="?phase={{ next_phase }}&game={{ game_json_path }}{{ url_suffix }}">next</a>{% else %}next{% endif %}
+                {% if last_phase %}<a href="?phase={{ last_phase }}&game={{ game_json_path }}{{ url_suffix }}">last</a>{% else %}last{% endif %}
             {% endif %}
     </nav>
     {% if image %}
@@ -50,6 +53,9 @@ INDEX_HTML = """
     <div>
         <div style="margin: 0 auto; width: 918px">
             {{ image|safe }}
+        <p>
+        <pre>{{ game_scores }}</pre>
+        </p>
         </div>
     </div>
     {% else %} 
@@ -101,6 +107,8 @@ def root():
     if game is None:
         return f"Bad game.json (not found): {game_json_path}"
     phase_list = list(game.order_history)
+    if game.get_state()["name"] not in phase_list:
+        phase_list += [game.get_state()["name"]]
     try:
         phase_id = phase_list.index(phase)
     except ValueError:
@@ -121,6 +129,15 @@ def root():
         url_suffix = ""
 
     game = fairdiplomacy.game.Game.clone_from(game, up_to_phase=phase)
+    game_scores = {
+        p: fairdiplomacy.utils.game_scoring.compute_game_scores(
+            i, game.to_saved_game_format()
+        )._asdict()
+        for i, p in enumerate(POWERS)
+    }
+    pd.set_option("display.max_columns", None)
+    pd.set_option("display.width", None)
+    game_scores = str(pd.DataFrame(game_scores))
     image = game.render(incl_abbrev=True)
     return flask.render_template_string(INDEX_HTML, **locals())
 
