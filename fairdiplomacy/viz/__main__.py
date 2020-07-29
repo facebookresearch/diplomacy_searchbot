@@ -36,9 +36,11 @@ INDEX_HTML = """
     <nav class="navbar navbar-light" style="background-color: #e3f2fd;">
             <a href="?" class="navbar-brand mb-0 h1">Diplomacy viz</a>
             {% if num_phases %}
-            Phase: {{ phase_id }} / {{ num_phases }} ({{phase}})
+            Phase: {{ phase_id + 1 }} / {{ num_phases }} ({{phase}})
+                {% if first_phase %}<a href="?game={{ game_json_path }}&phase={{ first_phase }}{{ url_suffix }}">first</a>{% else %}first{% endif %}
                 {% if prev_phase %}<a href="?game={{ game_json_path }}&phase={{ prev_phase }}{{ url_suffix }}">prev</a>{% else %}prev{% endif %}
                 {% if next_phase %}<a href="?game={{ game_json_path }}&phase={{ next_phase }}{{ url_suffix }}">next</a>{% else %}next{% endif %}
+                {% if last_phase %}<a href="?game={{ game_json_path }}&phase={{ last_phase }}{{ url_suffix }}">last</a>{% else %}last{% endif %}
             {% endif %}
     </nav>
     {% if image %}
@@ -102,10 +104,14 @@ def root():
     try:
         phase_id = phase_list.index(phase)
     except ValueError:
-        return "Bad phase. Known: " + " ".join(map(str, phase_list))
+        return "Bad phase. Known: " + " ".join(
+            f"<a href='?game={game_json_path}&phase={phase}'>{phase}</a>" for phase in phase_list
+        )
     num_phases = len(phase_list)
     prev_phase = phase_list[phase_id - 1] if phase_id > 0 else ""
     next_phase = phase_list[phase_id + 1] if phase_id < len(phase_list) - 1 else ""
+    first_phase = phase_list[0] if phase_id > 0 else ""
+    last_phase = phase_list[-1] if phase_id < len(phase_list) - 1 else ""
 
     test_situation_name = flask.request.args.get("test")
     if test_situation_name:
