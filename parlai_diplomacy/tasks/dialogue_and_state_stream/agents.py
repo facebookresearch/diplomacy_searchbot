@@ -55,10 +55,10 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         # TODO: get actual counts here
         datatype = opt["datatype"]
         if "train" in datatype:
-            return 5140030, 9836290
+            return 14629818, 14629818
 
         if "valid" in datatype:
-            return 433562, 830248
+            return 770672, 770672
 
     def _set_chunk_idx_to_file(self):
         folder = self._get_data_folder()
