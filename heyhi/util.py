@@ -319,6 +319,9 @@ def _get_overrides_tags(overrides: Sequence[str]) -> Tuple[str, str]:
         if len(key) > 5:
             # Compress key.
             key = ".".join(x[:3] for x in key.split("."))
+        if "/" in value:
+            # For paths, use the last 2 components.
+            value = "_".join(value.split("/")[-2:])
         parsed_overrides.append(f"{key}{DELIMETER}{value}")
     override_tag = DELIMETER.join(parsed_overrides)[:MAX_OVERRIDE_LEN]
     if not override_tag:
