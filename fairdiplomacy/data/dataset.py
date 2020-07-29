@@ -240,7 +240,7 @@ class Dataset(torch.utils.data.Dataset):
 
         # cast fields
         for k in fields:
-            if isinstance(k, torch.Tensor):
+            if isinstance(fields[k], torch.Tensor):
                 if k in ("x_possible_actions", "y_actions", "x_prev_orders"):
                     fields[k] = fields[k].to(torch.long)
                 elif k != "prev_orders":
