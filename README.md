@@ -1,4 +1,40 @@
-# Installation
+# FAIR Diplomacy
+
+### Game info
+Diplomacy is a strategic board game set in 1914 Europe.
+The board is divided into fifty-six land regions and nineteen sea regions.
+Forty-two of the land regions are divided among the seven Great Powers of the game: Austria-Hungary, England, France, Germany, Italy, Russia, and Turkey.
+The remaining fourteen land regions are neutral at the start of the game.
+
+Each power controls some regions and some units.
+The number of the units controlled depends on the number of the controlled key regions called Supply Centers (SCs).
+Simply put, more SCs means more units.
+The goal of the game is to control more than half of all SCs by moving units into these regions and convincing other players to support you.
+
+You can find the full rules [here](https://en.wikibooks.org/wiki/Diplomacy/Rules).
+To get the game's spirit, watch some [games with comments](https://www.youtube.com/watch?v=k04DTyEBeWw).
+What's more, you can play the game online on [WebDiplomacy](https://webdiplomacy.net/) either against bots or humans.
+
+<p align="center">
+<img src="docs/images/webdiplomacy.gif" alt="Diplomacy text" />
+</p>
+
+### Game types
+
+We consider two modifications of the game: No-Press and Press.
+
+ * In **No-Press** (aka GunBoat) diplomacy no communication between parties is allowed. Therefore the players has to infer possible alliances from actions of other players.
+ * In **Press** players can communicate with each other privately before making the order. Note, that orders are revealed simultaneously after the negotiation stage.
+
+
+### Getting updates
+
+Check [FAIR Diplomacy Research group](https://fb.workplace.com/groups/268868111083357/) for updates.
+
+
+## Quick start
+
+### Installation
 
 Clone the repo with submodules:
 ```
@@ -11,262 +47,95 @@ The following command will create/activate conda env with all needed modules:
 . fair_activate.sh
 ```
 
-Once that runs successfully, then install the module:
+In order to rebuild dependencies after update, run `./bin/install_deps.sh`.
+
+### Running tasks
+
+The code has a single entry point, `run.py`, that can be used to train a model, compare agents, profile them, etc.
+We refer to this kind of activity as a task.
+To specify which task to run and what parameters to use, we use configs.
+Below an example of a config that is used to train an agent with imitation learning on human data:
+
 ```
-pip install -e .
+train {
+    dataset_params: {
+        data_dir: "/checkpoint/alerer/fairdiplomacy/facebook_notext/games"
+        value_decay_alpha: 0.9;
+    }
+    batch_size: 2500;
+    lr: 0.001;
+    lr_decay: 0.99;
+    clip_grad_norm: 0.5
+    checkpoint: "./checkpoint.pth";
+    lstm_dropout: 0.1;
+    encoder_dropout: 0.2;
+    num_encoder_blocks: 8;
+}
 ```
 
-# Training a Model
+We use text [protobuf](https://developers.google.com/protocol-buffers/docs/proto#simple) format to specify the configs.
+Each task has a schema, a formal description of what parameters are allowed in each config, e.g., [here's the definition](https://github.com/fairinternal/fairdiplomacy/blob/f89c5b67fa6e9889ed723f372166a90504b36a80/conf/conf.proto#L73-L208) for the train task above.
 
-The model code is in [fairdiplomacy/models/dipnet/](fairdiplomacy/models/dipnet/). The model architecture is defined in [dipnet.py](fairdiplomacy/models/dipnet/dipnet.py)
-We use config instead of argparse to run training and evaluation jobs. A config is a text proto message of type `MetaCfg` as defined in [conf/conf.proto](conf/conf.proto).
-Specific configs are stored in [conf/](conf/) folder with [conf/common](conf/common) containing config chunks that could be included into other configs.
+Protobufs could be confusing, but good news - you don't have to understand them to run tasks.
+Instead, you need to find the config for your task and run it.
+We describe all tasks in the next section.
+Here is an example of how to launch training on human data:
 
-To run a config simply run:
 ```
 python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt
 ```
 
-This will start training of a supervised agent locally using config from [conf/c02_sup_train/sl.prototxt](conf/c02_sup_train/sl.prototxt).
-To redefine any parameters in the config simply pass them via command line arguments using the following syntax: `<key>=<value>`. Example:
-```
-python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt batch_size=10
-```
-
-To run on cluster one has to set job params in `launcher.slurm`. The simplest way to do this is to use a predefined message. run.py allows to include any partial config into the main config using the following syntax: `I=<config_path>` or `I.<mount_point>=<config_path>`. In the latter case, the subconfig will be merged into the specified place of the root config. For instace, the following will include a launcher to run on cluster on a single node with 8 gpus (as defined in [conf/common/launcher/slurm_8gpus.prototxt](conf/common/launcher/slurm_8gpus.prototxt)):
+You can override any config parameter in command line using argparse-like syntax:
 
 ```
-python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus
+python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt batch_size=200 --dataset_params.value_decay_alpha=1.0
 ```
 
-One can combine includes and scalar redefines, e.g., to run the job on 2 machines:
-```
-python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus launcher.slurm.num_gpus=16
-```
+Note that it's optional to use "--" in front of overrides.
 
-(Outdated. Re-write this script to use HeyHi?)
-To train a model on the cluster, see the scripts in [slurm/](slurm/), specifically [example_train_sl.sh](slurm/example_train_sl.sh).
+Finally, to launch something on the cluster add `I.launcher=slurm` (single GPU) or `I.launcher=slurm_8gpus` (8 GPUs).
+Check documentation for [HeyHi](heyhi/), the configuration library, for more details.
 
 
-# Training exploit agent
+### Tasks overview
 
-Exploit agent learns to play against a fixed supervised agent. Configs for
-exploit agents are in [conf/c04_exploit/](conf/c04_exploit/). Take the latest
-and run:
-```
-python run.py --adhoc --cfg conf/c04_exploit/exploit_??.prototxt I.launcher=slurm_8gpus
-```
+In general, all configs are stored in [conf/](conf/) folder and grouped by tasks.
+You can find all possible arguments for all tasks in [conf/conf.proto](conf/conf.proto) file.
+Below are the most important tasks:
 
-The most important metric is `score/is_clear_win`, i.e., the win rate. It should be above 0.2 after half an hour minutes (12 epochs) and above 0.5 after an hour.
+ * Supervised training task for GunBoat. Configs in `c02_sup_train`, docs [here](docs/train_sup.md).
+ * Making 2 agents play against each other for evaluation. Configs in `c01_ag_cmp`, docs [here](docs/compare_agents.md).
+ * Training RL agent. Configs in `c04_exploit`, docs [here](docs/selfplay.md).
+ * Playing against a bot. Configs in `c03_launch_bot`, docs [here](docs/launch_bot.md).
+ * Testing whether CFR agent plays correctly in some test situations. Configs in `c06_situation_check`, test situations in [test_situations.json](test_situations.json).
 
+## Going deeper
 
-# Comparing Agents
+We use an in-house fast C++ implementation of the diplomacy environment.
+See [here](docs/game_engine.md) for how to interact with it.
 
-Comparing agents is also executed via config. See [conf/c01_ag_cmp/cmp.prototxt](conf/c01_ag_cmp/cmp.prototxt) for an example config. The following will play Dipnet model vs 6 Mila bots:
+The games could be serialized as JSON files, e.g., our GunBoat human data and test situations use this format.
+You can use [viz](docs/vizualization.md) tool to quickly see what's there.
 
-```
-python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt
-```
+The text related models are based on [ParlAI](https://github.com/facebookresearch/ParlAI/blob/master/README.md) framework. See docs [here](parlai_diplomacy/).
 
-Some pre-defines agents are located in [conf/common/agents](conf/common/agents). You can plug them in into main config like this:
-```
-python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt \
-  I.agent_one=agents/random I.agent_six=agents/dipnet \
-  power_one=ITALY
-```
+Code structure:
 
-This will play random agent (playing Italy) against 6 dipnet agents, and writes the output to `output.json`
-
-To run a full comparison suite on the cluster see [slurm/compare_agents.sh](slurm/compare_agents.sh)
-
-# Config FAQ
-(for argparse users)
-
-## Nothing works
-If you get error about failed import `conf.conf_pb2` or about missing fields in the config, run:
-```
-protoc conf/*.proto --python_out ./
-```
-
-## How do I do `--help`
-Go to `conf/conf.proto` and you'll see all flags with docs.
-
-## Adding new flags
-Just add them into the proto. The field id (number after "=") doesn't matter as we don't use binary format. Just increment the last one. Don't forget to run `protoc` after this.
-
-## Running group runs
+ * [fairdiplomacy](fairdiplomacy/) - datasets, agents, and trainers for GunBoat part.
+ * [conf](conf/) - all the configs for fairdiplomacy/ part.
+ * [parlai_diplomacy](parlai_diplomacy/) - code for handling Press games.
 
 
-Sometimes you wants to do several runs, e.g., several training runs with different hyper parameters. One way to do this, is to run a bash script that will call `run.py` several time:
-```(bash)
-for lr in 0.1 0.001; do
-  python run.py --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus \
-    lr=$lr
-done
-```
+External links:
 
-Note, there is no `--adhoc` flag. This means that the output folder will be a function of the config name and redefines. As a result, if such experiment is already running, run.py will not start a new one. So it's safe to run the script several times. Or add new values for `lr` in the script.
+ * [PostMan](https://github.com/fairinternal/postman) is an in-house tensor-friendly RPC library. We are using it for search and RL.
+ * [TopLog](https://github.com/fairinternal/toplog) is a simple tool to have on demand TensorBoard. Both supervised and RL trainers output TB logs.
+ * [Mila paper](https://papers.nips.cc/paper/8697-no-press-diplomacy-modeling-multi-agent-gameplay.pdf) that our GunBoat game is based on.
+ * [DM paper](https://arxiv.org/pdf/2006.04635.pdf). We use some model improvement from the paper.
+ * [Our workplace group](https://fb.workplace.com/groups/268868111083357)
 
+## Contributing
 
-If you want to control the output path manully, you can do so:
-```(bash)
-for lr in 0.1 0.001; do
-  python run.py --cfg conf/c02_sup_train/sl.prototxt I.launcher=slurm_8gpus \
-    lr=$lr \
-    --exp_id_pattern_override /checkpoint/$USER/custom_path/lr_${lr}
-done
-```
+We use [black](https://github.com/psf/black) auto-formatter to format all python code.
 
-Alternative to bash is python, i.e. to make a call to run.py from `heyhi` module. The benefits of this approach is that one may check the status of the running (or died) jobs or get a mapping from experiment path to hyper parameter dict without having to reverse engineer the output folder.
-Example of such approach could be found in [conf/c02_sup_train/rs_yolo_01_example.py](conf/c02_sup_train/rs_yolo_01_example.py). The script does launching and results aggregation with optional export to google-sheets.
-
-Code walk through:
-
-  * `yield_sweep` function yields pairs `(cfg_path, dict_with_redefines)` that has to be evaluated.
-  * `get_logs_data` takes an experiment handle (a thing such that `handle.exp_path` is where outputs are) and returns dictionary of key metrics
-  * `main`: launches runs from `yield_sweep` if there are not running already, goes through handles to collect slurm statuses (DEAD/RUNNING/DONE) of the jobs and current metrics (whatever `get_logs_data` extracts), prints the resulting DataFrame or import it google sheet.
-
-To have google sheet support one has to install `pygsheets`. On the first run, the package will ask to open a link to authentify the heyhi app. Otherwise, you can dump the DataFrame on disk to explore it in a notebook or something else.
-
-Scripts like this are expected to be treated as bash scripts, i.e., in read only mode (do not modify scripts after the experiment is done) and without too much includes. The scripts are expected to be submitted for documentation purposes.
-
-Caveat: the scripts are expected to be run as modules in order for imports to work, e.g., `python -m conf.c02_sup_train.rs_yolo_01_example`.
-If you have google-sheet export installed, you can add watch to export data there every 10m:
-```
-watch -n 600 "python -m conf.c02_sup_train.rs_yolo_01_example  2>&1 | tail -n3;   "
-```
-
-# Visualizing a Saved Game
-
-The following allows to load a saved game on devfair and explore test situations.
-
-Run:
-```
-pip install flask
-nohup python -m fairdiplomacy.viz --port 8894 &
-```
-
-By default, this runs a webserver on `localhost:8994`.
-
-If running on your devfair, be sure to run `ssh` with `-L 8894:localhost:8894`
-
-Type the path to the game and press "Show the game".
-
-![Instructions for visualizing a game](docs/images/viz_screen.png)
-
-# Playing Against a Bot
-
-Run:
-```
-./bin/open_visualizer.py
-```
-
-By default, this runs a webserver on `localhost:3000` (and a websocket server on `localhost:8432`)
-
-If running on your devfair, be sure to run `ssh` with `-L 3000:localhost:3000 -L 8432:localhost:8432`
-
-![Instructions for visualizing a game](https://github.com/diplomacy/diplomacy/blob/master/docs/images/visualize_game.png)
-
-Create a new standard game with 1 human user. Then run
-```
-python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt I.agent=agents/dipnet
-```
-
-To play against six CFR bots sharing two GPUs, run
-```
-python run.py --adhoc --cfg conf/c03_launch_bot/launch_bot.prototxt \
-    I.agent=agents/cfr1p \
-    agent.cfr1p.postman_sync_batches=False \
-    reuse_model_servers=2
-```
-
-# A Primer on the Game object
-
-`game.get_state()` returns a dict containing the current board position. The most commonly accessed keys are:
-
-`name`, returning the short-hand game phase:
-```
->>> game.get_state()["name"]
-'S1901M'
-```
-
-`units`, returning the locations of all units on the board:
-```
->>> game.get_state()["units"]
-{'AUSTRIA': ['A BUD', 'A VIE', 'F TRI'],
- 'ENGLAND': ['F EDI', 'F LON', 'A LVP'],
- 'FRANCE': ['F BRE', 'A MAR', 'A PAR'],
- 'GERMANY': ['F KIE', 'A BER', 'A MUN'],
- 'ITALY': ['F NAP', 'A ROM', 'A VEN'],
- 'RUSSIA': ['A WAR', 'A MOS', 'F SEV', 'F STP/SC'],
- 'TURKEY': ['F ANK', 'A CON', 'A SMY']}
-```
-
-`centers`, returning the supply centers controlled by each power:
-```
->>> game.get_state()["centers"]
-{'AUSTRIA': ['BUD', 'TRI', 'VIE'],
- 'ENGLAND': ['EDI', 'LON', 'LVP'],
- 'FRANCE': ['BRE', 'MAR', 'PAR'],
- 'GERMANY': ['BER', 'KIE', 'MUN'],
- 'ITALY': ['NAP', 'ROM', 'VEN'],
- 'RUSSIA': ['MOS', 'SEV', 'STP', 'WAR'],
- 'TURKEY': ['ANK', 'CON', 'SMY']}
-```
-
-`game.order_history` is a SortedDict of {short phase name => {power => [orders]}}
-```
->>> game.order_history
-{'S1901M': {'AUSTRIA': ['A VIE - GAL', 'F TRI H', 'A BUD - RUM'],
-            'ENGLAND': ['F EDI - NTH', 'A LVP - YOR', 'F LON - ENG'],
-            'FRANCE': ['F BRE - MAO', 'A PAR - BUR', 'A MAR S A PAR - BUR'],
-            'GERMANY': ['F KIE - HOL', 'A BER - KIE', 'A MUN - BUR'],
-            'ITALY': ['A VEN - PIE', 'A ROM - VEN', 'F NAP - ION'],
-            'RUSSIA': ['A MOS - UKR',
-                       'F STP/SC - BOT',
-                       'A WAR - GAL',
-                       'F SEV - BLA'],
-            'TURKEY': ['A SMY - ARM', 'F ANK - BLA', 'A CON - BUL']},
- 'F1901M': {'AUSTRIA': ['A VIE - GAL', 'F TRI H', 'A RUM S A ARM - SEV'],
- ...
-```
-
-`game.get_all_possible_orders()` returns a dict from location -> list of possible orders, e.g.
-```
->>> game.get_all_possible_orders()
-{'ADR': [],
- 'AEG': [],
- 'ALB': [],
- 'ANK': ['F ANK S F SEV - ARM',
-         'F ANK H',
-         'F ANK S A CON',
-         'F ANK - ARM',
-         'F ANK S A SMY - CON',
-         'F ANK S F SEV - BLA',
-         'F ANK S A SMY - ARM',
-         'F ANK - BLA',
-         'F ANK - CON'],
-  ...
-```
-
-`game.get_orderable_locations()` returns a map from power -> list of locations that need an order:
-```
->>> game.get_orderable_locations()
-{'AUSTRIA': ['BUD', 'TRI', 'VIE'],
- 'ENGLAND': ['EDI', 'LON', 'LVP'],
- 'FRANCE': ['BRE', 'MAR', 'PAR'],
- 'GERMANY': ['BER', 'KIE', 'MUN'],
- 'ITALY': ['NAP', 'ROM', 'VEN'],
- 'RUSSIA': ['MOS', 'SEV', 'STP', 'WAR'],
- 'TURKEY': ['ANK', 'CON', 'SMY']}
-```
-
-`game.set_orders(power, orders_list)` sets orders for that power's units, e.g.
-```
->>> game.set_orders("TURKEY", ["F ANK - BLA", "A CON H"])
-```
-
-`game.process()` processes the orders that have been set, and moves to the next phase
-
-
-Complete documentation is available [here](https://docs.diplomacy.ai/en/stable/api/diplomacy.engine.game.html)
+We use `clang-format-8 conf/*.proto -i` to autoformat proto.
