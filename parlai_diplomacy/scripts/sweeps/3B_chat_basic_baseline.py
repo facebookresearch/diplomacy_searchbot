@@ -15,7 +15,8 @@ sweep_name = "diplomacy_basic_baseline_3B"
 
 # Define param grid
 grid = {
-    "-t": ["dialogue"],
+    "-t": ["dialogue_chunk"],
+    "-dt": ["train:stream"],
     "--min-turns": [3,],
     "-veps": [0.1],
     "--attention-dropout": [0.00],
@@ -54,7 +55,7 @@ grid = {
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
     "-vp": [10],
-    "--max-train-time": [0.96 * 8 * 60 * 60],  # just under 8 hours
+    "--max-train-time": [0.96 * 48 * 60 * 60],  # just under 48 hours
     "-vmt": ["ppl"],
     "-vmm": ["min"],
     "-stim": [360],
@@ -78,5 +79,5 @@ if __name__ == "__main__":
         volta32=True,
         hashname=True,
         mem_gb=400,
-        copy_env=False,
+        copy_env=True,
     )

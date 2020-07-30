@@ -140,7 +140,7 @@ def run_grid(
     name_keys: Set[str],
     sweep_name: str,
     user: str = os.environ["USER"],
-    prefix: str = "python -u scripts/train.py",  # NOTE: I changed this here from parlai_internal
+    prefix: str = "python -u parlai_diplomacy/scripts/train.py",  # NOTE: I changed this here from parlai_internal
     gpus: int = 1,
     cpus: int = 10,
     nodes: int = 1,
