@@ -60,5 +60,8 @@ setup(
         "grpcio==1.15.0",  # for diplomacy_research
         "grpcio-tools==1.15.0",  # for diplomacy_research
     ],
+    entry_points={
+        "console_scripts": ["diplom=parlai_diplomacy.scripts.diplom:main"],
+    },
     cmdclass={"install": PostInstallBoilerplate},
 )

@@ -8,6 +8,15 @@ I import parlai here so there are a few caveats/changes/tricks to using ParlAI i
 We use the "register" syntax so that new agents and tasks are visible to the parlai module. Note, however,
 that in any script that uses these tasks or agents, you will have to make a call to the functions `register_all_agents()` and `register_all_tasks()` which can be found in `utils/loading.py`.
 
+**ALTERNATIVELY** you can consider using the supercommand: `diplom`. The following commands accomplish the same thing:
+
+- `python scripts/train_model.py` and `diplom tm`
+- `python scripts/display_data.py` and `diplom dd`
+- `python scripts/eval_model.py` and `diplom em`
+- etc.
+
+Using `diplom` will automatically load the correct modules from inside this repo so that they are visible to ParlAI.
+
 
 ## Viewing data
 NOTE: I used an arbitrary train/valid split for now so we probably want to talk about how to split
