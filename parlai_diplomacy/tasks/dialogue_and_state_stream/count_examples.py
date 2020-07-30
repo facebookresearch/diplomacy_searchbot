@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """
 Simple script for iterating through the chunk data to count examples.
 
@@ -9,6 +14,7 @@ from parlai.utils import logging
 
 from glob import glob
 import json
+import os
 
 
 if __name__ == "__main__":
@@ -36,4 +42,4 @@ if __name__ == "__main__":
         print(f"FINISHED {dt}: loaded {tot} total examples.")
         print("By file: ")
         for fle, total in by_fle.items():
-            print(f"{fle}:\t{total}")
+            print(f"{os.path.basename(fle)}:\t{total}")

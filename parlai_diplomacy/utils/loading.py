@@ -20,4 +20,3 @@ def register_all_tasks():
     import parlai_diplomacy.tasks.dialogue_and_state.agents  # noqa: F401
     import parlai_diplomacy.tasks.dialogue_and_state_stream.agents  # noqa: F401
     import parlai_diplomacy.tasks.new_reddit.agents  # noqa: F401
-
