@@ -93,129 +93,129 @@ message NoPressDatasetParams{
 
 message TrainTask {
   // No Press dataset params
-  optional NoPressDatasetParams dataset_params = 1;
+  optional NoPressDatasetParams dataset_params = 45;
 
   // Batch size per GPU.
-  optional int32 batch_size = 2;
+  optional int32 batch_size = 4;
 
   // Learning rate.
-  optional float lr = 3;
+  optional float lr = 5;
 
   // Learning rate decay per epoch.
-  optional float lr_decay = 4;
+  optional float lr_decay = 6;
 
   // Max gradient norm.
-  optional float clip_grad_norm = 5;
+  optional float clip_grad_norm = 7;
 
   // Path to load/save the model.
-  optional string checkpoint = 6;
+  optional string checkpoint = 8;
 
   // Prob[teacher forcing] during training.
-  optional float teacher_force = 7;
+  optional float teacher_force = 10;
 
   // LSTM dropout pct.
-  optional float lstm_dropout = 8;
+  optional float lstm_dropout = 11;
 
   // Encoder dropout pct.
-  optional float encoder_dropout = 9;
+  optional float encoder_dropout = 12;
 
   // If set, use a single process.
-  optional bool debug_no_mp = 10;
+  optional bool debug_no_mp = 14;
 
   // Skip validation / save.
-  optional bool skip_validation = 11;
+  optional bool skip_validation = 15;
 
   // Learn adjacency matrix.
-  optional bool learnable_A = 12;
+  optional bool learnable_A = 16;
 
   // Obsolete.
-  optional bool fill_missing_orders = 13 [ default = false ];
+  optional bool fill_missing_orders = 17 [ default = false ];
 
   // Learn attention alignment matrix.
-  optional bool learnable_alignments = 14;
+  optional bool learnable_alignments = 18;
 
   // Average across location embedding instead of using attention.
-  optional bool avg_embedding = 15;
+  optional bool avg_embedding = 19;
 
   // Number of GCN layers in the encoder
-  optional int32 num_encoder_blocks = 16;
+  optional int32 num_encoder_blocks = 20;
 
   // Max number of epochs to train
-  optional int32 num_epochs = 17;
+  optional int32 num_epochs = 21;
 
   // Stale. Always enabled.
-  optional bool write_jsonl = 18;
+  optional bool write_jsonl = 22;
 
   // Weight of value loss relative to policy loss, between 0 and 1
-  optional float value_loss_weight = 19;
+  optional float value_loss_weight = 23;
 
   // Scale factor for initial value decoder weights
-  optional float value_decoder_init_scale = 20;
+  optional float value_decoder_init_scale = 24;
 
   // Max gradient norm in value decoder params
-  optional float value_decoder_clip_grad_norm = 21;
+  optional float value_decoder_clip_grad_norm = 25;
 
   // Value head dropout pct.
-  optional float value_dropout = 22;
+  optional float value_dropout = 27;
 
   // obsolete
-  optional bool graph_decoder = 23 [default = false];
+  optional bool graph_decoder = 32 [default = false];
 
   // dimension of LSTM
-  optional int32 lstm_size = 24 [default = 200];
+  optional int32 lstm_size = 33 [default = 200];
 
   // number of LSTM layers
-  optional int32 lstm_layers = 25 [default = 1];
+  optional int32 lstm_layers = 304 [default = 1];
 
   // if true, add features to output orders in the model
-  optional bool featurize_output = 26 [default = false];
+  optional bool featurize_output = 35 [default = false];
 
   // if true, add "relational" features to output orders in the model
-  optional bool relfeat_output = 27 [default = false];
+  optional bool relfeat_output = 36 [default = false];
 
-  optional bool shuffle_locs = 28 [default = false];
+  optional bool shuffle_locs = 38 [default = false];
 
-  optional bool featurize_prev_orders = 29 [default = false];
+  optional bool featurize_prev_orders = 39 [default = false];
 
-  optional bool residual_linear = 30 [default = false];
+  optional bool residual_linear = 40 [default = false];
 
-  optional bool merged_gnn = 31 [default = false];
+  optional bool merged_gnn = 41 [default = false];
 
   // Optional. If set to a positive value, will skip each residual layer in
   // encoder with this probability.
-  optional float encoder_layerdrop = 32 [default = 0.0];
+  optional float encoder_layerdrop = 42 [default = 0.0];
 
-    // Path to file containing game metadata.
-  optional string metadata_path = 33;
+  // Path to file containing game metadata.
+  optional string metadata_path = 29;
 
   // cut this percentile of games based on player rating
   // (only for dataset with player ratings)
-  optional float min_rating_percentile = 34 [default = 0];
+  optional float min_rating_percentile = 31 [default = 0];
 
   // Max gamesto include in dataset (for testing only)
-  optional int32 max_games = 35 [default = -1];
+  optional int32 max_games = 30 [default = -1];
 
   // Percentage of games to use as val set.
-  optional float val_set_pct =  36 [default = 0.01];
+  optional float val_set_pct = 9;
 
   // Optional. If specified, use this agent's orders instead of the orders in
   // the game.json
-  optional Agent cf_agent = 37;
+  optional Agent cf_agent = 46;
 
   // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
   // times, saving each as a separate row in the db.
-  optional uint32 n_cf_agent_samples = 38 [ default = 1 ];
+  optional uint32 n_cf_agent_samples = 47 [ default = 1 ];
 
   // Path to dir containing dataset cache.
-  optional string data_cache = 39;
+  optional string data_cache = 2;
 
   // Optional. Paths to additional datasets. Only validation part of these
   // datasets will be used. The key is used for reporting.
-  map<string, string> extra_val_data_caches = 40;
+  map<string, string> extra_val_data_caches = 43;
 
   // Optional. Paths to additional train datasets. Will be concatenated to the
   // main dataset.
-  repeated string extra_train_data_caches = 41;
+  repeated string extra_train_data_caches = 44;
 
   optional Launcher launcher = 1000;
 }
