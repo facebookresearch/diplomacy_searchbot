@@ -70,7 +70,7 @@ message CompareAgentsTask {
   optional Launcher launcher = 100;
 }
 
-message NoPressDatasetParams{
+message NoPressDatasetParams {
   // Dataloader procs (1 means load in the main process).
   optional int32 num_dataloader_workers = 1;
 
@@ -79,7 +79,7 @@ message NoPressDatasetParams{
   optional int32 only_with_min_final_score = 2;
 
   // exclude actions with >=n units, all holds, from the dataset
-  optional int32 exclude_n_holds = 3 [default = -1];
+  optional int32 exclude_n_holds = 3 [ default = -1 ];
 
   // If set, restrict data to S1901M.
   optional bool debug_only_opening_phase = 4;
@@ -159,41 +159,41 @@ message TrainTask {
   optional float value_dropout = 27;
 
   // obsolete
-  optional bool graph_decoder = 32 [default = false];
+  optional bool graph_decoder = 32 [ default = false ];
 
   // dimension of LSTM
-  optional int32 lstm_size = 33 [default = 200];
+  optional int32 lstm_size = 33 [ default = 200 ];
 
   // number of LSTM layers
-  optional int32 lstm_layers = 304 [default = 1];
+  optional int32 lstm_layers = 304 [ default = 1 ];
 
   // if true, add features to output orders in the model
-  optional bool featurize_output = 35 [default = false];
+  optional bool featurize_output = 35 [ default = false ];
 
   // if true, add "relational" features to output orders in the model
-  optional bool relfeat_output = 36 [default = false];
+  optional bool relfeat_output = 36 [ default = false ];
 
-  optional bool shuffle_locs = 38 [default = false];
+  optional bool shuffle_locs = 38 [ default = false ];
 
-  optional bool featurize_prev_orders = 39 [default = false];
+  optional bool featurize_prev_orders = 39 [ default = false ];
 
-  optional bool residual_linear = 40 [default = false];
+  optional bool residual_linear = 40 [ default = false ];
 
-  optional bool merged_gnn = 41 [default = false];
+  optional bool merged_gnn = 41 [ default = false ];
 
   // Optional. If set to a positive value, will skip each residual layer in
   // encoder with this probability.
-  optional float encoder_layerdrop = 42 [default = 0.0];
+  optional float encoder_layerdrop = 42 [ default = 0.0 ];
 
   // Path to file containing game metadata.
   optional string metadata_path = 29;
 
   // cut this percentile of games based on player rating
   // (only for dataset with player ratings)
-  optional float min_rating_percentile = 31 [default = 0];
+  optional float min_rating_percentile = 31 [ default = 0 ];
 
   // Max gamesto include in dataset (for testing only)
-  optional int32 max_games = 30 [default = -1];
+  optional int32 max_games = 30 [ default = -1 ];
 
   // Percentage of games to use as val set.
   optional float val_set_pct = 9;
@@ -397,7 +397,7 @@ message ExploitTask {
 }
 
 message BuildDbCacheTask {
-  //Dataset Params
+  // Dataset Params
   optional NoPressDatasetParams dataset_params = 1;
 
   // Required. Glob pattern to game.json files
@@ -415,7 +415,7 @@ message BuildDbCacheTask {
   optional uint32 n_cf_agent_samples = 5 [ default = 1 ];
 
   // Percentage of games to use as val set.
-  optional float val_set_pct = 6 [default = 0.01];
+  optional float val_set_pct = 6 [ default = 0.01 ];
 
   optional Launcher launcher = 100;
 }
@@ -438,13 +438,13 @@ message BuildPressDbCacheTask {
 
   // cut this percentile of games based on player rating
   // (only for dataset with player ratings)
-  optional float min_rating_percentile = 3 [default = 0];
+  optional float min_rating_percentile = 3 [ default = 0 ];
 
   // Max gamesto include in dataset (for testing only)
-  optional int32 max_games = 4 [default = -1];
+  optional int32 max_games = 4 [ default = -1 ];
 
-    // Percentage of games to use as val set.
-  optional float val_set_pct =  5 [default = 0.01];
+  // Percentage of games to use as val set.
+  optional float val_set_pct = 5 [ default = 0.01 ];
 }
 
 // Root config to compare agents.
