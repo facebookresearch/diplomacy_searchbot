@@ -20,6 +20,10 @@ TB_ADDRESS = "localhost:8888"
 NOTEBOOK_ADDRESS = "localhost:8892"
 
 
+def get_timezone_offset_hours():
+    return round((datetime.datetime.now() - datetime.datetime.utcnow()).total_seconds() / 3600)
+
+
 def save_pandas_table(dataframes, project_name, table_name, offset=0, start=10):
     """Saves/updates a sheet with the dataframe."""
     if pygsheets is None:
@@ -43,6 +47,11 @@ def save_pandas_table(dataframes, project_name, table_name, offset=0, start=10):
     update_cell = "$B$1"
     now_date = datetime.datetime.now().isoformat().replace("T", " ")
     worksheet.update_value((1, 2), now_date)
+    if created:
+        offset_hours = get_timezone_offset_hours()
+        hours_passed = f"((TO_PURE_NUMBER(NOW()) - TO_PURE_NUMBER($B$1)) * 24 + ({offset_hours}))"
+        worksheet.update_value((1, 3), f"={hours_passed} * 60")
+        worksheet.update_value((1, 4), "mins ago")
     if not isinstance(dataframes, (tuple, list)):
         dataframes = [dataframes]
     for dataframe in dataframes:
