@@ -225,7 +225,7 @@ def play_webdip(
         game = webdip_state_to_game(status_json, stop_at_phase=check_phase)
 
         if json_out:
-            game_json = game.to_json()
+            game_json = json.loads(game.to_json())
             with open(json_out, "w") as jf:
                 json.dump(game_json, jf)
             return
@@ -243,7 +243,7 @@ def play_webdip(
                 f"Got exception while trying to get actions for {power}."
                 f" Saving game to {tmp_path}"
             )
-            game_json = game.to_json()
+            game_json = json.loads(game.to_json())
             with open(tmp_path, "w") as jf:
                 json.dump(game_json, jf)
             raise
