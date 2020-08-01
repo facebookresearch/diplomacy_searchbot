@@ -451,7 +451,7 @@ def run_with_cfg(args):
         logger.info(f"Found dataset cache at {args.data_cache}")
         train_dataset, val_dataset = cached_torch_load(args.data_cache)
     else:
-        dataset_params = args.no_press_params
+        dataset_params = args.dataset_params
         assert args.metadata_path is not None
         assert dataset_params.data_dir is not None
         game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
