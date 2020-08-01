@@ -221,4 +221,27 @@ void Game::crash_dump() {
   std::cerr << j_orders.dump() << "\n";
 }
 
+void Game::rollback_to_phase(const std::string &phase_s) {
+  Phase phase(phase_s);
+  if (state_.get_phase() == phase) {
+    return;
+  }
+  auto it = state_history_.find(phase);
+  JCHECK(it != state_history_.end(), "rollback_to_phase phase not found");
+
+  state_ = it->second;
+  staged_orders_.clear();
+
+  // delete state_history_ including and after phase
+  while (it != state_history_.end()) {
+    it = state_history_.erase(it);
+  }
+
+  // delete order_history_ including and after phase
+  auto jt = order_history_.find(phase);
+  while (jt != order_history_.end()) {
+    jt = order_history_.erase(jt);
+  }
+}
+
 } // namespace dipcc

@@ -321,9 +321,12 @@ class BaseSearchAgent(BaseAgent):
             -> final_scores: Dict[power, supply count],
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
-        game_json = json.dumps(game.to_saved_game_format())
-        # divide up the rollouts among the processes
+        if type(game) == pydipcc.Game:
+            game_json = game.to_json()
+        else:
+            game_json = json.dumps(game.to_saved_game_format())
 
+        # divide up the rollouts among the processes
         all_results, all_timings = zip(
             *self.proc_pool.map(
                 call,
@@ -497,7 +500,6 @@ class BaseSearchAgent(BaseAgent):
                     with timings("score.gameover"):
                         final_scores = np.array(get_square_scores_from_game(game))
                         est_final_scores[game.game_id] = final_scores
-
 
             other_powers = POWERS  # no set orders on subsequent turns
 

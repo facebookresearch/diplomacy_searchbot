@@ -46,6 +46,8 @@ public:
 
   std::string to_json();
 
+  void rollback_to_phase(const std::string &phase_s);
+
   // python
 
   std::unordered_map<std::string, std::vector<std::string>>

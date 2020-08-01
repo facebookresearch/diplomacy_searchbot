@@ -21,6 +21,7 @@ PYBIND11_MODULE(pydipcc, m) {
            py::return_value_policy::move)
       .def("get_phase_data", &Game::get_phase_data,
            py::return_value_policy::move)
+      .def("rollback_to_phase", &Game::rollback_to_phase)
       .def_property_readonly("is_game_done", &Game::is_game_done)
       .def_property_readonly("phase", &Game::get_phase_long)
       .def_property_readonly("current_short_phase", &Game::get_phase_short)
