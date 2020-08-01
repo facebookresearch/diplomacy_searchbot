@@ -23,8 +23,7 @@ def run_situation_check(meta, agent):
         with open(config["game_path"]) as f:
             game = Game.from_json(f.read())
         if "phase" in config:
-            game = game.rollback_to_phase(config["phase"])
-
+            game.rollback_to_phase(config["phase"])
         prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
         logging.info("CFR strategy:")
         for power in POWERS:
