@@ -165,7 +165,7 @@ message TrainTask {
   optional int32 lstm_size = 33 [ default = 200 ];
 
   // number of LSTM layers
-  optional int32 lstm_layers = 304 [ default = 1 ];
+  optional int32 lstm_layers = 34 [ default = 1 ];
 
   // if true, add features to output orders in the model
   optional bool featurize_output = 35 [ default = false ];
