@@ -8,7 +8,7 @@ import logging
 from collections import defaultdict
 from typing import List
 
-from fairdiplomacy.game import Game
+from pydipcc import Game
 from fairdiplomacy.data.build_dataset import (
     TERR_ID_TO_LOC,
     COUNTRY_ID_TO_POWER,
@@ -32,14 +32,7 @@ logger = logging.getLogger("webdip")
 LOC_TO_TERR_ID = {v: k for k, v in TERR_ID_TO_LOC.items()}
 
 
-COAST_ID_TO_LOC_ID = {
-    76: 8,
-    77: 8,
-    78: 32,
-    79: 32,
-    80: 20,
-    81: 20,
-}
+COAST_ID_TO_LOC_ID = {76: 8, 77: 8, 78: 32, 79: 32, 80: 20, 81: 20}
 
 
 def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
@@ -199,7 +192,7 @@ def play_webdip(
             next_game = {"gameID": game_id, "countryID": COUNTRY_POWER_TO_ID[force_power]}
         else:
             missing_orders_resp = requests.get(
-                API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header,
+                API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header
             )
             missing_orders_json = json.loads(missing_orders_resp.content)
             logger.info(missing_orders_json)
@@ -232,7 +225,7 @@ def play_webdip(
         game = webdip_state_to_game(status_json, stop_at_phase=check_phase)
 
         if json_out:
-            game_json = game.to_saved_game_format()
+            game_json = game.to_json()
             with open(json_out, "w") as jf:
                 json.dump(game_json, jf)
             return
@@ -250,7 +243,7 @@ def play_webdip(
                 f"Got exception while trying to get actions for {power}."
                 f" Saving game to {tmp_path}"
             )
-            game_json = game.to_saved_game_format()
+            game_json = game.to_json()
             with open(tmp_path, "w") as jf:
                 json.dump(game_json, jf)
             raise
