@@ -233,7 +233,7 @@ def play_webdip(
         if agent is None:
             return
 
-        logger.info(f"Orderable locations: {game.get_orderable_locations(power)}")
+        logger.info(f"Orderable locations: {game.get_orderable_locations().get(power)}")
 
         try:
             agent_orders = agent.get_orders(game, power)

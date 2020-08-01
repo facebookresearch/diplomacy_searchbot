@@ -47,7 +47,7 @@ class Env:
         logging.debug("Starting turn {}".format(self.game.phase))
 
         for power, agent in self.agents.items():
-            if not self.game.get_orderable_locations(power):
+            if not self.game.get_orderable_locations().get(power):
                 logging.debug(f"Skipping orders for {power}")
                 continue
             t = time.time()
