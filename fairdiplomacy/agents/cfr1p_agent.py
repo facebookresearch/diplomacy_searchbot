@@ -38,6 +38,8 @@ class CFR1PAgent(BaseSearchAgent):
         bp_iters=0,
         bp_prob=0,
         reset_seed_on_rollout=False,
+        loser_bp_value=0.0,
+        loser_bp_iter=64,
         **kwargs,
     ):
         super().__init__(
@@ -71,6 +73,9 @@ class CFR1PAgent(BaseSearchAgent):
         )
         self.bp_iters = bp_iters
         self.bp_prob = bp_prob
+        self.loser_bp_iter = loser_bp_iter
+        self.loser_bp_value = loser_bp_value
+
         self.reset_seed_on_rollout = reset_seed_on_rollout
 
         logging.info(f"Initialized CFR1P Agent: {self.__dict__}")
@@ -220,10 +225,17 @@ class CFR1PAgent(BaseSearchAgent):
                 pwr: self.strategy(pwr, actions)
                 for (pwr, actions) in power_plausible_orders.items()
             }
+            power_is_loser = {
+                pwr: self.is_loser(pwr, cfr_iter, actions, iter_weight)
+                for (pwr, actions) in power_plausible_orders.items()
+            }
+
             power_action_ps: Dict[Power, List[float]] = {
                 pwr: (
                     self.bp_strategy(pwr, actions)
-                    if cfr_iter < self.bp_iters or np.random.rand() < self.bp_prob
+                    if cfr_iter < self.bp_iters
+                    or np.random.rand() < self.bp_prob
+                    or power_is_loser[pwr]
                     else self.strategy(pwr, actions)
                 )
                 for (pwr, actions) in power_plausible_orders.items()
@@ -286,7 +298,8 @@ class CFR1PAgent(BaseSearchAgent):
                 # log some action values
                 if verbose_log_iter:
                     logging.info(
-                        f"<> [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f}"
+                        f"<> [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={self.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f} "
+                        f"is_loser= {int(power_is_loser[pwr])}"
                     )
                     logging.info(
                         f"     {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
@@ -364,7 +377,8 @@ class CFR1PAgent(BaseSearchAgent):
         for p in POWERS:
             final_ps = self.strategy(p, power_plausible_orders[p])
             avg_ps = self.avg_strategy(p, power_plausible_orders[p])
-            ps = final_ps if self.use_final_iter else avg_ps
+            bp_ps = self.bp_strategy(p, power_plausible_orders[p])
+            ps = bp_ps if power_is_loser[p] else (final_ps if self.use_final_iter else avg_ps)
             ret[p] = dict(sorted(zip(power_plausible_orders[p], ps), key=lambda ac_p: -ac_p[1]))
 
             if early_exit_for_power == p:
@@ -503,6 +517,16 @@ class CFR1PAgent(BaseSearchAgent):
                 )
 
         logging.info(f"Nash conv for iter {cfr_iter} = {nash_conv}")
+
+    def is_loser(self, pwr, cfr_iter, plausible_orders, iter_weight):
+        if cfr_iter >= self.loser_bp_iter and self.loser_bp_value > 0:
+            for action in plausible_orders:
+                if (
+                    self.cum_regrets[(pwr, action)] + self.cum_utility[pwr]
+                ) / iter_weight > self.loser_bp_value:
+                    return False
+            return True
+        return False
 
 
 class RolloutResultsCache:

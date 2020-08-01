@@ -31,7 +31,7 @@ def print_situation_stats(paths):
             if "<> [" in line:
                 power = fields[9]
                 cfr_iter = int(fields[5])
-                avg_utility = float(fields[-2].split("=")[1])
+                avg_utility = float(fields[13].split("=")[1])
                 row_key = (game_idx, repeat, power, cfr_iter)
                 cfr_iters.add(cfr_iter)
             if "|>" in line:

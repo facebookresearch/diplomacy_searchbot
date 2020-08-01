@@ -105,7 +105,17 @@ message CFR1PAgent {
 
   optional bool cache_rollout_results = 26 [ default = false ];
 
+  // Debugging for situation check tests only
+  // Use the seed for plausible actions, then pick a random seed for rollouts
   optional bool reset_seed_on_rollout = 27 [ default = false ];
+
+  // If this power is a loser, i.e. its action values are less
+  // this this value, then this power plays blueprint.
+  optional float loser_bp_value = 28 [ default = 0 ];
+
+  // First CFR iteration to start following loser_bp_value
+  // (we need a few iterations to accurately estimate the action values)
+  optional float loser_bp_iter = 29 [ default = 64 ];
 }
 
 message BRSearchAgent {

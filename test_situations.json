@@ -88,7 +88,7 @@
         "LVP -> WAL": "lambda r: order_prob(r, 'F LVP - WAL') > 0.99"
       }
     },
-    "turkey_mutual_support_1": {
+    "turkey_mutual_support_0": {
       "game_path": "/checkpoint/alerer/diplomacy_json/bob_russia_309561.json",
       "phase": "S1905M",
       "powers": ["TURKEY"],
@@ -101,7 +101,17 @@
       "phase": "F1905M",
       "powers": ["TURKEY"],
       "tests": {
+        "RUS S -> GRE": "lambda r: order_prob(r, 'A BUL S A SER - GRE') + order_prob(r, 'A SER S A BUL - GRE') > 0.50",
         "TUR does mutual supports": "lambda r: order_prob(r, 'F SMY S A CON') > 0.25"
       }
+    },
+    "germany_stalemate_1": {
+        "game_path": "/checkpoint/alerer/diplomacy_json/fairplay_germany_311160.json",
+        "phase": "F1908M",
+        "powers": ["GERMANY"],
+        "tests": {
+            "Pull back BOH to stalemate line": "lambda r: order_prob(r, 'A BOH - SIL') + order_prob(r, 'A BOH - MUN') > 0.9",
+            "Don't antagonize FRA in BRE": "lambda r: order_prob(r, 'A PIC - PAR') + order_prob(r, 'A BUR - PAR') + order_prob(r, 'A PIC - BRE') + order_prob(r, 'A ENG - BRE') < 0.1"
+        }
     }
 }
