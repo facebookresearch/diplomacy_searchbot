@@ -285,6 +285,7 @@ void GameState::load_all_possible_orders_r() {
       retreats.insert(Order(unit.unowned(), OrderType::R, adj));
       if (!pushed) {
         orderable_locations_[unit.power].insert(root_loc(unit.loc));
+        retreats.insert(Order(unit.unowned(), OrderType::D));
       }
       pushed = true;
     }
@@ -414,7 +415,10 @@ GameState::process_r(const unordered_map<Power, vector<Order>> &orders) {
       // retreat order is valid: mark so another valid order is not accepted
       dislodged_units.erase(dislodged_it);
 
-      if (next_state.get_unit_rooted(order.get_dest()).type != UnitType::NONE) {
+      if (order.get_type() == OrderType::D) {
+        // do nothing: unit not added to next_state
+      } else if (next_state.get_unit_rooted(order.get_dest()).type !=
+                 UnitType::NONE) {
         // retreat order was allowed (so dest was previously unoccupied), but
         // dest is now occupied: another unit has already retreated there, so
         // disband both
