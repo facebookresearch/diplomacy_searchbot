@@ -181,7 +181,13 @@ string Game::to_json() {
 Game::Game(const string &json_str) {
   auto j = json::parse(json_str);
 
-  this->game_id = j["id"];
+  if (j.find("id") != j.end() && !j["id"].is_null()) {
+    this->game_id = j["id"];
+  } else if (j.find("game_id") != j.end() && !j["game_id"].is_null()) {
+    this->game_id = j["game_id"];
+  } else {
+    this->game_id = gen_game_id();
+  }
 
   if (!j["rules"].empty()) {
     this->rules_.clear();
@@ -190,21 +196,40 @@ Game::Game(const string &json_str) {
     }
   }
 
-  string phase_str;
-  for (auto &j_phase : j["phases"]) {
-    phase_str = j_phase["name"];
-    state_history_[phase_str] = GameState(j_phase["state"]);
-    for (auto &it : j_phase["orders"].items()) {
-      Power power = power_from_str(it.key());
-      for (auto &j_order : it.value()) {
-        order_history_[phase_str][power].push_back(Order(j_order));
+  if (j.find("phases") != j.end()) {
+    string phase_str;
+    for (auto &j_phase : j["phases"]) {
+      phase_str = j_phase["name"];
+      state_history_[phase_str] = GameState(j_phase["state"]);
+
+      for (auto &it : j_phase["orders"].items()) {
+        Power power = power_from_str(it.key());
+        for (auto &j_order : it.value()) {
+          order_history_[phase_str][power].push_back(Order(j_order));
+        }
+      }
+    }
+  } else {
+    string phase_str;
+    for (auto &j_state : j["state_history"].items()) {
+      phase_str = j_state.key();
+      state_history_[phase_str] = GameState(j_state.value());
+
+      if (j["order_history"].find(phase_str) != j["order_history"].end()) {
+        for (auto &it : j["order_history"][phase_str].items()) {
+          Power power = power_from_str(it.key());
+          for (auto &j_order : it.value()) {
+            order_history_[phase_str][power].push_back(Order(j_order));
+          }
+        }
       }
     }
   }
 
   // Pop last state as current state
-  state_ = state_history_[phase_str];
-  state_history_.erase(phase_str);
+  auto it = state_history_.rbegin();
+  state_ = it->second;
+  state_history_.erase(it->first);
 }
 
 void Game::crash_dump() {
