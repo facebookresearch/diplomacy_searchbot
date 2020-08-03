@@ -113,5 +113,12 @@
             "Pull back BOH to stalemate line": "lambda r: order_prob(r, 'A BOH - SIL') + order_prob(r, 'A BOH - MUN') > 0.9",
             "Don't antagonize FRA in BRE": "lambda r: order_prob(r, 'A PIC - PAR') + order_prob(r, 'A BUR - PAR') + order_prob(r, 'A PIC - BRE') + order_prob(r, 'A ENG - BRE') < 0.1"
         }
+    },
+    "bad_build_1": {
+      "phase": "W1909A",
+      "game_path": "/checkpoint/alerer/diplomacy_json/bob_italy_309524.json",
+      "powers": ["ITALY"],
+      "tests": {
+      }
     }
 }

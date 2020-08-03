@@ -60,6 +60,10 @@ def print_situation_stats(paths):
                 data_j = data[(game_j, 0, power, M)]
                 common_orders = set(data_i.keys()) & set(data_j.keys())
                 # print(len(data_i), len(common_orders))
+                if len(data_i) != len(data_j):
+                    assert len(data_i) == 0 or len(data_j) == 0
+                    continue
+
                 assert len(data_i) == len(data_j)
                 num_orders.append(len(data_i))
                 num_common_orders.append(len(common_orders))
@@ -69,13 +73,15 @@ def print_situation_stats(paths):
             f"{power:8s} : common_orders= {avg(num_common_orders):6.3f} / {avg(num_orders):6.3f} common_bp= {avg(common_bp):6.3f} common_prob= {avg(common_prob):6.3f}"
         )
     for power in POWERS:
-
         # 2. calculate how consistent the values are between games, at different iters
         for cfr_iter in sorted(list(cfr_iters)):
             prob_mse, u_mse, r_mse, avg_cr, order_prob_mse, state_u = [], [], [], [], [], []
             for game in range(N):
                 data_i = data[(game, 0, power, cfr_iter)]
                 data_j = data[(game, 1, power, cfr_iter)]
+                if len(data_i) != len(data_j):
+                    assert len(data_i) == 0 or len(data_j) == 0
+                    continue
                 this_prob_mse, this_u_mse, this_r_mse, this_cr, this_order_prob_mse = 0, 0, 0, 0, 0
                 order_probs_i, order_probs_j = defaultdict(float), defaultdict(float)
                 num_orders = 1
@@ -122,7 +128,7 @@ def print_situation_stats(paths):
     for test, r in results.items():
         # print(list(r.keys()))
         print(
-            f"{test:40s} avg_pass= {avg(r.values())}"  # "  intra_consistency={avg([(r[(game_idx, 1)] == r[(game_idx, 2)]) for game_idx in range(N)])}"
+            f"{test:40s} avg_pass= {avg(r.values())}  ( {sum(r.values())} / {len(r)} )"  # "  intra_consistency={avg([(r[(game_idx, 1)] == r[(game_idx, 2)]) for game_idx in range(N)])}"
         )
 
 
