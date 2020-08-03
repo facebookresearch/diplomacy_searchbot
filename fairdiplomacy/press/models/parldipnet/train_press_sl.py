@@ -198,7 +198,7 @@ def run_with_cfg(args):
     logger.info(f"Val dataset: {val_dataset.stats_str()}")
 
     if not os.path.exists(args.encoder_model_path):
-        save_parlai_encoder(args.parlao_agent_file, args.encoder_model_path)
+        save_parlai_encoder(args.parlai_agent_file, args.encoder_model_path)
 
     # required when using multithreaded DataLoader
     try:
