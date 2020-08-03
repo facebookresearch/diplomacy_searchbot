@@ -8,6 +8,7 @@ from fairdiplomacy.agents import build_agent_from_cfg
 from fairdiplomacy.compare_agents import run_1v6_trial, run_1v6_trial_multiprocess
 from fairdiplomacy.launch_bot import run_with_cfg as launch_bot_run_with_cfg
 from fairdiplomacy.models.dipnet import train_sl
+from fairdiplomacy.press.models.parldipnet import train_press_sl
 from fairdiplomacy.situation_check import run_situation_check
 from fairdiplomacy.webdip_api import play_webdip as play_webdip_impl
 
@@ -72,6 +73,11 @@ def compare_agents(cfg):
 @_register
 def train(cfg):
     train_sl.run_with_cfg(cfg)
+
+
+@_register
+def press_train(cfg):
+    train_press_sl.run_with_cfg(cfg)
 
 
 @_register

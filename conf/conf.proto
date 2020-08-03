@@ -220,6 +220,31 @@ message TrainTask {
   optional Launcher launcher = 1000;
 }
 
+message PressTrainTask {
+  optional TrainTask dipnet_train_params = 1;
+
+  // Parlai agent file
+  optional string parlai_agent_file = 2;
+
+  // Glob of raw message_chunks
+  optional string message_chunks = 3;
+
+  // Combine LSTM embedding size
+  optional int32 combine_emb_size = 4;
+
+  // Combine LSTM Num Layers
+  optional int32 combine_num_layers = 5;
+
+  // Parlai Encoder Model Path
+  optional string encoder_model_path = 6;
+
+  // If enabled, trains a vanilla DipNet model
+  optional bool no_dialogue_emb = 7;
+
+  // Launcher
+  optional Launcher launcher = 1000;
+}
+
 message LaunchBotTask {
   // Agent cfg to play against
   optional Agent agent = 1;
@@ -505,6 +530,7 @@ message MetaCfg {
     BenchmarkAgent benchmark_agent = 107;
     PlayWebdipTask play_webdip = 108;
     BuildPressDbCacheTask build_press_db_cache = 109;
+    PressTrainTask press_train = 110;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }

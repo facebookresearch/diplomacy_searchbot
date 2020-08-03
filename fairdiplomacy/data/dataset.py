@@ -8,7 +8,7 @@ import diplomacy
 import joblib
 import torch
 from parlai.utils.torch import padded_tensor
-
+import numpy as np
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import SEASONS, POWERS, MAX_SEQ_LEN, LOCS
 from fairdiplomacy.models.dipnet.encoding import board_state_to_np
@@ -17,6 +17,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
+
 from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
 from fairdiplomacy.utils.sampling import sample_p_dict
 from fairdiplomacy.utils.tensorlist import TensorList
@@ -526,18 +527,16 @@ def encode_phase(
     )
 
     if tokenized_messages is not None:
-        assert game_id in tokenized_messages
-
         phase_name = game.get_phase_name(phase_idx)
-        phase_tensor_dict = tokenized_messages[game_id].get(phase_name, dict())
+        phase_tensor_dict = tokenized_messages.get(phase_name, dict())
 
         # Construct the tensor in the order that the countries are listed in POWERS
         power_tensors = [
-            phase_tensor_dict.get(power, torch.LongTensor([228, 2]))
+            phase_tensor_dict.get(power, tokenized_messages["DEFAULT_TENSOR"])
             for power_idx, power in enumerate(POWERS)
-        ]  # temporary fix with the [228, 2] tensor
-        padded_tensors, _ = padded_tensor(power_tensors, pad_idx=-1)
-        data_fields["input_message"] = TensorList.from_padded(padded_tensors, padding_value=-1)
+        ]
+        padded_tensors, _ = padded_tensor(power_tensors, pad_idx=0)
+        data_fields["x_input_message"] = TensorList.from_padded(padded_tensors, padding_value=0)
 
     data_fields["x_power"] = torch.eye(len(POWERS), dtype=torch.bool).unsqueeze(0)
     data_fields["y_final_scores"] = y_final_scores.unsqueeze(0)

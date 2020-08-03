@@ -16,7 +16,7 @@ PREV_ORDER_EMB_SIZE = 20
 LSTM_LAYERS = 1
 
 
-def new_model(args):
+def new_model(args, dialogue_emb_size=-1):
     return DipNet(
         board_state_size=BOARD_STATE_SIZE,
         # prev_orders_size=PREV_ORDERS_SIZE,
@@ -44,6 +44,7 @@ def new_model(args):
         residual_linear=getattr(args, "residual_linear", False),
         merged_gnn=getattr(args, "merged_gnn", False),
         encoder_layerdrop=getattr(args, "encoder_layerdrop", 0.0),
+        dialogue_emb_size=dialogue_emb_size,
     )
 
 

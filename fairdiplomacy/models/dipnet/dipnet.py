@@ -49,6 +49,7 @@ class DipNet(nn.Module):
         residual_linear=False,
         merged_gnn=False,
         encoder_layerdrop=0,
+        dialogue_emb_size=-1,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -91,12 +92,14 @@ class DipNet(nn.Module):
             A=A,
             featurize_output=featurize_output,
             relfeat_output=relfeat_output,
+            dialogue_emb_size=dialogue_emb_size,
         )
 
         self.value_decoder = ValueDecoder(
             inter_emb_size=inter_emb_size,
             init_scale=value_decoder_init_scale,
             dropout=value_dropout,
+            dialogue_emb_size=dialogue_emb_size,
         )
 
         self.season_lin = nn.Linear(3, season_emb_size)
@@ -120,6 +123,7 @@ class DipNet(nn.Module):
         teacher_force_orders=None,
         x_power=None,
         x_has_press=None,
+        dialogue_emb=None,
     ):
         """
         TODO(alerer): fix the docs.
@@ -213,6 +217,7 @@ class DipNet(nn.Module):
                 top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
                 x_has_press=x_has_press,
+                dialogue_emb=None,
             )
         else:
             return self.forward_one_power(
@@ -226,6 +231,7 @@ class DipNet(nn.Module):
                 teacher_force_orders=teacher_force_orders,
                 x_power=x_power,
                 x_has_press=x_has_press,
+                dialogue_emb=dialogue_emb,
             )
 
     def forward_one_power(
@@ -241,6 +247,7 @@ class DipNet(nn.Module):
         top_p,
         teacher_force_orders,
         x_has_press,
+        dialogue_emb=None,
     ):
         assert len(loc_idxs.shape) == 2
         assert len(cand_idxs.shape) == 3
@@ -254,8 +261,9 @@ class DipNet(nn.Module):
             temperature=temperature,
             teacher_force_orders=teacher_force_orders,
             power_1h=x_power,
+            dialogue_emb=dialogue_emb,
         )
-        final_sos = self.value_decoder(enc)
+        final_sos = self.value_decoder(enc, dialogue_emb=dialogue_emb)
 
         return order_idxs, sampled_idxs, logits, final_sos
 
@@ -272,6 +280,7 @@ class DipNet(nn.Module):
         top_p,
         x_has_press,
         log_timings=False,
+        dialogue_emb=None,
     ):
         timings = TimingCtx()
 
@@ -313,6 +322,7 @@ class DipNet(nn.Module):
                 top_p=top_p,
                 teacher_force_orders=teacher_force_orders,
                 power_1h=power_1h,
+                dialogue_emb=dialogue_emb,
             )
 
         with timings("value_decoder"):
@@ -364,6 +374,7 @@ class LSTMDipNetDecoder(nn.Module):
         A=None,
         featurize_output=False,
         relfeat_output=False,
+        dialogue_emb_size=-1,
     ):
         super().__init__()
         self.lstm_size = lstm_size
@@ -376,9 +387,13 @@ class LSTMDipNetDecoder(nn.Module):
         self.order_embedding = nn.Embedding(orders_vocab_size, order_emb_size)
         self.cand_embedding = PaddedEmbedding(orders_vocab_size, lstm_size, padding_idx=EOS_IDX)
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
+        self.dialogue_emb_size = dialogue_emb_size
 
         self.lstm = nn.LSTM(
-            2 * inter_emb_size + order_emb_size + power_emb_size,
+            2 * inter_emb_size
+            + order_emb_size
+            + power_emb_size
+            + (0 if self.dialogue_emb_size < 0 else self.dialogue_emb_size),
             lstm_size,
             batch_first=True,
             num_layers=self.lstm_layers,
@@ -439,6 +454,7 @@ class LSTMDipNetDecoder(nn.Module):
         loc_idxs,
         all_cand_idxs,
         power_1h,
+        dialogue_emb=None,
         temperature=1.0,
         top_p=1.0,
         teacher_force_orders=None,
@@ -483,7 +499,10 @@ class LSTMDipNetDecoder(nn.Module):
                 torch.zeros(
                     enc.shape[0],
                     1,
-                    enc.shape[2] + self.order_emb_size + self.power_emb_size,
+                    enc.shape[2]
+                    + self.order_emb_size
+                    + self.power_emb_size
+                    + (0 if self.dialogue_emb_size < 0 else self.dialogue_emb_size),
                     device=enc.device,
                 )
                 .bernoulli_(1 - self.lstm_dropout)
@@ -521,7 +540,12 @@ class LSTMDipNetDecoder(nn.Module):
                     loc_enc = torch.matmul(alignments.unsqueeze(1), enc).squeeze(1)
 
             with timings("dec.lstm"):
-                lstm_input = torch.cat((loc_enc, order_emb, power_emb), dim=1).unsqueeze(1)
+                input_list = [loc_enc, order_emb, power_emb]
+                if dialogue_emb is not None:
+                    assert self.dialogue_emb_size > 0
+                    input_list.append(dialogue_emb)
+
+                lstm_input = torch.cat(input_list, dim=1).unsqueeze(1)
                 if self.training and self.lstm_dropout > 0.0:
                     lstm_input = lstm_input * dropout_in
 
@@ -736,7 +760,7 @@ class DipNetEncoder(nn.Module):
             )
 
         if layerdrop > 1e-5:
-            assert 0 < layerdrop <= 1., layerdrop
+            assert 0 < layerdrop <= 1.0, layerdrop
             self.layerdrop_rng = np.random.RandomState(0)
         else:
             self.layerdrop_rng = None
@@ -876,9 +900,13 @@ class GraphConv(nn.Module):
 
 
 class ValueDecoder(nn.Module):
-    def __init__(self, *, inter_emb_size, dropout, init_scale=1.0):
+    def __init__(self, *, inter_emb_size, dropout, init_scale=1.0, dialogue_emb_size=-1):
         super().__init__()
+        self.dialogue_emb_size = dialogue_emb_size
         emb_flat_size = 81 * inter_emb_size * 2
+        emb_flat_size = (
+            emb_flat_size if self.dialogue_emb_size < 0 else dialogue_emb_size + emb_flat_size
+        )
         self.prelin = nn.Linear(emb_flat_size, inter_emb_size)
         self.lin = nn.Linear(inter_emb_size, len(POWERS))
 
@@ -889,9 +917,13 @@ class ValueDecoder(nn.Module):
         bound = init_scale / (len(POWERS) ** 0.5)
         torch.nn.init.uniform_(self.lin.bias, -bound, bound)
 
-    def forward(self, enc):
+    def forward(self, enc, dialogue_emb=None):
         """Returns [B, 7] FloatTensor summing to 1 across dim=1"""
-        y = enc.view(enc.shape[0], -1)
+        B = enc.shape[0]
+        y = enc.view(B, -1)
+        if self.dialogue_emb_size > 0:
+            y = torch.cat([y, dialogue_emb.view(B, -1)], dim=1)
+
         y = self.prelin(y)
         y = F.relu(y)
         y = self.dropout(y)

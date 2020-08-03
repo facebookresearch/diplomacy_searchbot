@@ -4,6 +4,6 @@ slurm {
   partition: "learnfair"
   hours: 72
   mem_per_gpu: 62
-  volta32: false
+  volta32: true
   single_task_per_node: false
 }

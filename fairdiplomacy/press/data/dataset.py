@@ -27,12 +27,8 @@ class PressDataset(Dataset, ABC):
             raise FileNotFoundError("Message chunk glob is empty.")
 
         self.parlai_agent_file = parlai_agent_file
-        self.dialogue_agent = create_agent_from_model_file(self.parlai_agent_file)
-        self.default_tensor = self._encode_message(" ")
+        self.padding_params = {}
         self.messages, self.tokenized_messages = self._load_messages()
-        # Due to the tokenizing overhead, num_jobs > 1 is not supported as it is a lot slower.
-        if self.n_jobs != 1:
-            logging.warning("num_dataloader_workers > 1 is not supported.")
 
     @abstractmethod
     def _construct_message_dict(self, message_list: List[List[str]]) -> Dict:
@@ -69,7 +65,7 @@ class PressDataset(Dataset, ABC):
             else:
                 return message_chunk
 
-        messages_list = joblib.Parallel(n_jobs=self.n_jobs)(
+        messages_list = joblib.Parallel(n_jobs=1)(
             joblib.delayed(load_message)(file) for file in self.message_files
         )
 
@@ -85,17 +81,28 @@ class PressDataset(Dataset, ABC):
 
         return self.messages, self.tokenized_messages
 
-    def _encode_message(self, message: str) -> torch.Tensor:
+    @staticmethod
+    def _encode_message(dialogue_agent, message: str) -> torch.Tensor:
         """
         Tokenizes message
         :param message: input message, str
         :return: Tensor
         """
-        # TODO(apjacob): Currently accessing a protected member. Fix?
-        assert (
-            self.dialogue_agent is not None
-        ), "Dialogue agent needs to be loaded to use the tokenizer"
-        return self.dialogue_agent._vectorize_text(message, add_end=True)
+
+        assert dialogue_agent is not None, "Dialogue agent needs to be loaded to use the tokenizer"
+
+        if not message:
+            message = " "
+
+        obs = {"text": message, "episode_done": True}
+        result = dialogue_agent.observe(obs)
+        if "text_vec" in result:
+            token = result["text_vec"]
+        else:
+            raise ValueError
+
+        dialogue_agent.self_observe({})
+        return token
 
     def validate_dataset(self):
         logging.info("Validating dataset..")
@@ -108,10 +115,16 @@ class PressDataset(Dataset, ABC):
             else:
                 assert len(e) == self.num_phases
 
+        # TODO(apjacob): Fix
+        # These two dicts need to be deleted prior to sending them for multiprocessing.
+        del self.tokenized_messages
+        del self.messages
+
 
 class ListenerDataset(PressDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.default_string = "SILENCE"
 
     def mp_encode_games(self):
         encoded_game_tuples = joblib.Parallel(n_jobs=self.n_jobs)(
@@ -125,7 +138,7 @@ class ListenerDataset(PressDataset):
                 input_valid_power_idxs=self.get_valid_power_idxs(game_id),
                 game_metadata=self.game_metadata[game_id],
                 exclude_n_holds=self.exclude_n_holds,
-                tokenized_messages=self.tokenized_messages,
+                tokenized_messages=self.tokenized_messages[game_id],
             )
             for game_id in self.game_ids
         )
@@ -166,16 +179,30 @@ class ListenerDataset(PressDataset):
     def _tokenize_message_dict(self):
         assert self.messages is not None
 
+        dialogue_agent = create_agent_from_model_file(
+            self.parlai_agent_file, opt_overides={"fp16": False, "model_parallel": False}
+        )
+
+        default_tensor = self._encode_message(dialogue_agent, self.default_string)
+
+        self.padding_params = {
+            "pad_idx": dialogue_agent.NULL_IDX,
+            "use_cuda": dialogue_agent.use_cuda,
+            "fp16friendly": dialogue_agent.fp16,
+            "device": dialogue_agent.opt["gpu"],
+        }
+
         # Setting default tensor to be used later.
         self.tokenized_messages = copy.deepcopy(self.messages)
         logging.info("Tokenizing messages.")
         for game_id, phases in tqdm(self.messages.items()):
+            self.tokenized_messages[game_id]["DEFAULT_TENSOR"] = default_tensor
             for phase_id, countries in phases.items():
                 for power_idx, power in enumerate(POWERS):
                     # Encodes for all powers regardless of whether they have messages
-                    power_message_list = countries.get(power, [])
+                    power_message_list = countries.get(power, [self.default_string])
                     power_message = " ".join(power_message_list)
-                    power_tensor = self._encode_message(power_message)
+                    power_tensor = self._encode_message(dialogue_agent, power_message)
                     self.tokenized_messages[game_id][phase_id][power] = power_tensor
 
         return self.tokenized_messages
@@ -197,7 +224,10 @@ class ListenerDataset(PressDataset):
 
         x_input_message_idx = x_idx * len(POWERS) + power_idx
         x_input_message = self.encoded_games["x_input_message"][x_input_message_idx]
-        fields["x_input_message"] = x_input_message.to_padded(padding_value=EOS_IDX).to(torch.long)
+
+        fields["x_input_message"] = x_input_message.to_padded(
+            padding_value=self.padding_params["pad_idx"]
+        ).to(torch.long)
 
         return fields
 
@@ -210,8 +240,29 @@ def build_press_db_cache_from_cfg(cfg):
         cfg.metadata_path, cfg.min_rating_percentile, cfg.max_games, cfg.val_set_pct,
     )
 
-    no_press_dict = MessageToDict(no_press_cfg, preserving_proto_field_name=True)
+    train_dataset, val_dataset = build_press_dataset(
+        game_metadata, min_rating, no_press_cfg, press_cfg, train_game_ids, val_game_ids
+    )
 
+    logger.info(f"Saving press datasets to {cfg.data_cache}")
+    torch.save((train_dataset, val_dataset), cfg.data_cache)
+
+
+def build_press_dataset(
+    game_metadata, min_rating, no_press_cfg, press_cfg, train_game_ids, val_game_ids
+):
+    """
+    Builds train and
+    :param game_metadata:
+    :param min_rating:
+    :param no_press_cfg:
+    :param press_cfg:
+    :param train_game_ids:
+    :param val_game_ids:
+    :return: train_dataset, val_dataset
+    """
+
+    no_press_dict = MessageToDict(no_press_cfg, preserving_proto_field_name=True)
     train_dataset = ListenerDataset(
         game_metadata=game_metadata,
         game_ids=train_game_ids,
@@ -221,7 +272,6 @@ def build_press_db_cache_from_cfg(cfg):
         **no_press_dict,
     )
     train_dataset.preprocess()
-
     val_dataset = ListenerDataset(
         game_ids=val_game_ids,
         min_rating=min_rating,
@@ -231,6 +281,4 @@ def build_press_db_cache_from_cfg(cfg):
         **no_press_dict,
     )
     val_dataset.preprocess()
-
-    logger.info(f"Saving press datasets to {cfg.data_cache}")
-    torch.save((train_dataset, val_dataset), cfg.data_cache)
+    return train_dataset, val_dataset
