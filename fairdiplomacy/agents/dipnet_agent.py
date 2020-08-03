@@ -69,9 +69,22 @@ def resample_duplicate_disbands_inplace(
     # multi-disband sequence. Still, even if there is a 3-unit disband and a
     # 2-unit disband, we will sample the same # for both and mask out the extra
     # orders (see the eos_mask below)
-    new_sampled_idxs = torch.multinomial(
-        logits[mask][:, 0].exp() + 1e-7, logits.shape[2], replacement=False
-    )
+    try:
+        new_sampled_idxs = torch.multinomial(
+            logits[mask][:, 0].exp() + 1e-7, logits.shape[2], replacement=False
+        )
+    except RuntimeError:
+        torch.save(
+            {
+                order_idxs: order_idxs,
+                sampled_idxs: sampled_idxs,
+                logits: logits,
+                x_possible_actions: x_possible_actions,
+                x_in_adj_phase: x_in_adj_phase,
+            },
+            "resample_duplicate_disbands_inplace.debug.pt",
+        )
+        raise
 
     filler = torch.empty(
         new_sampled_idxs.shape[0],
