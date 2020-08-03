@@ -409,11 +409,16 @@ def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets)
                 logger.info("Saving checkpoint to {}".format(args.checkpoint))
                 torch.save(obj, args.checkpoint)
 
+                if epoch % 10 == 0:
+                    torch.save(obj, args.checkpoint + ".epoch_" + str(epoch))
                 if best_loss is None or valid_loss < best_loss:
+                    best_loss = valid_loss
                     torch.save(obj, args.checkpoint + ".best")
                 if best_p_loss is None or valid_p_loss < best_p_loss:
+                    best_p_loss = valid_p_loss
                     torch.save(obj, args.checkpoint + ".bestp")
                 if best_v_loss is None or valid_v_loss < best_v_loss:
+                    best_v_loss = valid_v_loss
                     torch.save(obj, args.checkpoint + ".bestv")
 
         lr_scheduler.step()
