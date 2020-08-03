@@ -3,6 +3,7 @@
 
 #include "../cc/game.h"
 #include "encoding.h"
+#include "py_game_get_units.h"
 
 namespace py = pybind11;
 using namespace dipcc;
@@ -25,7 +26,13 @@ PYBIND11_MODULE(pydipcc, m) {
       .def_property_readonly("is_game_done", &Game::is_game_done)
       .def_property_readonly("phase", &Game::get_phase_long)
       .def_property_readonly("current_short_phase", &Game::get_phase_short)
-      .def_readwrite("game_id", &Game::game_id);
+      .def_readwrite("game_id", &Game::game_id)
+      .def("get_current_phase", &Game::get_phase_short)       // mila compat
+      .def_property_readonly("map_name", &Game::map_name)     // mila compat
+      .def_property_readonly("phase_type", &Game::phase_type) // mila compat
+      .def("get_units", &py_game_get_units,
+           py::return_value_policy::move) // mila compat
+      ;
 
   py::class_<PhaseData>(m, "PhaseData")
       .def_property_readonly("name", &PhaseData::get_name)

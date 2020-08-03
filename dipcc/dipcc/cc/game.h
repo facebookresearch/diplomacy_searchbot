@@ -65,6 +65,11 @@ public:
   std::string get_phase_long() { return state_.get_phase().to_string_long(); }
   std::string get_phase_short() { return state_.get_phase().to_string(); }
 
+  // mila compat
+
+  std::string map_name() { return "standard"; }
+  char phase_type() { return state_.get_phase().phase_type; }
+
 private:
   void crash_dump();
 
