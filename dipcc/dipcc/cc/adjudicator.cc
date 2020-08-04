@@ -326,7 +326,6 @@ public:
       map<Loc, LocCandidate>::iterator largest_min_cand;
       int largest_min = -1;
       int largest_max = -1;
-      bool largest_min_converged = true;
       for (auto loc_cand_it = loc_cands.begin(); loc_cand_it != loc_cands.end();
            loc_cand_it++) {
         int min = loc_cand_it->second.min;
@@ -334,9 +333,6 @@ public:
         if (min > largest_min) {
           largest_min = min;
           largest_min_cand = loc_cand_it;
-          largest_min_converged = (min == max);
-        } else if (min == largest_min && max > min) {
-          largest_min_converged = false;
         }
         if (max > largest_max) {
           largest_max = max;
@@ -365,7 +361,7 @@ public:
         if (max >= largest_min) {
           // largest min doesn't dominate this max, so no clear winner
           is_winner = false;
-          if (max == min && max == largest_min && largest_min_converged) {
+          if (max == min && max == largest_min && max == largest_max) {
             // two top candidates have exact same min/max strength: bounce
             is_bounce = true;
             break;
