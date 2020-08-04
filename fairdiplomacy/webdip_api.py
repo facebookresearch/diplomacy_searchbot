@@ -98,11 +98,16 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
                 if variant_split is not None:
                     order_str = " ".join(variant_split)
 
+            if order_str not in possible_orders:
+                bug_report = f"/checkpoint/fairdiplomacy/bug_reports/webdip_api.{time.time()}.json"
+                with open(bug_report, "w") as f:
+                    f.write(game.to_json())
             assert order_str in possible_orders, (
                 game.phase,
                 (power, loc, order_str),
                 possible_orders,
                 order_json,
+                bug_report,
             )
 
             logger.debug('set_phase_orders -> {} "{}"'.format(power, order_str))
