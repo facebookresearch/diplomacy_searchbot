@@ -64,16 +64,23 @@ def resample_duplicate_disbands_inplace(
     if not mask.any():
         return
 
-    # N.B. we are sampling more orders than we need here: we are sampling
+    # N.B. we may sample more orders than we need here: we are sampling
     # according to the longest sequence in the batch, not the longest
     # multi-disband sequence. Still, even if there is a 3-unit disband and a
     # 2-unit disband, we will sample the same # for both and mask out the extra
     # orders (see the eos_mask below)
+    #
+    # Note 1 (see below): The longest sequence in the batch may be longer than
+    # the # of disband order candidates, so we take the min with
+    # logits.shape[3] (#candidates)
     try:
         new_sampled_idxs = torch.multinomial(
-            logits[mask][:, 0].exp() + 1e-7, logits.shape[2], replacement=False
+            logits[mask][:, 0].exp() + 1e-7,
+            min(logits.shape[2], logits.shape[3]),  # See Note 1
+            replacement=False,
         )
     except RuntimeError:
+        # if you're reading this after Aug 25: remove this whole except block
         torch.save(
             {
                 order_idxs: order_idxs,
