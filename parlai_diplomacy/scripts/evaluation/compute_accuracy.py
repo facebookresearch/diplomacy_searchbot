@@ -95,7 +95,10 @@ def json_split_accuracy(game_id, eval_game_dict):
 
     global_missing_orders = []
     game_dict = dict()
-    assert len(eval_game_dict) == total_phases
+
+    if len(eval_game_dict) != total_phases:
+        print(f"Game num_phases mismatch for {game_id}")
+
     for idx in range(total_phases):
         phase_name = str(list(game.state_history.keys())[idx])
         tmp_game = Game.clone_from(game, up_to_phase=phase_name)
@@ -106,6 +109,10 @@ def json_split_accuracy(game_id, eval_game_dict):
             if order in ORDER_VOCABULARY_TO_IDX
         ]
         all_orderable_locations = tmp_game.get_orderable_locations()
+        if phase_name not in eval_game_dict:
+            print(f"Missing {phase_name} in {game_id}")
+            continue
+
         eval_phase_dict = eval_game_dict[phase_name]
         phase_dict = dict()
 
@@ -216,7 +223,7 @@ def compute_json_accuracy(args):
         eval_dict = json.load(f)
 
     game_ids = list(eval_dict.keys())
-
+    print(f"Total number of games: {len(game_ids)}")
     # json_split_accuracy("115984", eval_dict["115984"])
 
     def _combine(a, b):
