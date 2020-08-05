@@ -18,35 +18,37 @@ def avg(L):
     return sum(L) / len(L)
 
 
-def print_situation_stats(paths):
+def print_situation_stats(paths0, paths1):
     data = defaultdict(dict)
     cfr_iters = set()
     results = defaultdict(dict)
-    for path in paths:
-        match = re.search(r"game_(\d+)\.(\d+).log$", path)
-        assert match
-        game_idx, repeat = int(match[1]), int(match[2])
-        for line in open(path):
-            fields = line.split()
-            if "<> [" in line:
-                power = fields[9]
-                cfr_iter = int(fields[5])
-                avg_utility = float(fields[13].split("=")[1])
-                row_key = (game_idx, repeat, power, cfr_iter)
-                cfr_iters.add(cfr_iter)
-            if "|>" in line:
-                orders = " ".join(fields[8:])
-                data[row_key][orders] = {
-                    "prob": float(fields[4]),
-                    "bp_prob": float(fields[5]),
-                    "avg_u": float(fields[6]),
-                    "regret": float(fields[6]) - avg_utility,
-                    "state_u": avg_utility,
-                }
-            if "Result" in line:
-                result = fields[4]
-                test = " ".join(fields[6:])
-                results[test][(game_idx, repeat)] = 1 if result == "PASSED" else 0
+    for repeat, paths in enumerate((paths0, paths1)):
+        for path in paths:
+            match = re.search(r"game_(\d+)\.log$", path)
+            assert match
+            game_idx = int(match[1])
+            for line in open(path):
+                fields = line.split()
+                if "<> [" in line:
+                    power = fields[9]
+                    cfr_iter = int(fields[5])
+                    avg_utility = float(fields[13].split("=")[1])
+                    row_key = (game_idx, repeat, power, cfr_iter)
+                    cfr_iters.add(cfr_iter)
+                if "|>" in line:
+                    orders = " ".join(fields[8:])
+                    data[row_key][orders] = {
+                        "prob": float(fields[4]),
+                        "bp_prob": float(fields[5]),
+                        "avg_u": float(fields[6]),
+                        "regret": float(fields[6]) - avg_utility,
+                        "state_u": avg_utility,
+                    }
+                if "Result" in line:
+                    result = fields[4]
+                    test = " ".join(fields[6:])
+                    results[test][(game_idx, repeat)] = 1 if result == "PASSED" else 0
+
     # print(data)
     M = max(cfr_iters)
     N = len(paths) // 2
@@ -134,11 +136,16 @@ def print_situation_stats(paths):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("results_dir", help="Directory containing game.json files")
+    parser.add_argument("results_dir0", help="Directory containing game.json files")
+    parser.add_argument("results_dir1", help="Directory containing game.json files")
+
     args = parser.parse_args()
 
-    assert os.path.exists(args.results_dir)
-    paths = glob.glob(os.path.join(args.results_dir, "game*.log"))
+    assert os.path.exists(args.results_dir0)
+    assert os.path.exists(args.results_dir1)
 
-    print_situation_stats(paths)
+    paths0 = glob.glob(os.path.join(args.results_dir0, "game*.log"))
+    paths1 = glob.glob(os.path.join(args.results_dir1, "game*.log"))
+
+    print_situation_stats(paths0, paths1)
 

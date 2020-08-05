@@ -31,8 +31,9 @@ git diff $ROOT > $CHECKPOINT_DIR/gitdiff.inp
 
 for REP in {0..1}; do
   FULL_NAME="${NAME}.${REP}"
-  
-  cat <<EOF | sbatch --job-name $FULL_NAME $SBATCH_ARGS
+  REPL_DIR="$CHECKPOINT_DIR/rep${REP}"
+  mkdir -p $REPL_DIR
+  cat <<EOF | sbatch --job-name $FULL_NAME $SBATCH_ARGS -o /dev/null -e /dev/null
 #!/bin/bash
 
 python run.py \
@@ -41,10 +42,11 @@ python run.py \
   situation_json=$(pwd)/test_situations.json \
   seed=\$SLURM_ARRAY_TASK_ID \
   I.agent=agents/cfr1p_webdip \
-  agent.cfr1p.model_path=/checkpoint/alerer/fairdiplomacy/sl_fbdata_20200717_minscore0/checkpoint.pth.best \
+  agent.cfr1p.model_path=/checkpoint/alerer/fairdiplomacy/sl_fbdata_20200717_minscore0_cpfix_vd0.5/checkpoint.pth.best \
   agent.cfr1p.use_final_iter=false \
   agent.cfr1p.reset_seed_on_rollout=true \
+  agent.cfr1p.n_rollouts=2048 \
   $@ \
-  > ${CHECKPOINT_DIR}/game_\$SLURM_ARRAY_TASK_ID.$REP.log 2>&1
+  > ${REPL_DIR}/game_\$SLURM_ARRAY_TASK_ID.log 2>&1
 EOF
 done
