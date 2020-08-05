@@ -523,7 +523,7 @@ def encode_phase(
                     valid_power_idxs[i] = 0
 
     x_possible_actions = TensorList.from_padded(
-        x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN), padding_value=EOS_IDX,
+        x_possible_actions.view(len(POWERS) * MAX_SEQ_LEN, MAX_VALID_LEN), padding_value=EOS_IDX
     )
 
     if tokenized_messages is not None:
@@ -591,7 +591,7 @@ def get_valid_orders_impl(power, all_possible_orders, all_orderable_locations, g
             for x in product(*c)
         ]
         order_idxs = torch.tensor([ORDER_VOCABULARY_TO_IDX[x] for x in orders], dtype=torch.int32)
-        all_order_idxs[0, :1, : len(order_idxs)] = order_idxs.unsqueeze(0)
+        all_order_idxs[0, :1, : len(order_idxs)] = order_idxs.sort().values.unsqueeze(0)
         loc_idxs[0, [LOCS.index(l) for l in orderable_locs]] = -2
         return all_order_idxs, loc_idxs, n_builds
 
