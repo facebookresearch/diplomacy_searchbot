@@ -11,37 +11,31 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "diplomacy_validation_save_split"
-NUM_HOURS = 48
+sweep_name = "save_diplomacy_validation_bart_with_msg"
+NUM_HOURS = 72
 
-# trick for test file id
-TEST_SPLIT = 64
-test_file_ids = []
-REPORT_FILE_PREFIX = (
-    f"/checkpoint/fairdiplomacy/validation_report/{diplomacy_validation_save_split}_output_split"
-)
-test_file_ids = [
-    f"{i} --report-filename {REPORT_FILE_PREFIX}_{i}" for i in range(1, TEST_SPLIT + 1)
-]
-
+# save path
+TEACHER = "state_order_chunk"
+VALID_REPORT_SAVE_PATH, _, _ = utls.get_valid_report_path(sweep_name, TEACHER)
+bash("mkdir -p " + VALID_REPORT_SAVE_PATH)
 
 # Define param grid
 grid = {
-    "-mf": [
-        "/checkpoint/wyshi/20200709/diplomacy_All_in_one_context512_batch128_truncate1024_baseline/90a/model"
-    ],
-    "-t": ["message_order"],
+    "--verbose": [True],
+    "--datapath": ["/private/home/wyshi/ParlAI/data"],
+    "-mf": ["/checkpoint/wyshi/diplomacy/Bart/Bart_diplomacy/37a/model"],
+    "-m": ["bart",],
+    "-t": ["message_history_state_order_chunk"],
+    "-dt": ["valid:stream"],
+    "--report-filename": [VALID_REPORT_SAVE_PATH],
+    "--label-truncate": [256],
+    "--text-truncate": [1024],
     "--save-world-logs": [True],
-    "-dt": ["valid"],
     "--skip-generation": [False],
+    # "--dynamic-batching": ["full"],
     "--inference": ["greedy"],
-    "--include-message-from": ["partner_msg_only"],
-    "--input-seq-content": ["state_only"],
-    "-bs": [256],
+    "-bs": [128],
     "--min-turns": [1,],
-    "--split-valid": ["yes"],
-    "--test-file-id": test_file_ids,
-    "--dynamic-batching": ["full"],
 }
 
 if __name__ == "__main__":
@@ -51,11 +45,11 @@ if __name__ == "__main__":
         sweep_name=sweep_name,
         partition="learnfair",
         jobtime=f"{NUM_HOURS}:00:00",
-        prefix="python -u examples/eval_model.py",
-        gpus=1,
-        nodes=1,
+        prefix="python -u parlai_diplomacy/scripts/distributed_eval.py",
+        one_job_per_node=False,
+        gpus=8,
+        nodes=8,
         create_model_file=False,
-        data_parallel=True,
         requeue=True,
         include_job_id=False,
         volta32=True,

@@ -17,7 +17,6 @@ grid = {
     "-t": ["message_order"],
     "--min-turns": [1,],
     "--include-message-from": ["all_msg",],
-    "--input-seq-content": ["msg_and_state",],
     "-dt": ["train"],
     "-vtim": [900],
     "--attention-dropout": [0.1],

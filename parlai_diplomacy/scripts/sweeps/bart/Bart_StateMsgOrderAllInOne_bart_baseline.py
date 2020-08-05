@@ -11,7 +11,7 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "diplomacy_AllInOne_bart_baseline"
+sweep_name = "Bart_diplomacy"
 NUM_HOURS = 72
 
 # Define param grid
@@ -19,43 +19,43 @@ grid = {
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "--load-from-checkpoint": ["True"],
     "--dynamic-batching": ["full"],
-    "-t": ["message_state_order"],
-    "--num-epochs": [20],
+    "-t": ["message_history_state_order_chunk"],
+    "-dt": ["train:stream"],
+    "--num-epochs": [10],
     "--min-turns": [1,],
-    "--include-message-from": ["all_msg",],
-    "-veps": [0.25],
+    # "--include-message-from": ["all_msg",],
+    "-veps": [0.1],
     "--attention-dropout": [0.00],
     "--dropout": [0.1],
     "--fp16": [True],
     "-m": ["bart",],
     "--init-model": ["/private/home/wyshi/ParlAI/data/models/bart/bart_large/model",],
-    "--n-positions": [2048],
+    "--n-positions": [1024],
     "--dict_file": ["/private/home/wyshi/ParlAI/data/models/bart/bart_large/model.dict"],
     "--label-truncate": [256],
     "--log_every_n_secs": [10],
-    "-lr": [1e-5, 5e-5, 1e-4, 5e-4],
+    "-lr": [5e-5],
     "--lr-scheduler": ["linear"],
-    "--max-lr-steps": ["50_000"],
+    "--max-lr-steps": ["150_000"],
     "--lr-scheduler-patience": [3],
     "--optimizer": ["adam"],
     "--relu-dropout": [0.0],
     "--activation": ["gelu"],
     "--model-parallel": [False],
     "--save-after-valid": [True],
-    "--text-truncate": [2048],
-    "--truncate": [2048],
-    "--warmup_updates": [5000],
+    "--text-truncate": [1024],
+    "--warmup-updates": [10000],
     "--fp16-impl": ["mem_efficient"],
-    "--update-freq": [2, 4, 8,],
+    "--update-freq": [1, 2],
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
     "-vp": [10],
-    "--max-train-time": [0.96 * NUM_HOURS * 60 * 60],  # just under 8 hours
+    # "--max-train-time": [0.96 * NUM_HOURS * 60 * 60],  # just under 8 hours
     "-vmt": ["ppl"],
     "-vmm": ["min"],
     "-stim": [360],
-    "-vme": [50_000],
-    "-bs": [16],
+    "-vme": [10_000],
+    "-bs": [8],
 }
 
 if __name__ == "__main__":
@@ -70,7 +70,6 @@ if __name__ == "__main__":
         gpus=8,
         nodes=8,
         create_model_file=True,
-        data_parallel=True,
         requeue=True,
         include_job_id=False,
         volta32=True,

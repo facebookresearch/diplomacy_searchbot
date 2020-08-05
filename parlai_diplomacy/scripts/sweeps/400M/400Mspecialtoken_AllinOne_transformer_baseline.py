@@ -54,7 +54,7 @@ grid = {
     "--save-after-valid": [True],
     "--text-truncate": [2048],
     "--truncate": [2048],
-    "--warmup_updates": [100],  # larger, 1000
+    "--warmup-updates": [5000],  # larger, 1000
     "--fp16-impl": ["mem_efficient"],
     "--update-freq": [2],
     "--gradient-clip": [0.1],

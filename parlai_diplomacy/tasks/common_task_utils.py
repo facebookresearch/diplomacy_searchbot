@@ -13,6 +13,7 @@ import sys
 import time
 import numpy as np
 from copy import deepcopy
+from datetime import date
 
 import parlai.utils.logging as logging
 
@@ -46,10 +47,9 @@ TOTAL_GAMES = 54622
 DATA_SPLIT_INTO = 500
 
 # valid_json will be spliited into
-TEST_SPLIT_INTO = 64
-TEST_RESULT_JSONL_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/validation_report/report4Weiyan_output_split_*_internal:diplomacy:message_order_replies.jsonl"
-TEST_RESULT_SAVE_JSON_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/validation_report/valid_prediction_json/parlai_valid_set_prediction.json"
-TEST_RESULT_SAVE_JSON_NO_LAST_PHASE_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/validation_report/valid_prediction_json/parlai_valid_set_prediction_no_last_phase.json"
+VALID_SAVE_ROOT = "/checkpoint/fairdiplomacy/press_diplomacy/validation/validation_report/"
+
+# special token path
 SPECIAL_TOKEN_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/model_utils/special_tokens.txt"
 REDACTED_MSG_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/redacted_analysis/redacted_msg.txt"
 
@@ -321,8 +321,36 @@ def phase_abbrev_to_phase(phase):
     return phase_converted
 
 
-def convert_test_results(return_data=False):
-    paths = glob(TEST_RESULT_JSONL_PATH)
+def get_valid_report_path(sweep_name, TEACHER):
+    # save path
+    USER = os.environ["USER"]
+    DATE = str(date.today()).replace("-", "")
+    # report paths
+    VALID_REPORT_SAVE_PATH = os.path.join(
+        VALID_SAVE_ROOT, USER, DATE, sweep_name, TEACHER, "valid_report"
+    )
+    # jsonl paths
+    VALID_REPORT_JSONL_PATH = os.path.join(
+        VALID_SAVE_ROOT, USER, DATE, sweep_name, TEACHER, "*_replies.jsonl"
+    )
+    # combined json path
+    VALID_REPORT_SAVE_JSON_PATH = os.path.join(
+        VALID_SAVE_ROOT,
+        USER,
+        DATE,
+        sweep_name,
+        TEACHER,
+        "combined_parlai_valid_set_prediction.json",
+    )
+
+    return VALID_REPORT_SAVE_PATH, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH
+
+
+def convert_test_results(sweep_name, TEACHER, return_data=False):
+    _, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH = get_valid_report_path(
+        sweep_name, TEACHER
+    )
+    paths = glob(VALID_REPORT_JSONL_PATH)
     final_data = {}
     raw_data = []
     for i, path in enumerate(paths):
@@ -340,9 +368,9 @@ def convert_test_results(return_data=False):
             total_without_key_error += 1
             ground_truth = data["dialog"][0][0]
             game_id, phase_id, speaker_id, order = (
-                ground_truth["game"],
-                ground_truth["game_phase"],
-                int(ground_truth["speaker_id"]),
+                ground_truth["game_id"],
+                ground_truth["phase_id"],
+                int(ground_truth["player_id"]),
                 ground_truth["eval_labels"][0],
             )
             predicted_order = data["dialog"][0][-1]["text"]
@@ -384,21 +412,11 @@ def convert_test_results(return_data=False):
             print(f"I got a KeyError - reason {e}")
             key_error += 1
 
-    final_data_no_last_phase = {}
-    for game_id in final_data:
-        final_data_no_last_phase[game_id] = {
-            phase_id: final_data[game_id][phase_id]
-            for phase_id in list(final_data[game_id].keys())[:-1]
-        }
-
     print(f"order acc: {correct/total_without_key_error} ({correct}/{total_without_key_error})")
     print(f"key error: {key_error/total} ({key_error}/{total})")
 
-    with open(TEST_RESULT_SAVE_JSON_PATH, "w") as fh:
+    with open(VALID_REPORT_SAVE_JSON_PATH, "w") as fh:
         json.dump(final_data, fh)
-
-    with open(TEST_RESULT_SAVE_JSON_NO_LAST_PHASE_PATH, "w") as fh:
-        json.dump(final_data_no_last_phase, fh)
 
     if return_data:
         return final_data

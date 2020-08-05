@@ -102,6 +102,7 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
                     data["game_id"] = game_id
                     data["phase_id"] = phase_id
                     data["player_id"] = player_id
+                    data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
                     lst.append(data)
 
         logging.info(f"Loaded {len(lst)} examples from chunk {chunk_idx}.")
@@ -120,13 +121,22 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         return shared
 
     def _get_base_msg(self, queue_output):
-        return {
+        base_msg = {
             "episode_done": True,
             "player_id": queue_output["player_id"],
+            "player": queue_output["player"],
             "game_id": queue_output["game_id"],
             "phase_id": queue_output["phase_id"],
             "labels": [queue_output["order"]],
         }
+
+        base_msg.update(queue_output)
+
+        return base_msg
+
+    def _get_player_prompt_token(self, queue_output):
+        player_prompt_token = f"{queue_output['phase_id']} {queue_output['player']}:"
+        return player_prompt_token
 
 
 @register_teacher("state_message_order_chunk")
@@ -139,7 +149,7 @@ class StateMessageOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['state']} {queue_output['message']} {curr_player}"
 
         return Message(msg)
@@ -155,8 +165,24 @@ class MessageStateOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['message']} {queue_output['state']} {curr_player}"
+
+        return Message(msg)
+
+
+@register_teacher("message_history_state_order_chunk")
+class MessageHistoryStateOrderChunkTeacher(BaseOrderChunkTeacher):
+    """
+    Text field (input) contains MESSAGE then STATE information
+
+    Label is the order given by the player
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        msg["text"] = f"{queue_output['message_history']} {queue_output['state']} {curr_player}"
 
         return Message(msg)
 
@@ -171,7 +197,7 @@ class OrderHistoryMessageOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['order_history']} {queue_output['message']} {curr_player}"
 
         return Message(msg)
@@ -187,7 +213,7 @@ class MessageOrderHistoryOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['message']} {queue_output['order_history']} {curr_player}"
 
         return Message(msg)
@@ -203,7 +229,7 @@ class StateOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['state']} {curr_player}"
 
         return Message(msg)
@@ -219,7 +245,7 @@ class MessageOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['message']} {curr_player}"
 
         return Message(msg)
@@ -235,7 +261,7 @@ class OrderHistoryOrdeChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['order_history']} {curr_player}"
 
         return Message(msg)
@@ -251,7 +277,7 @@ class SpeakerTokenOrderChunkTeacher(BaseOrderChunkTeacher):
 
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
-        curr_player = utls.COUNTRY_ID_TO_POWER[int(queue_output["player_id"])].capitalize()
+        curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{curr_player}"
 
         return Message(msg)

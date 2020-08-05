@@ -74,6 +74,12 @@ class BaseOrderTeacher(FixedDialogTeacher):
                 data_point_with_msg (cannot be used for fairdip, used only to see if the msg data is helping)",
         )
         argparser.add_argument(
+            "--train-val-split-pct",
+            type=float,
+            default=0.95,
+            help="train/validation split percent",
+        )
+        argparser.add_argument(
             "--debug",
             action="store_true",
             help="debug mode to load fewer games (--debug-game-size)",
@@ -227,7 +233,11 @@ class BaseOrderTeacher(FixedDialogTeacher):
             self.no_msg = 0
 
         elif stage == "calculate":
-            state_str, msg_str, order = pair["state"], pair["message"], pair["order"]
+            if "message_history" in self.opt["task"]:
+                msg_str = pair["message_history"]
+            else:
+                msg_str = pair["message"]
+            state_str, order = pair["state"], pair["order"]
             if self.with_special_token:
                 state_str = utls.replace_with_special_token(state_str)
                 order = utls.replace_with_special_token(order)
@@ -330,7 +340,7 @@ class BaseOrderTeacher(FixedDialogTeacher):
         self.iterator = utls.MessageOrderDataIterator(opt)
 
         # get train/valid split number
-        TRAIN_VAL_SPLIT_PERCENT = 0.95
+        TRAIN_VAL_SPLIT_PERCENT = opt["train_val_split_pct"]
         TRAIN_SPLIT_NUM, VALID_SPLIT_NUM = self._get_train_val_split_num(TRAIN_VAL_SPLIT_PERCENT)
 
         # initialize game and phase stats
@@ -457,6 +467,17 @@ class MessageStateOrderTeacher(BaseOrderTeacher):
 
         assert self.opt["task"] == "message_state_order"
         new_msg["text"] = f"{new_msg['message']} {new_msg['state']} {speaker_token}"
+
+        return new_msg
+
+
+@register_teacher("message_history_state_order")
+class MessageStateOrderTeacher(BaseOrderTeacher):
+    def _construct_msg(self, pair, idx):
+        speaker_token, new_msg = self._construct_common_msg_fields(pair)
+
+        assert self.opt["task"] == "message_history_state_order"
+        new_msg["text"] = f"{new_msg['message_history']} {new_msg['state']} {speaker_token}"
 
         return new_msg
 

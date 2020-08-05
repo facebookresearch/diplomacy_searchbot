@@ -26,13 +26,27 @@ An example sbatch script is below, for a 2-host, 8-GPU setup (16 total gpus):
   srun python -u -m parlai.scripts.distributed_eval \
     -m seq2seq -t convai2 --dict-file /path/to/dict-file
 """
+import os
 
-from parlai.scripts.distributed_eval import DistributedEval
+import parlai.scripts.eval_model as eval_model
+import parlai.utils.distributed as distributed_utils
 import parlai_diplomacy.utils.loading as load
+
 
 load.register_all_agents()
 load.register_all_tasks()
 
 
+def main():
+    parser = eval_model.setup_args()
+    parser.add_distributed_training_args()
+    parser.add_argument("--port", type=int, default=61337, help="TCP port number")
+    opt = parser.parse_args(print_args=(os.environ["SLURM_PROCID"] == "0"))
+
+    with distributed_utils.slurm_distributed_context(opt) as opt:
+        return eval_model.eval_model(opt)
+
+
 if __name__ == "__main__":
-    DistributedEval.main()
+    main()
+
