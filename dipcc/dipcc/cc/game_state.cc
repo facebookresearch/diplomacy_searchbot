@@ -590,7 +590,13 @@ bool GameState::has_any_unoccupied_home(Power power) const {
   return false;
 }
 
-int GameState::get_n_builds(Power power) const {
+int GameState::get_n_builds(Power power) {
+  if (phase_.season != 'W') {
+    return 0;
+  }
+  if (!orders_loaded_) {
+    get_all_possible_orders();
+  }
   return n_builds_.at(static_cast<size_t>(power) - 1);
 }
 
@@ -672,6 +678,7 @@ json GameState::to_json() {
 }
 
 GameState::GameState(const json &j) {
+
   // name
   phase_ = Phase(j["name"]);
 
@@ -679,7 +686,7 @@ GameState::GameState(const json &j) {
   if (phase_.season == 'W') {
     n_builds_.clear();
     for (Power power : POWERS) {
-      n_builds_.push_back(j["builds"][power_str(power)]["count"]);
+      auto n_builds = json_deep_get(j, 0, "builds", power_str(power), "count");
     }
   }
 

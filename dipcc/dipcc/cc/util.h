@@ -2,12 +2,15 @@
 
 #include <map>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "loc.h"
 #include "order.h"
+
+#include "thirdparty/nlohmann/json.hpp"
 
 namespace dipcc {
 
@@ -61,6 +64,31 @@ bool safe_contains(const std::unordered_map<K, std::set<V>> &c, const K &k,
                    const V &v) {
   auto it = c.find(k);
   return it != c.end() && set_contains(it->second, v);
+}
+
+template <typename... S, typename D>
+D json_deep_get(const json &j, D default_return, const std::string &key) {
+  auto it = j.find(key);
+  if (it == j.end()) {
+    return default_return;
+  } else {
+    return j[key];
+  }
+}
+
+template <typename... S, typename D>
+D json_deep_get(const json &j, D default_return, const std::string &key,
+                S... keys) {
+  auto it = j.find(key);
+  if (it == j.end()) {
+    return default_return;
+  }
+
+  if (sizeof...(keys) == 0) {
+    return j[key];
+  } else {
+    return json_deep_get(j[key], default_return, keys...);
+  }
 }
 
 } // namespace dipcc

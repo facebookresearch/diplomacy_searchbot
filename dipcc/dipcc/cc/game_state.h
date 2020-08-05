@@ -41,7 +41,7 @@ public:
   void remove_dislodged_unit(OwnedUnit unit);
   void add_contested_loc(Loc loc);
   std::vector<OwnedUnit> get_dislodged_units() const;
-  int get_n_builds(Power power) const;
+  int get_n_builds(Power power);
 
   const std::unordered_map<Power, std::unordered_set<Loc>> &
   get_orderable_locations();
