@@ -13,7 +13,7 @@ dist/
 pip-wheel-metadata/
 local/
 .idea/
-conf/conf_pb2.py
+conf/*_pb2.py
 .ipynb_checkpoints/
 .vscode/
 .idea/
