@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import defaultdict
 from pydipcc import Game
 from fairdiplomacy.models.consts import POWERS
 
@@ -12,6 +13,12 @@ def order_prob(prob_distributions, *expected_orders):
                 total += prob
     return total
 
+def fragment_prob(prob_distributions, power, fragment):
+    total = 0
+    for orders, prob in prob_distributions[power].items():
+        if any(fragment in x for x in orders):
+            total += prob
+    return total
 
 def run_situation_check(meta, agent):
     results = {}
@@ -24,8 +31,20 @@ def run_situation_check(meta, agent):
             game = Game.from_json(f.read())
         if "phase" in config:
             game.rollback_to_phase(config["phase"])
-        prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
-        logging.info("CFR strategy:")
+
+        if hasattr(agent, 'get_all_power_prob_distributions'):
+            prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
+            logging.info("CFR strategy:")
+        else:
+            # this is a supervised agent, sample N times to get a distribution
+            NUM_ROLLOUTS = 100
+            prob_distributions = {p: defaultdict(float) for p in POWERS}
+            for power in POWERS:
+                for N in range(NUM_ROLLOUTS):
+                    orders = agent.get_orders(game, power)
+                    prob_distributions[power][tuple(orders)] += 1 / NUM_ROLLOUTS
+
+
         for power in POWERS:
             pd = prob_distributions[power]
             pdl = sorted(list(pd.items()), key=lambda x: -x[1])

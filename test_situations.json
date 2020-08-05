@@ -114,11 +114,13 @@
             "Don't antagonize FRA in BRE": "lambda r: order_prob(r, 'A PIC - PAR') + order_prob(r, 'A BUR - PAR') + order_prob(r, 'A PIC - BRE') + order_prob(r, 'A ENG - BRE') < 0.1"
         }
     },
-    "bad_build_1": {
-      "phase": "W1909A",
-      "game_path": "/checkpoint/alerer/diplomacy_json/bob_italy_309524.json",
-      "powers": ["ITALY"],
+    "russia_stalemate_1": {
+      "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/307608_s1915m.json",
+      "phase": "S1915M",
+      "powers": ["RUSSIA"],
       "tests": {
+        "Don't attack KIE": "lambda r: fragment_prob(r, 'RUSSIA', '- KIE') < 0.1",
+        "Don't attack W FRA": "lambda r: fragment_prob(r, 'RUSSIA', '- BEL') + fragment_prob(r, 'RUSSIA', '- PIC') + fragment_prob(r, 'RUSSIA', '- HOL') + fragment_prob(r, 'RUSSIA', '- BRE') + fragment_prob(r, 'RUSSIA', '- MAO') < 0.1"
       }
     }
 }
