@@ -5,7 +5,7 @@ class FakeGame:
         self.state_history = {}
         self.phase = "SPRING 1901 MOVEMENT"
         self.is_game_done = False
-        self.powers = ['AUSTRIA', 'ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'RUSSIA', 'TURKEY']
+        self.powers = ["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"]
 
     def set_orders(self, *args):
         pass

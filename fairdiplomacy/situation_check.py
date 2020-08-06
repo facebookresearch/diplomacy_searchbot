@@ -14,12 +14,14 @@ def order_prob(prob_distributions, *expected_orders):
                 total += prob
     return total
 
+
 def fragment_prob(prob_distributions, power, fragment):
     total = 0
     for orders, prob in prob_distributions[power].items():
         if any(fragment in x for x in orders):
             total += prob
     return total
+
 
 def run_situation_check(meta, agent):
     results = {}
@@ -28,14 +30,14 @@ def run_situation_check(meta, agent):
         comment = config.get("comment", "")
         logging.info(f"{name}: {comment} (phase={config.get('phase')})")
         # If path is not absolute, treat as relative to code root.
-        game_path = heyhi.PROJ_ROOT / config['game_path']
+        game_path = heyhi.PROJ_ROOT / config["game_path"]
         logging.info(f"path: {game_path}")
         with open(game_path) as f:
             game = Game.from_json(f.read())
         if "phase" in config:
             game.rollback_to_phase(config["phase"])
 
-        if hasattr(agent, 'get_all_power_prob_distributions'):
+        if hasattr(agent, "get_all_power_prob_distributions"):
             prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
             logging.info("CFR strategy:")
         else:
@@ -46,7 +48,6 @@ def run_situation_check(meta, agent):
                 for N in range(NUM_ROLLOUTS):
                     orders = agent.get_orders(game, power)
                     prob_distributions[power][tuple(orders)] += 1 / NUM_ROLLOUTS
-
 
         for power in POWERS:
             pd = prob_distributions[power]

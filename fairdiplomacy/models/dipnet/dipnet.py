@@ -902,7 +902,9 @@ class GraphConv(nn.Module):
 
 
 class ValueDecoder(nn.Module):
-    def __init__(self, *, inter_emb_size, dropout, init_scale=1.0, dialogue_emb_size=-1, softmax=False):
+    def __init__(
+        self, *, inter_emb_size, dropout, init_scale=1.0, dialogue_emb_size=-1, softmax=False
+    ):
         super().__init__()
         self.dialogue_emb_size = dialogue_emb_size
         emb_flat_size = 81 * inter_emb_size * 2

@@ -219,7 +219,7 @@ message TrainTask {
 
   // Optional. If true, will use softmax on top of value head. Otherwise, will
   // take squares and normalize.
-  optional bool value_softmax = 50 [default = false];
+  optional bool value_softmax = 50 [ default = false ];
 
   // Optional. If set, will stop the epoch after that many batches. For testing
   // puproses.

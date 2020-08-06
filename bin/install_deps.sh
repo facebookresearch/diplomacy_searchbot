@@ -28,4 +28,3 @@ pip install -e ./thirdparty/github/fairinternal/postman/postman/
 pip install -e ./thirdparty/github/diplomacy/diplomacy
 pip install -e ./dipcc
 pip install -e . -vv
-bash bin/compile.sh

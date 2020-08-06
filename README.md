@@ -47,7 +47,7 @@ The following command will create/activate conda env with all needed modules:
 . fair_activate.sh
 ```
 
-In order to rebuild dependencies after update, run `./bin/install_deps.sh`.
+After each pull it's recommended to run `make` to re-compile internal C++ and protobuf code. In case of missing dependencies, run `make deps` to install all depenndencies.
 
 ### Running tasks
 
@@ -136,6 +136,55 @@ External links:
 
 ## Contributing
 
-We use [black](https://github.com/psf/black) auto-formatter to format all python code.
+You can submit to the master without PR, but please make sure that you code passes the CI tests AND does not seem to break anything. If not sure, ask an author of the code you change to take a look. Use `git blame` to find the author.
 
-We use `clang-format-8 conf/*.proto -i` to autoformat proto.
+### Pre-commit hooks
+
+Run `pre-commit install` to install pre-commit hooks that will auto-format python code before commiting it.
+
+Or you can do this manually. Use [black](https://github.com/psf/black) auto-formatter to format all python code.
+For protobufs use `clang-format-8 conf/*.proto -i`.
+Circle CI tests check for that.
+
+### Tests
+
+To run tests locally run `make test`. Or you can wait Circle CI to run the test once you push your changes to any brunch.
+
+We have 2 level of tests: fast, unit tests (run with `make test_fast`) and slow, integration tests (run with `make test_integration`).
+The latter aim to use the same entry point as users do, i.e., `run.py` for the HeyHi part and `diplom` for the ParlAi.
+
+There are some differences between running the tests locally vs on CI.
+
+ 1. Most integration tests use small fake data in the repo, but some use real data to check that the latest models are working.
+Obviuously, these tests are skipped on CI and so local tests have better coverage.
+  2. CI use CPUs for everything.
+
+We use `nose` to discover tests.
+It searches for `*test*.py` files and extracts all unittests from them. So usually your tests will be automatically included into CircleCI.
+
+Some useful commands. Integration tests are notoriously slow and so sometimes one want to execute only one particular test. Here's how to do this. First, list all the test:
+
+```
+$ nosetests iintegration_tests/integration_test.py --collect-only -v --with-id
+#1 integration_test.test_situation_check_configs ... ok
+#2 integration_test.test_build_cache ... ok
+#3 integration_test.test_rl_configs('exploit_06.prototxt', {}) ... ok
+#3 integration_test.test_rl_configs('selfplay_01.prototxt', {}) ... ok
+#4 integration_test.test_rl_configs_real_data('exploit_06.prototxt', {}) ... ok
+#4 integration_test.test_rl_configs_real_data('selfplay_01.prototxt', {}) ... ok
+#5 integration_test.test_train_configs('sl.prototxt', {}) ... ok
+...
+```
+
+And then pass the id of the test to the nose:
+
+```
+nosetests iintegration_tests/integration_test.py  -v --with-id 3
+```
+
+#### Fixtures
+
+The repo contains 20 games from bot selfplat (`integration_tests/data/selfplay_games/`).
+It also contains the cache from these games (`integration_tests/data/selfplay.cache`).
+If your change changes the representation of the dataset, make sure to run `python integration_tests/build_test_cache.py` to re-build the cache.
+

@@ -148,4 +148,3 @@ if __name__ == "__main__":
     paths1 = glob.glob(os.path.join(args.results_dir1, "game*.log"))
 
     print_situation_stats(paths0, paths1)
-

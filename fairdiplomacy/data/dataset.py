@@ -749,10 +749,7 @@ def encode_weighted_sos_scores(game, phase_idx, value_decay_alpha):
     # fill in remaining weight with final score
     saved_game = game.to_saved_game_format()
     final_sq_scores = torch.FloatTensor(
-        [
-            compute_game_scores(p, saved_game).square_score
-            for p in range(len(POWERS))
-        ]
+        [compute_game_scores(p, saved_game).square_score for p in range(len(POWERS))]
     )
     y_final_scores[0, :] += remaining * final_sq_scores
 

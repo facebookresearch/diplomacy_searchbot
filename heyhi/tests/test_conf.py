@@ -62,9 +62,7 @@ class TestRootConf(unittest.TestCase):
         self.assertEqual(cfg.sub2.subscalar, -1)
 
     def testIncludeMessageInsideTwice(self):
-        cfg = self._load(
-            overrides=["I.sub=redefine_subscalar_22", "I.sub2=redefine_subscalar_22"]
-        )
+        cfg = self._load(overrides=["I.sub=redefine_subscalar_22", "I.sub2=redefine_subscalar_22"])
         self.assertEqual(cfg.scalar, -1)
         self.assertEqual(cfg.sub.subscalar, 22)
         self.assertEqual(cfg.sub2.subscalar, 22)

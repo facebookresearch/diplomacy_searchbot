@@ -20,11 +20,11 @@ if ! conda env list --json | jq ".envs | .[]" | grep -qE "/${xxx_env_name}\""; t
     source activate $xxx_env_name
     git submodule init
     git submodule update
-    bash bin/install_deps.sh || {
+    make deps all || {
         echo
         echo "################################################"
         echo "## Failed to install deps                      #"
-        echo "## To re-run install: bash bin/install_deps.sh #"
+        echo "## To re-run install: make deps all            #"
         echo "################################################"
     }
 fi

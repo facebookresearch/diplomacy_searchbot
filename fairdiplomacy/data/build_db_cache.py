@@ -1,7 +1,7 @@
-import json
 import glob
 import logging
 import os
+import pathlib
 import random
 
 import torch
@@ -18,7 +18,7 @@ def make_ratings_table(game_jsons):
             "id": game_id,
             "press_type": "NoPress",
             **{
-                pwr: {"id": -1, "points": -1, "status": "NoPress", "logit_rating": 0,}
+                pwr: {"id": -1, "points": -1, "status": "NoPress", "logit_rating": 0}
                 for pwr in POWERS
             },
         }
@@ -66,6 +66,8 @@ def build_db_cache_from_cfg(cfg):
     logging.info("Building train dataset")
     train_dataset = Dataset(game_ids=train_game_ids, **kwargs)
     train_dataset.preprocess()
+
+    pathlib.Path(cfg.out_path).parent.mkdir(exist_ok=True, parents=True)
 
     logging.info("Saving")
     torch.save((train_dataset, val_dataset), cfg.out_path)

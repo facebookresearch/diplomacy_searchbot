@@ -72,6 +72,7 @@ class TimingCtx:
         sum_t_mean = sum(t_mean for t_mean, _, _, _ in data)
         ind_log_fn("{:^24}|{:^8}|{:^18.1f}|{:^18}".format("Total", "", sum_t_mean * 1e3, ""))
 
+
 class DummyCtx:
     def __enter__(self):
         pass
