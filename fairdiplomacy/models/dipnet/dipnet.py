@@ -50,6 +50,7 @@ class DipNet(nn.Module):
         merged_gnn=False,
         encoder_layerdrop=0,
         dialogue_emb_size=-1,
+        value_softmax=False,
     ):
         super().__init__()
         self.orders_vocab_size = orders_vocab_size
@@ -99,6 +100,7 @@ class DipNet(nn.Module):
             inter_emb_size=inter_emb_size,
             init_scale=value_decoder_init_scale,
             dropout=value_dropout,
+            softmax=value_softmax,
             dialogue_emb_size=dialogue_emb_size,
         )
 
@@ -900,7 +902,7 @@ class GraphConv(nn.Module):
 
 
 class ValueDecoder(nn.Module):
-    def __init__(self, *, inter_emb_size, dropout, init_scale=1.0, dialogue_emb_size=-1):
+    def __init__(self, *, inter_emb_size, dropout, init_scale=1.0, dialogue_emb_size=-1, softmax=False):
         super().__init__()
         self.dialogue_emb_size = dialogue_emb_size
         emb_flat_size = 81 * inter_emb_size * 2
@@ -911,6 +913,7 @@ class ValueDecoder(nn.Module):
         self.lin = nn.Linear(inter_emb_size, len(POWERS))
 
         self.dropout = nn.Dropout(dropout)
+        self.softmax = softmax
 
         # scale down init
         torch.nn.init.xavier_normal_(self.lin.weight, gain=init_scale)
@@ -928,8 +931,11 @@ class ValueDecoder(nn.Module):
         y = F.relu(y)
         y = self.dropout(y)
         y = self.lin(y)
-        y = y ** 2
-        y = y / y.sum(dim=1, keepdim=True)
+        if self.softmax:
+            y = F.softmax(y, -1)
+        else:
+            y = y ** 2
+            y = y / y.sum(dim=1, keepdim=True)
         # y = nn.functional.softmax(y, dim=1)
         return y
 

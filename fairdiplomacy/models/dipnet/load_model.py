@@ -44,6 +44,7 @@ def new_model(args, dialogue_emb_size=-1):
         residual_linear=getattr(args, "residual_linear", False),
         merged_gnn=getattr(args, "merged_gnn", False),
         encoder_layerdrop=getattr(args, "encoder_layerdrop", 0.0),
+        value_softmax=getattr(args, "value_softmax", False),
         dialogue_emb_size=dialogue_emb_size,
     )
 

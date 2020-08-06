@@ -114,6 +114,15 @@
             "Don't antagonize FRA in BRE": "lambda r: order_prob(r, 'A PIC - PAR') + order_prob(r, 'A BUR - PAR') + order_prob(r, 'A PIC - BRE') + order_prob(r, 'A ENG - BRE') < 0.1"
         }
     },
+    "russia_stalemate_0": {
+      "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/307608_s1915m.json",
+      "phase": "F1913M",
+      "powers": ["RUSSIA"],
+      "tests": {
+        "Don't attack HOL": "lambda r: fragment_prob(r, 'RUSSIA', '- HOL') < 0.1",
+        "Don't attack ENG": "lambda r: fragment_prob(r, 'RUSSIA', '- ENG') < 0.1"
+      }
+    },
     "russia_stalemate_1": {
       "game_path": "/private/home/noambrown/diplomacy/fairdiplomacy/307608_s1915m.json",
       "phase": "S1915M",

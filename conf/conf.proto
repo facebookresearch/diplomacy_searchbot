@@ -217,6 +217,8 @@ message TrainTask {
   // main dataset.
   repeated string extra_train_data_caches = 44;
 
+  optional bool value_softmax = 50 [default = false];
+
   optional Launcher launcher = 1000;
 }
 
