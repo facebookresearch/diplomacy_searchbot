@@ -14,7 +14,12 @@ import torch
 import postman
 
 from fairdiplomacy.agents.base_search_agent import run_server, cat_pad_inputs
-from fairdiplomacy.agents.dipnet_agent import encode_inputs, encode_state, decode_order_idxs
+from fairdiplomacy.agents.dipnet_agent import (
+    encode_inputs,
+    encode_state,
+    decode_order_idxs,
+    resample_duplicate_disbands_inplace,
+)
 from fairdiplomacy.game import Game
 from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS, N_SCS
@@ -102,7 +107,7 @@ class InferencePool:
         self,
         *,
         model_path: str,
-        gpu_ids: Sequence[int],
+        gpu_ids: Sequence[Optional[int]],
         ckpt_sync_path: Optional[str],
         ckpt_sync_every: int = 0,
         model_output_transform=_noop_transform,
@@ -123,7 +128,10 @@ class InferencePool:
                         port=0,
                         batch_size=max_batch_size,
                         load_model_fn=functools.partial(
-                            load_dipnet_model, model_path, map_location=f"cuda:{gpu_id}", eval=True
+                            load_dipnet_model,
+                            model_path,
+                            map_location=f"cuda:{gpu_id}" if gpu_id is not None else "cpu",
+                            eval=True,
                         ),
                         ckpt_sync_path=ckpt_sync_path,
                         ckpt_sync_every=ckpt_sync_every,

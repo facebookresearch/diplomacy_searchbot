@@ -4,6 +4,7 @@ import itertools
 import json
 import logging
 import multiprocessing as mp
+import os
 import pathlib
 import queue as queue_lib
 
@@ -306,7 +307,11 @@ class DataLoader:
         self._batch_iterator = iter(self._yield_batches())
 
     def _start_inference_procs(self):
-        if torch.cuda.device_count() == 2:
+        if not torch.cuda.is_available():
+            logging.warning("No GPUs found! Will run postman on CPUs.")
+            # Running on CPUs.
+            inference_gpus = [None]
+        elif torch.cuda.device_count() == 2:
             if self.rollout_cfg.single_rollout_gpu:
                 inference_gpus = [1]
             else:

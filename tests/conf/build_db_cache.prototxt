@@ -1,0 +1,7 @@
+build_db_cache {
+    dataset_params: {
+        only_with_min_final_score: 1
+        num_dataloader_workers: 4
+    }
+    val_set_pct: 0.5
+}

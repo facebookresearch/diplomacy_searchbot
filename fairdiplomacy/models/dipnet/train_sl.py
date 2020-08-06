@@ -9,6 +9,7 @@ from functools import reduce
 
 import torch
 from google.protobuf.json_format import MessageToDict
+from torch.utils.data import RandomSampler
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, DataFields
@@ -245,10 +246,14 @@ def validate(
 
 
 def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets):
-    # distributed training setup
-    mp_setup(rank, world_size)
-    atexit.register(mp_cleanup)
-    torch.cuda.set_device(rank)
+    has_gpu = torch.cuda.is_available()
+    if has_gpu:
+        # distributed training setup
+        mp_setup(rank, world_size)
+        atexit.register(mp_cleanup)
+        torch.cuda.set_device(rank)
+    else:
+        assert rank == 0 and world_size == 1
 
     metric_logger = Logger(is_master=rank == 0)
     global_step = 0
@@ -267,11 +272,12 @@ def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets)
     net = new_model(args)
 
     # send model to GPU
-    logger.debug("net.cuda({})".format(rank))
-    net.cuda(rank)
-    logger.debug("net {} DistributedDataParallel".format(rank))
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank])
-    logger.debug("net {} DistributedDataParallel done".format(rank))
+    if has_gpu:
+        logger.debug("net.cuda({})".format(rank))
+        net.cuda(rank)
+        logger.debug("net {} DistributedDataParallel".format(rank))
+        net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank])
+        logger.debug("net {} DistributedDataParallel done".format(rank))
 
     # load from checkpoint if specified
     if checkpoint:
@@ -288,9 +294,14 @@ def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets)
 
     best_loss, best_p_loss, best_v_loss = None, None, None
 
-    train_set_sampler = DistributedSampler(train_set)
+    if has_gpu:
+        train_set_sampler = DistributedSampler(train_set)
+    else:
+        train_set_sampler = RandomSampler(train_set)
+
     for epoch in range(checkpoint["epoch"] + 1 if checkpoint else 0, args.num_epochs):
-        train_set_sampler.set_epoch(epoch)
+        if has_gpu:
+            train_set_sampler.set_epoch(epoch)
         batches = torch.tensor(list(iter(train_set_sampler)), dtype=torch.long).split(
             args.batch_size
         )
@@ -347,6 +358,9 @@ def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets)
                     + " ".join(f"{k}= {v}" for k, v in scalars.items())
                 )
             global_step += 1
+            if args.epoch_max_batches and batch_i + 1 >= args.epoch_max_batches:
+                logging.info("Exiting early due to epoch_max_batches")
+                break
 
         # calculate validation loss/accuracy
         if not args.skip_validation and rank == 0:

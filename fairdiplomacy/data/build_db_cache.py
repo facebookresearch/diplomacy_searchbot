@@ -35,7 +35,7 @@ def build_db_cache_from_cfg(cfg):
     logging.info("Expanding the glob")
     game_json_paths = sorted(glob.glob(cfg.glob))
     logging.info("Found games: %s", len(game_json_paths))
-    assert len(game_json_paths) >= 10, "weird"
+    assert len(game_json_paths) >= 10, f"weird ({len(game_json_paths)})"
 
     logging.info("Building metadata")
     game_metadata = make_ratings_table(game_json_paths)

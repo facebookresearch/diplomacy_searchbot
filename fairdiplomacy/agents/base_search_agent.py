@@ -6,7 +6,7 @@ import signal
 import time
 from collections import Counter, defaultdict
 from functools import partial
-from typing import List, Tuple, Set, Dict, Union, Sequence
+from typing import List, Tuple, Set, Dict, Union, Sequence, Optional
 
 import diplomacy
 import numpy as np
@@ -49,7 +49,10 @@ def make_server_process(*, model_path, device, max_batch_size, wait_till_full, s
             port=0,
             batch_size=max_batch_size,
             load_model_fn=partial(
-                load_dipnet_model, model_path, map_location=f"cuda:{device}", eval=True
+                load_dipnet_model,
+                model_path,
+                map_location=f"cuda:{device}" if torch.cuda.is_available() else "cpu",
+                eval=True,
             ),
             output_transform=model_output_transform,
             seed=seed,
@@ -621,15 +624,18 @@ def server_handler(
     load_model_fn,
     seed,
     output_transform=None,
-    device=0,
+    device: Optional[int] = 0,
     ckpt_sync_path=None,
     ckpt_sync_every=0,
     wait_till_full=False,
     empty_cache=True,
     model_path=None,  # for debugging only
 ):
-
-    if device > 0:
+    if not torch.cuda.is_available() and device is not None:
+        logging.warning(f"Cannot run on GPU {device} as not GPUs. Will do CPU")
+        device = None
+    if device is not None and device > 0:
+        # device=[None] stands for CPU.
         torch.cuda.set_device(device)
     model = load_model_fn()
     logging.info(f"Server {os.getpid()} loaded model, device={device}, seed={seed}")
@@ -649,7 +655,7 @@ def server_handler(
 
     with torch.no_grad():
         while True:
-            if empty_cache:
+            if empty_cache and device is not None:
                 torch.cuda.empty_cache()
             try:
                 with q.get(wait_till_full=wait_till_full) as batch:
@@ -667,7 +673,8 @@ def server_handler(
                         inputs = batch.get_inputs()[0]
 
                     with timings("to_cuda"):
-                        inputs = {k: v.to("cuda") for k, v in inputs.items()}
+                        if device is not None:
+                            inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
                     with timings("model"):
                         y = model(**inputs)

@@ -6,6 +6,3 @@ ROOT=$(dirname $0)/..
 cd $ROOT
 
 protoc conf/*.proto --python_out .
-
-git submodule update
-pip install -e ./thirdparty/github/fairinternal/postman/postman/

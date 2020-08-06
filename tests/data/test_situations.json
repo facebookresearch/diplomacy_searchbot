@@ -1,0 +1,10 @@
+{
+    "opening": {
+        "game_path": "tests/data/selfplay_games/game_AUS.697.json",
+        "phase": "S1901M",
+        "tests": {
+          "RUS should open BLA": "lambda r: order_prob(r, 'F SEV - BLA') > 0.9",
+          "TUR should open BLA": "lambda r: order_prob(r, 'F ANK - BLA') > 0.9"
+        }
+    }
+}
