@@ -346,6 +346,35 @@ def get_valid_report_path(sweep_name, TEACHER):
     return VALID_REPORT_SAVE_PATH, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH
 
 
+def process_game_json(game_json_path, special_tokens_map=None, with_special_token=None):
+    """
+    process the game.jsons to the format used by ParlAI teacher
+    for usage in interactive evaluation.
+    Note: if the format used in tasks.dialogue_and_state_stream.agents changes,
+    the format here should also change accordingly.
+    """
+    raw_order = load_order_data(order_path=game_json_path)
+    processed_input_seqs = {}
+    for game_id in tqdm(raw_order):
+        # set up game
+        processed_input_seqs[game_id] = {}
+        for phase in raw_order[game_id]:
+            # set up phase
+            if phase != "is_partial" and phase != "partial":
+                processed_input_seqs[game_id][phase] = {}
+                state = flatten_state(
+                    raw_order[game_id][phase]["state"], special_tokens_map, with_special_token
+                )
+                for speaker_id, speaker in COUNTRY_ID_TO_POWER.items():
+                    # set up speaker
+                    # the prompt format is from _get_player_prompt_token in tasks.dialogue_and_state_stream.agents
+                    player_prompt_token = f"{phase} {speaker.capitalize()}:"
+                    input_seq = f"{state} {player_prompt_token}"
+                    processed_input_seqs[game_id][phase][speaker.capitalize()] = input_seq
+
+    return processed_input_seqs
+
+
 def convert_test_results(sweep_name, TEACHER, return_data=False):
     _, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH = get_valid_report_path(
         sweep_name, TEACHER
@@ -463,14 +492,14 @@ def load_data():
     return total_data
 
 
-def load_order_data(opt):
+def load_order_data(opt=None, order_path=ORDER_PATH):
     total_data = {}
-    tot = len(glob(ORDER_PATH))
-    print(f"[ Loading order data from path {ORDER_PATH}, {tot} games in total ... ]")
-    if opt["debug"]:
-        files = glob(ORDER_PATH)[: opt["debug_game_size"]]
+    tot = len(glob(order_path))
+    print(f"[ Loading order data from path {order_path}, {tot} games in total ... ]")
+    if opt and opt.get("debug") is True:
+        files = glob(order_path)[: opt.get("debug_game_size")]
     else:
-        files = glob(ORDER_PATH)
+        files = glob(order_path)
     for i, fle in enumerate(tqdm(files)):
         with open(fle, "r") as f:
             game_id = int(re.search("game_(.*).json", fle, re.IGNORECASE).group(1))
@@ -1055,11 +1084,11 @@ class MessageOrderDataIterator:
     ):
         self.opt = deepcopy(opt)
         # listener only, speaker only, both sides
-        self.include_message_from = opt["include_message_from"]
+        self.include_message_from = opt.get("include_message_from")
         # if the joined json exists, should we overwrite it?
-        self.overwrite_joined_json = opt["overwrite_joined_json"]
+        self.overwrite_joined_json = opt.get("overwrite_joined_json")
         # the saved joined json will contain "A" or "__A__"
-        self.with_special_token = self.opt["with_special_token"]
+        self.with_special_token = opt.get("with_special_token")
 
         # load special tokens
         self._load_special_tokens()
@@ -1105,10 +1134,10 @@ class MessageOrderDataIterator:
             logging.info(f"[ Loading finished, took {(time2-time1)/60} mins ...]")
         else:
             if not os.path.exists(json_dir):
-                if self.opt["debug"]:
+                if self.opt.get("debug"):
                     confirm_save_debug_data = input(
                         f"It seems you are in debug mode, and trying to build and"
-                        f"save the data (you will only save {self.opt['debug_game_size']} games in {json_dir})? "
+                        f"save the data (you will only save {self.opt.get('debug_game_size')} games in {json_dir})? "
                         f"Are you sure? [Y/y] for YES, anything else for NO"
                     )
                     confirm_save_debug_data = confirm_save_debug_data in ["Y", "y"]
@@ -1136,11 +1165,11 @@ class MessageOrderDataIterator:
 
     def _load_joined_json(self, dump_path):
         each_dump_contains = TOTAL_GAMES // DATA_SPLIT_INTO
-        how_many_dumps_to_load = self.opt["debug_game_size"] // each_dump_contains + 1
+        how_many_dumps_to_load = self.opt.get("debug_game_size") // each_dump_contains + 1
 
         dump_json_path = os.path.join(dump_path, "*.json")
         dump_json_paths = glob(dump_json_path)
-        if self.opt["debug"]:
+        if self.opt.get("debug"):
             files = dump_json_paths[:how_many_dumps_to_load]
         else:
             files = dump_json_paths
