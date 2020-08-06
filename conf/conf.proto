@@ -298,13 +298,16 @@ message TestTask {
 }
 
 message ExploitTask {
-  // DipNet ckpt to initialize both blueprint and explout agents.
+  // Required. DipNet ckpt to initialize both the blueprint and the training
+  // agents. Use `reset_agent_weights` to train the agent from scratch.
   optional string model_path = 1;
 
   // Weight of critic loss in total loss.
   optional float critic_weight = 2 [ default = 1.0 ];
   // Weight of entropy loss in total loss.
   optional float entropy_weight = 3 [ default = 0.0 ];
+  // Weight of surrogate entropy loss that should push action-level entropy up.
+  optional float sampled_entropy_weight = 10;
 
   // Reward discounting.
   optional float discounting = 7 [ default = 1.0 ];
@@ -312,7 +315,6 @@ message ExploitTask {
   // Optional. If set, weights of the exploit agent will be randomly
   // initialized.
   optional bool reset_agent_weights = 8;
-
   message Optimizer {
     // Required. Learning rate for Adam.
     optional float lr = 1;
@@ -328,7 +330,8 @@ message ExploitTask {
     // Optional. How many parallel games to batch within single rollout.
     optional int32 rollout_batch_size = 2 [ default = 1 ];
 
-    // Optional. How many rollout proccesses to run.
+    // Optional. How many rollout proccesses to run. If zero or negative, will
+    // run rollouts in the main process.
     optional int32 num_rollout_processes = 4 [ default = 1 ];
 
     // Optional. If set, will save games with this stride.
@@ -374,6 +377,7 @@ message ExploitTask {
       // 1 -> FRA, ENG, GER vs all.
       // 2 -> FRA, ENG, GER, IT vs all.
       // 3 -> FRA, ENG, RUS vs all.
+      // 4 -> FRA vs all.
       optional int32 alliance_type = 4;
     }
 
@@ -393,6 +397,18 @@ message ExploitTask {
 
     // Optional. If set, will stop rollout once the explout agent/agents is out.
     optional bool fast_finish = 17;
+
+    message LateGameConditions {
+      // Minimal number of SC of top2 players to switch to RL.
+      optional int32 min_top2_scs = 1;
+    };
+
+    // Optional. If provided, rollouts and evals with start from these games.
+    // The file is expected to contain pathes to game.jsons one per line.
+    optional string initial_games_index_file = 18;
+
+    // Optional. If set, will use only cores 10-79 for rollout processes.
+    optional bool set_affinity = 19;
   }
 
   optional Rollout rollout = 5;

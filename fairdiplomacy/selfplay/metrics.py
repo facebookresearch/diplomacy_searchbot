@@ -122,6 +122,17 @@ class FractionCounter:
         return self.numerator / max(self.denominator, 1e-6)
 
 
+class SumCounter:
+    def __init__(self):
+        self.accumulated = 0.0
+
+    def update(self, value):
+        self.accumulated += value
+
+    def value(self):
+        return self.accumulated
+
+
 class MaxCounter:
     def __init__(self, default=0):
         self._value = default

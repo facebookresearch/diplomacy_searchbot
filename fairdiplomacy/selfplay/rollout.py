@@ -1,14 +1,16 @@
 from typing import Generator, List, Optional, Tuple, Sequence
 import collections
 import enum
+import json
 import faulthandler
+import functools
 import itertools
 import logging
 import multiprocessing as mp
-import functools
-import signal
 import os
+import signal
 
+import numpy as np
 import torch
 
 import postman
@@ -39,7 +41,7 @@ class RolloutMode(enum.Enum):
 
 
 ExploitRollout = collections.namedtuple(
-    "ExploitRollout", "power_id, game_json, actions, logprobs, observations"
+    "ExploitRollout", "power_id, game_json, actions, logprobs, observations, first_phase"
 )
 
 
@@ -204,13 +206,13 @@ def yield_rollouts(
     *,
     exploit_hostports: Sequence[str],
     blueprint_hostports: Optional[Sequence[str]],
-    game_json,
+    game_json_paths: Optional[Sequence[str]],
     mode: RolloutMode,
     fast_finish: bool = False,
     temperature=0.05,
     max_rollout_length=40,
     batch_size=1,
-    initial_power_index=0,
+    seed=0,
 ) -> Generator[ExploitRollout, None, None]:
     """Do non-stop rollout for 1 (exploit) vs 6 (blueprint).
 
@@ -221,14 +223,13 @@ def yield_rollouts(
         agents that is training.
     - blueprint_hostports: list of "{host}:{port}" of model servers for the
         agents that is exploited. Ignored in SELFPLAY model
-    - game_json: json-formatted game, e.g. output of to_saved_game_format(game)
+    - game_jsons: either None or a list of paths to json-serialized games.
     - mode: what kind of rollout to do. Defiens what will be outputed.
     - fast_finish: if True, the rollout is stopped once all non-blueprint agents lost.
     - temperature: model softmax temperature for rollout policy on the blueprint agent.
     - max_rollout_length: return SC count after at most # steps
     - batch_size: rollout # of games in parallel
-    - initial_power_index: index of the country in POWERS to start the
-        rollout with. Then will do round robin over all countries.
+    - seed: random seed.
 
     yields a ExploitRollout.
 
@@ -252,8 +253,24 @@ def yield_rollouts(
     torch.set_num_threads(1)
 
     exploit_power_selector = itertools.cycle(tuple(range(len(POWERS))))
-    for _ in range(initial_power_index):
+    for _ in range(seed % len(POWERS)):
         next(exploit_power_selector)
+
+    def yield_game():
+        nonlocal game_json_paths
+        nonlocal seed
+
+        while True:
+            if game_json_paths is None:
+                yield Game()
+            else:
+                rng = np.random.RandomState(seed=seed)
+                p = game_json_paths[rng.choice(len(game_json_paths))]
+                with open(p) as stream:
+                    game_serialized = json.load(stream)
+                yield Game.from_saved_game_format(game_serialized)
+
+    game_selector = yield_game()
 
     for exploit_power_id in exploit_power_selector:
         if mode == RolloutMode.SELFPLAY:
@@ -264,7 +281,8 @@ def yield_rollouts(
             exploit_ids = frozenset([exploit_power_id])
 
         with timings("setup"):
-            games = [Game.from_saved_game_format(game_json) for _ in range(batch_size)]
+            games = [next(game_selector) for _ in range(batch_size)]
+            first_phases = [len(game.order_history) for game in games]
             turn_idx = 0
             observations = {i: [] for i in range(batch_size)}
             actions = {i: [] for i in range(batch_size)}
@@ -370,6 +388,7 @@ def yield_rollouts(
                         actions=torch.stack([x[power_id] for x in actions[i]], 0),
                         logprobs=torch.stack([x[power_id] for x in logprobs[i]], 0),
                         observations=extended_obs,
+                        first_phase=first_phases[i],
                     )
             else:
                 extended_obs = DataFields.stack(observations[i])
@@ -380,4 +399,5 @@ def yield_rollouts(
                     actions=torch.stack(actions[i], 0),
                     logprobs=torch.stack(logprobs[i], 0),
                     observations=extended_obs,
+                    first_phase=first_phases[i],
                 )

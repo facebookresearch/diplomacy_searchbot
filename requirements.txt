@@ -7,6 +7,7 @@ nose
 pandas
 parameterized
 parlai
+psutil
 pre-commit
 tabulate
 tensorboard

@@ -1,7 +1,8 @@
-from typing import Dict, Generator, Optional, Tuple, Sequence
+from typing import Dict, Generator, Optional, Tuple, Sequence, List
 import collections
 import itertools
 import json
+import glob
 import logging
 import multiprocessing as mp
 import os
@@ -9,6 +10,7 @@ import pathlib
 import queue as queue_lib
 
 from google.protobuf.json_format import MessageToDict
+import psutil
 import torch
 import torch.utils.tensorboard
 
@@ -34,6 +36,7 @@ QUEUE_PUT_TIMEOUT = 1.0
 
 
 ScoreDict = Dict[str, float]
+ScoreDictPerPower = Dict[Optional[str], ScoreDict]
 
 
 RolloutBatch = collections.namedtuple(
@@ -50,13 +53,15 @@ def get_ckpt_sync_dir():
         return "ckpt_syncer/ckpt"
 
 
-def yield_rewarded_rollouts(reward_kwargs, rollout_kwargs, output_games):
+def yield_rewarded_rollouts(reward_kwargs, rollout_kwargs, output_games: bool):
     for item in yield_rollouts(**rollout_kwargs):
         game_json = item.game_json if output_games else None
         yield (rollout_to_batch(item, reward_kwargs), game_json)
 
 
-def queue_rollouts(out_queue: mp.Queue, reward_kwargs, rollout_kwargs, output_games=False) -> None:
+def queue_rollouts(
+    out_queue: mp.Queue, reward_kwargs, rollout_kwargs, output_games: bool = False
+) -> None:
     """A rollout worker function to push RolloutBatch's into the queue."""
     try:
         for item in yield_rewarded_rollouts(reward_kwargs, rollout_kwargs, output_games):
@@ -125,6 +130,10 @@ def build_alliance_map(alliance_type: int) -> torch.Tensor:
         return groups_to_map(
             ["ENGLAND", "FRANCE", "RUSSIA"], ["AUSTRIA", "GERMANY", "ITALY", "TURKEY"],
         )
+    if alliance_type == 4:
+        return groups_to_map(
+            ["FRANCE"], ["ENGLAND", "RUSSIA", "AUSTRIA", "GERMANY", "ITALY", "TURKEY"],
+        )
     raise ValueError(f"Unknown alliance group: {alliance_type}")
 
 
@@ -159,13 +168,18 @@ def compute_reward(
         rewards = torch.mv(per_power_rewards, alliance_map[rollout.power_id])
     if delay_penalty:
         rewards -= delay_penalty
+    if rollout.first_phase:
+        # Nobody cares.
+        rewards = rewards[rollout.first_phase :]
     return rewards
 
 
 def rollout_to_batch(
     rollout: ExploitRollout, reward_kwargs: Dict,
 ) -> Tuple[RolloutBatch, ScoreDict]:
-    assert len(rollout.game_json["phases"]) == len(rollout.actions) + 1, (
+    # In case rollout started from an existing game.
+    offset = rollout.first_phase
+    assert len(rollout.game_json["phases"]) == len(rollout.actions) + 1 + offset, (
         len(rollout.game_json["phases"]),
         len(rollout.actions),
     )
@@ -200,6 +214,12 @@ def get_default_rollout_scores() -> ScoreDict:
     return scores
 
 
+def get_default_rollout_scores_per_power() -> ScoreDictPerPower:
+    return {
+        power_id: get_default_rollout_scores() for power_id in [None] + list(range(len(POWERS)))
+    }
+
+
 def _join_batches(batches: Sequence[RolloutBatch]) -> RolloutBatch:
     merged = {}
     for k in RolloutBatch._fields:
@@ -224,21 +244,21 @@ class Evaler:
         blueprint_hostports,
         exploit_hostports,
         temperature,
+        set_affinity,
+        game_json_paths: Optional[Sequence[str]],
         max_length=100,
     ):
         self.model_path = model_path
-
-        game_json = Game().to_saved_game_format()
 
         def _build_rollout_kwargs(proc_id):
             return dict(
                 reward_kwargs=MessageToDict(reward_cfg, preserving_proto_field_name=True),
                 rollout_kwargs=dict(
                     mode=RolloutMode.EVAL,
-                    initial_power_index=(proc_id % len(POWERS)),
+                    seed=proc_id,
                     blueprint_hostports=blueprint_hostports,
                     exploit_hostports=exploit_hostports,
-                    game_json=game_json,
+                    game_json_paths=game_json_paths,
                     temperature=temperature,
                     max_rollout_length=max_length,
                     batch_size=1,
@@ -260,6 +280,10 @@ class Evaler:
         logging.info("Starting eval rollout workers")
         for p in self.procs:
             p.start()
+        if set_affinity:
+            logging.info("Setting affinities")
+            for p in self.procs:
+                psutil.Process(p.pid).cpu_affinity(tuple(range(10, 80)))
         logging.info("Done")
 
     def extract_scores(self) -> ScoreDict:
@@ -274,7 +298,8 @@ class Evaler:
             for k, v in scores.items():
                 aggregated_scores[k] += v
         for k in list(aggregated_scores):
-            aggregated_scores[k] /= max(1, aggregated_scores["num_games"])
+            if k != "num_games":
+                aggregated_scores[k] /= max(1, aggregated_scores["num_games"])
         del aggregated_scores["queue_size"]
         return aggregated_scores
 
@@ -300,6 +325,17 @@ class DataLoader:
         self.rollout_cfg = rollout_cfg
 
         mp.set_start_method("spawn")
+
+        if rollout_cfg.initial_games_index_file:
+            self._game_json_paths = []
+            with open(rollout_cfg.initial_games_index_file) as stream:
+                for line in stream:
+                    line = line.strip()
+                    if line:
+                        self._game_json_paths.append(line)
+            assert self._game_json_paths, rollout_cfg.game_json_paths
+        else:
+            self._game_json_paths = None
 
         self._start_inference_procs()
         self._start_rollout_procs()
@@ -361,7 +397,6 @@ class DataLoader:
         self.exploit_hostports = exploit_inference_pool.hostports
 
     def _start_rollout_procs(self):
-        game_json = Game().to_saved_game_format()
         rollout_cfg = self.rollout_cfg
 
         def _build_rollout_kwargs(proc_id):
@@ -374,11 +409,11 @@ class DataLoader:
                 reward_kwargs=MessageToDict(rollout_cfg.reward, preserving_proto_field_name=True),
                 rollout_kwargs=dict(
                     mode=mode,
-                    initial_power_index=(proc_id % len(POWERS)),
+                    seed=proc_id,
                     blueprint_hostports=self.blueprint_hostports,
                     exploit_hostports=self.exploit_hostports,
                     temperature=rollout_cfg.blueprint_temperature,
-                    game_json=game_json,
+                    game_json_paths=self._game_json_paths,
                     max_rollout_length=rollout_cfg.rollout_max_length,
                     batch_size=rollout_cfg.rollout_batch_size,
                     fast_finish=rollout_cfg.fast_finish,
@@ -402,6 +437,10 @@ class DataLoader:
             logging.info("Starting rollout workers")
             for p in procs:
                 p.start()
+            if rollout_cfg.set_affinity:
+                logging.info("Setting affinities")
+                for p in procs:
+                    psutil.Process(p.pid).cpu_affinity(tuple(range(10, 80)))
             logging.info("Done")
             rollout_generator = (queue.get() for _ in itertools.count())
             # Keeping track of there to prevent garbage collection.
@@ -425,6 +464,8 @@ class DataLoader:
                 blueprint_hostports=self.blueprint_hostports,
                 exploit_hostports=self.exploit_hostports,
                 temperature=self.rollout_cfg.blueprint_temperature,
+                game_json_paths=self._game_json_paths,
+                set_affinity=self.rollout_cfg.set_affinity,
             )
 
     def extract_eval_scores(self) -> Optional[ScoreDict]:
@@ -446,18 +487,20 @@ class DataLoader:
         self.blueprint_inference_pool.terminate()
         self.exploit_inference_pool.terminate()
 
-    def _yield_batches(self) -> Generator[Tuple[RolloutBatch, ScoreDict], None, None]:
+    def _yield_batches(self) -> Generator[Tuple[RolloutBatch, ScoreDictPerPower], None, None]:
         rollout_cfg = self.rollout_cfg
         accumulated_batches = []
-        aggregated_scores = get_default_rollout_scores()
+        aggregated_scores = get_default_rollout_scores_per_power()
         size = 0
         batch_size = rollout_cfg.batch_size
         for rollout_id in itertools.count():
             rollout: RolloutBatch
             scores: ScoreDict
             (rollout, scores), game_json = next(self.rollout_iterator)
+            power_id = rollout.power_ids[
+                0
+            ].item()  # Somewhat a hack - we know all power ids are the same.
             if rollout_cfg.dump_games_every and rollout_id % rollout_cfg.dump_games_every == 0:
-                power_id = rollout.power_ids[0].item()
                 game_dump_folder = pathlib.Path(f"dumped_games")
                 game_dump_folder.mkdir(exist_ok=True, parents=True)
                 dump_path = game_dump_folder / f"game.{POWERS[power_id]}.{rollout_id:06d}.json"
@@ -467,13 +510,14 @@ class DataLoader:
             size += len(rollout.rewards)
             accumulated_batches.append(rollout)
             for k, v in scores.items():
-                aggregated_scores[k] += v
+                aggregated_scores[power_id][k] += v
+                aggregated_scores[None][k] += v
             if rollout_cfg.do_not_split_rollouts:
                 if size >= batch_size:
                     yield _join_batches(accumulated_batches), aggregated_scores
                     # Reset.
                     accumulated_batches = []
-                    aggregated_scores = get_default_rollout_scores()
+                    aggregated_scores = get_default_rollout_scores_per_power()
                     size = 0
             elif size > batch_size:
                 # Use strict > to simplify the code.
@@ -488,12 +532,12 @@ class DataLoader:
                     size -= batch_size - rollout_cfg.batch_interleave_size
                     if self.queue is not None:
                         # Hack. We want queue size to be the size of the queue when batch is produced.
-                        aggregated_scores["queue_size"] = (
-                            self.queue.qsize() * aggregated_scores["num_games"]
+                        aggregated_scores[None]["queue_size"] = (
+                            self.queue.qsize() * aggregated_scores[None]["num_games"]
                         )
                     yield extracted_batch, aggregated_scores
                     # Reset.
-                    aggregated_scores = get_default_rollout_scores()
+                    aggregated_scores = get_default_rollout_scores_per_power()
                 accumulated_batches = [joined_batch]
 
     def get_batch(self) -> Tuple[RolloutBatch, ScoreDict]:
