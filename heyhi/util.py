@@ -58,6 +58,10 @@ def is_aws():
     return "S3_SHARED" in os.environ
 
 
+def is_devfair():
+    return os.uname()[1].startswith("devfair")
+
+
 def requeue_myself():
     job_id = get_slurm_job_id()
     logging.warning("Requeuing job %s", job_id)
@@ -159,6 +163,8 @@ def log_git_status():
 
 
 def _get_all_runing_job_ids(user_only: bool = False) -> FrozenSet[str]:
+    if "CIRCLECI" in os.environ:
+        return frozenset([])
     cmd = ["squeue", "-r", "-h", "-o", "%i"]
     if user_only:
         cmd.extend(["-u", os.environ["USER"]])
@@ -235,7 +241,7 @@ class ExperimentDir:
                 logging.warning("Experiment folder without job_id file: %s", self.exp_path)
             return Status.NOT_STARTED
         maybe_jobid = self.maybe_get_job_id()
-        if maybe_jobid in get_all_runing_job_ids():
+        if maybe_jobid is not None and maybe_jobid in get_all_runing_job_ids():
             return Status.RUNNING
         if self.result_path.exists():
             return Status.DONE
@@ -322,6 +328,7 @@ def _get_overrides_tags(overrides: Sequence[str]) -> Tuple[str, str]:
         if "/" in value:
             # For paths, use the last 2 components.
             value = "_".join(value.split("/")[-2:])
+        value = value.replace(" ", "_")
         parsed_overrides.append(f"{key}{DELIMETER}{value}")
     override_tag = DELIMETER.join(parsed_overrides)[:MAX_OVERRIDE_LEN]
     if not override_tag:
@@ -357,7 +364,7 @@ def get_exp_id(
     return exp_id_pattern % tags
 
 
-def handle_dst(exp_handle, mode: ModeType) -> bool:
+def handle_dst(exp_handle, mode: ModeType, force: bool = False) -> bool:
     """Creates/recreates a ExperimentDir and checks whether an action is needed.
 
     If mode is:
@@ -368,6 +375,8 @@ def handle_dst(exp_handle, mode: ModeType) -> bool:
           DEAD.
         - restart, set need_run to True, and kill the job if running.
         - dryrun, set need_run to False.
+
+    If force is True, no warning are issues before wiping.
 
     Returns a pair (ExperimentDir, need_run).
     """
@@ -381,13 +390,13 @@ def handle_dst(exp_handle, mode: ModeType) -> bool:
             logging.info("Running or done. Status: %s", exp_handle.get_status())
             need_run = False
         elif not exp_handle.is_done():
-            exp_handle.kill_and_prune(silent=False)
+            exp_handle.kill_and_prune(silent=force)
     elif mode == "start_continue":
         if exp_handle.is_running() or exp_handle.is_done():
             logging.info("Running or done. Status: %s", exp_handle.get_status())
             need_run = False
     elif mode == "restart":
-        exp_handle.kill_and_prune(silent=False)
+        exp_handle.kill_and_prune(silent=force)
     elif mode == "dryrun":
         logging.info("Dry run, not starting anything")
         need_run = False

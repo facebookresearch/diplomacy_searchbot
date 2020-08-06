@@ -122,7 +122,7 @@ TODO(yolo): explain non-adhoc runs and --mode.
 TODO(yolo): explain sweeps/group runs.
 TODO(yolo): explain export to google-sheet.
 """
-from typing import Callable, Sequence
+from typing import Callable, Sequence, Optional
 import argparse
 import logging
 import os
@@ -170,6 +170,9 @@ def parse_args_and_maybe_launch(main: Callable) -> None:
     parser.add_argument("-c", "--cfg", required=True, type=pathlib.Path)
     parser.add_argument("--adhoc", action="store_true")
     parser.add_argument(
+        "--force", action="store_true", help="Do not ask confirmation in restart mode"
+    )
+    parser.add_argument(
         "--mode",
         choices=util.MODES,
         default="gentle_start",
@@ -189,12 +192,14 @@ def parse_args_and_maybe_launch(main: Callable) -> None:
 
 def maybe_launch(
     main: Callable,
-    exp_root: pathlib.Path,
+    *,
+    exp_root: Optional[pathlib.Path],
     overrides: Sequence[str],
     cfg: pathlib.Path,
     mode: util.ModeType,
     adhoc: bool = False,
     exp_id_pattern_override=None,
+    force: bool = False,
 ) -> util.ExperimentDir:
     """Computes the task locally or remotely if neeeded in the mode.
 
@@ -205,7 +210,7 @@ def maybe_launch(
     may kill the job, wipe the exp_handle, start a computation or do none of
     this.
 
-    See handle_dst() for how the modes are handled.
+    See handle_dst() for how the modes and force are handled.
 
     The computation may run locally or on the cluster depending on the
     launcher config section. In both ways main(cfg) with me executed with the
@@ -215,9 +220,12 @@ def maybe_launch(
     logging.info("Config: %s", cfg)
     logging.info("Overrides: %s", overrides)
 
+    if exp_root is None:
+        exp_root = get_exp_dir(PROJECT_NAME)
+
     exp_id = util.get_exp_id(cfg, overrides, adhoc, exp_id_pattern=exp_id_pattern_override)
     exp_handle = util.ExperimentDir(exp_root / exp_id, exp_id=exp_id)
-    need_run = util.handle_dst(exp_handle, mode,)
+    need_run = util.handle_dst(exp_handle, mode, force=force)
     logging.info("Exp dir: %s", exp_handle.exp_path)
     logging.info("Job status [before run]: %s", exp_handle.get_status())
     if need_run:

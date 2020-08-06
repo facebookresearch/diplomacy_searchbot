@@ -2,6 +2,7 @@
 from typing import Any, Dict, Optional, Sequence, Tuple
 import logging
 import pathlib
+import re
 
 import google.protobuf.text_format
 
@@ -10,6 +11,7 @@ import conf.conf_pb2
 ProtoMessage = Any
 
 CONF_ROOT = pathlib.Path(conf.conf_pb2.__file__).parent
+PROJ_ROOT = pathlib.Path(__file__).parent.parent
 EXT = ".prototxt"
 INCLUDE_KEY = "I"
 
@@ -150,6 +152,7 @@ def _apply_scalar_override(cfg: ProtoMessage, mount: str, value: str) -> None:
 def _parse_text_proto_into(path, msg):
     with path.open() as stream:
         proto_text = stream.read()
+    proto_text = re.sub(r"\{\{ *ROOT_DIR *\}\}", str(PROJ_ROOT), proto_text)
     try:
         google.protobuf.text_format.Merge(proto_text, msg)
     except google.protobuf.text_format.ParseError:
