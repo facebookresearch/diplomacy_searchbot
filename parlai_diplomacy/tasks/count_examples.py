@@ -9,7 +9,7 @@ Simple script for iterating through the chunk data to count examples.
 Committing here as an example for iterating/performing analysis on this data
 """
 import parlai_diplomacy.tasks.common_task_utils as utls
-from parlai_diplomacy.tasks.dialogue_and_state_stream.agents import TRAIN_VAL_SPLIT
+from parlai_diplomacy.tasks.no_press.stream.agents import TRAIN_VAL_SPLIT
 from parlai.utils import logging
 
 from glob import glob

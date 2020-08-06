@@ -16,7 +16,9 @@ def register_all_agents():
 
 def register_all_tasks():
     # list all tasks here
-    import parlai_diplomacy.tasks.dialogue_only.agents  # noqa: F401
-    import parlai_diplomacy.tasks.dialogue_and_state.agents  # noqa: F401
-    import parlai_diplomacy.tasks.dialogue_and_state_stream.agents  # noqa: F401
+    import parlai_diplomacy.tasks.dialogue.agents  # noqa: F401
+    import parlai_diplomacy.tasks.full_press.listener.regular.agents  # noqa: F401
+    import parlai_diplomacy.tasks.full_press.listener.stream.agents  # noqa: F401
+    import parlai_diplomacy.tasks.no_press.stream.agents  # noqa: F401
+    import parlai_diplomacy.tasks.no_press.regular.agents  # noqa: F401
     import parlai_diplomacy.tasks.new_reddit.agents  # noqa: F401

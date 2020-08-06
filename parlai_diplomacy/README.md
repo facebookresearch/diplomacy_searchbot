@@ -86,7 +86,7 @@ This is a model that was not trained for very long (DO NOT USE FOR ANYTHING ELSE
 
 **400M**
 ```
-parlai interactive -mf /checkpoint/edinan/20200629/diplomacy_basic_baseline/3db/model --skip-generation False --inference beam --beam-size 10 --beam-min-length 15 --beam-block-ngram 3 --beam-context-block-ngram 3
+python scripts/interactive.py -mf /checkpoint/edinan/20200629/diplomacy_basic_baseline/3db/model --skip-generation False --inference beam --beam-size 10 --beam-min-length 15 --beam-block-ngram 3 --beam-context-block-ngram 3
 ```
 
 Note the `--skip-generation False` above: this is important as by default we skip generation during training for speed.
