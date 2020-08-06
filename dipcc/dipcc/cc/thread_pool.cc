@@ -37,12 +37,19 @@ void ThreadPool::process_multi(vector<Game *> &games) {
          "ThreadPool::process_multi called with non-empty jobs_");
 
   // Pack games into n_threads jobs
-  int n_threads = threads_.size();
+  int n_threads = threads_.size() > 0 ? threads_.size() : 1;
   for (int i = 0; i < n_threads; ++i) {
     jobs_.push_back(ThreadPoolJob(ThreadPoolJobType::STEP));
   }
   for (int i = 0; i < games.size(); ++i) {
     jobs_[i % n_threads].games.push_back(games[i]);
+  }
+
+  // maybe handle in-thread
+  if (threads_.size() == 0) {
+    thread_fn_do_job_unsafe(jobs_[0]);
+    jobs_.clear();
+    return;
   }
 
   // Notify and wait for worker threads
@@ -67,7 +74,7 @@ void ThreadPool::encode_inputs_multi(
          "ThreadPool::encode_inputs_multi array sizes not equal");
 
   // Pack games into n_threads jobs
-  int n_threads = threads_.size();
+  int n_threads = threads_.size() > 0 ? threads_.size() : 1;
   for (int i = 0; i < n_threads; ++i) {
     jobs_.push_back(ThreadPoolJob(ThreadPoolJobType::ENCODE));
   }
@@ -78,6 +85,13 @@ void ThreadPool::encode_inputs_multi(
                               x_prev_orders[i], x_season[i], x_in_adj_phase[i],
                               x_build_numbers[i], x_loc_idxs[i],
                               x_possible_actions[i], x_max_seq_len[i]});
+  }
+
+  // maybe handle in-thread
+  if (threads_.size() == 0) {
+    thread_fn_do_job_unsafe(jobs_[0]);
+    jobs_.clear();
+    return;
   }
 
   // Notify and wait for worker threads
@@ -103,19 +117,8 @@ void ThreadPool::thread_fn() {
       jobs_.pop_back();
     }
 
-    try {
-      // Do the job
-      if (job.job_type == ThreadPoolJobType::STEP) {
-        do_job_step(job);
-      } else if (job.job_type == ThreadPoolJobType::ENCODE) {
-        do_job_encode(job);
-      } else {
-        JCHECK(false, "ThreadPoolJobType Not Implemented");
-      }
-    } catch (const std::exception &e) {
-      LOG(ERROR) << "Worker thread exception: " << e.what();
-      throw e;
-    }
+    // Do the job
+    thread_fn_do_job_unsafe(job);
 
     // Notify done (locked critical section)
     {
@@ -125,6 +128,22 @@ void ThreadPool::thread_fn() {
         cv_out_.notify_all();
       }
     }
+  }
+}
+
+void ThreadPool::thread_fn_do_job_unsafe(ThreadPoolJob &job) {
+  try {
+    // Do the job
+    if (job.job_type == ThreadPoolJobType::STEP) {
+      do_job_step(job);
+    } else if (job.job_type == ThreadPoolJobType::ENCODE) {
+      do_job_encode(job);
+    } else {
+      JCHECK(false, "ThreadPoolJobType Not Implemented");
+    }
+  } catch (const std::exception &e) {
+    LOG(ERROR) << "Worker thread exception: " << e.what();
+    throw e;
   }
 }
 

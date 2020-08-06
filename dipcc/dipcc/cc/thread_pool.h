@@ -70,6 +70,9 @@ private:
   // Worker thread entrypoint function
   void thread_fn();
 
+  // Top-level job handler
+  void thread_fn_do_job_unsafe(ThreadPoolJob &);
+
   // Job handler methods
   void do_job_step(ThreadPoolJob &);
   void do_job_encode(ThreadPoolJob &);
