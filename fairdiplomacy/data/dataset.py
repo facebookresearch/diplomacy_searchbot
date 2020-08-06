@@ -18,7 +18,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     EOS_IDX,
 )
 
-from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
+from fairdiplomacy.utils.game_scoring import compute_game_scores, compute_game_scores_from_state
 from fairdiplomacy.utils.sampling import sample_p_dict
 from fairdiplomacy.utils.tensorlist import TensorList
 
@@ -747,7 +747,14 @@ def encode_weighted_sos_scores(game, phase_idx, value_decay_alpha):
         weight *= value_decay_alpha
 
     # fill in remaining weight with final score
-    y_final_scores[0, :] += remaining * sq_scores
+    saved_game = game.to_saved_game_format()
+    final_sq_scores = torch.FloatTensor(
+        [
+            compute_game_scores(p, saved_game).square_score
+            for p in range(len(POWERS))
+        ]
+    )
+    y_final_scores[0, :] += remaining * final_sq_scores
 
     return y_final_scores
 
