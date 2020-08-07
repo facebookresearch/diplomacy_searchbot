@@ -41,6 +41,10 @@ class CFR1PAgent(ThreadedSearchAgent):
         reset_seed_on_rollout=False,
         loser_bp_value=0.0,
         loser_bp_iter=64,
+        n_gpu=None,  # deprecated
+        n_server_procs=None,  # deprecated
+        postman_sync_batches=None,  # deprecated
+        use_predicted_final_scores=None,  # deprecated
         **kwargs,
     ):
         super().__init__(**kwargs, n_rollout_procs=n_rollout_procs, max_batch_size=max_batch_size)
