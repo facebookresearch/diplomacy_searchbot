@@ -201,15 +201,18 @@ class ThreadedSearchAgent(BaseSearchAgent):
                             self.mix_square_ratio_scoring * current_scores[pi]
                         )
 
-        timings.pprint(logging.getLogger("timings").info)
-
         with timings("final_scores.average"):
-            return [
+            r = [
                 (set_orders_dict, average_score_dicts(scores_dicts))
                 for set_orders_dict, scores_dicts in zip(
                     set_orders_dicts, groups_of(final_game_scores, average_n_rollouts)
                 )
             ]
+
+        if log_timings:
+            timings.pprint(logging.getLogger("timings").info)
+
+        return r
 
     @classmethod
     def cat_pad_inputs(cls, xs: List[DataFields]) -> DataFields:
