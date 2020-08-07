@@ -24,7 +24,9 @@ else
     pip install submitit
 fi
 pip install -e ./thirdparty/github/fairinternal/postman/nest/
-pip install -e ./thirdparty/github/fairinternal/postman/postman/
+if [ -z "$CIRCLECI" ]; then
+    pip install -e ./thirdparty/github/fairinternal/postman/postman/
+fi
 pip install -e ./thirdparty/github/diplomacy/diplomacy
 pip install -e ./dipcc
 pip install -e . -vv

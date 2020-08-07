@@ -24,7 +24,7 @@ jobs:
           apt-get install --yes git wget cmake build-essential autoconf libtool pkg-config libgoogle-glog-dev
       - restore_cache:
           keys:
-            - v04-postman-{{ checksum ".git/modules/thirdparty/github/fairinternal/postman/HEAD" }}
+            - v05-postman-{{ checksum ".git/modules/thirdparty/github/fairinternal/postman/HEAD" }}
       - add_ssh_keys:
           fingerprints:
             - "05:84:7d:43:05:8c:67:31:c2:4c:9f:0c:29:0a:a2:56"
@@ -35,7 +35,6 @@ jobs:
            . /opt/conda/etc/profile.d/conda.sh
 
            set -x
-
            conda create --yes -n diplomacy python=3.7
            source activate diplomacy
 
@@ -48,23 +47,26 @@ jobs:
            pip install -r requirements.txt --progress-bar off
            conda install protobuf --yes
 
-           # if ! ls /postman/postman*.whl; then
+           if ! ls /postman/postman*.whl; then
              echo "Need full postman install"
              git submodule update --recursive
              pushd thirdparty/github/fairinternal/postman/
              make compile_slow
-           #  make build_wheel
-           #  rm -rf /postman
-           #  mkdir /postman
-           #  cp -v postman/dist/*whl /postman/
+             make build_wheel
+             rm -rf /postman
+             mkdir /postman
+             cp -v postman/dist/*whl /postman/
+             cp -v postman/python/postman/rpc*so /postman/
              popd
-           # fi
-           # pip install /postman/postman*.whl
+           fi
+           pip install /postman/postman*.whl
+           # Due to a bug postman wheel doesn't contain .so. So installing it manually.
+           cp /postman/*.so $CONDA_PREFIX/lib/python3.*/site-packages/postman
            N_DIPCC_JOBS=8 make deps all
            pip install -U protobuf
 
       - save_cache:
-          key: v04-postman-{{ checksum ".git/modules/thirdparty/github/fairinternal/postman/HEAD" }}
+          key: v05-postman-{{ checksum ".git/modules/thirdparty/github/fairinternal/postman/HEAD" }}
           paths: /postman
       - run:
          name: "Hello world"
