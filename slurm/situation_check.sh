@@ -42,7 +42,7 @@ python run.py \
   situation_json=$(pwd)/test_situations.json \
   seed=\$SLURM_ARRAY_TASK_ID \
   I.agent=agents/cfr1p_webdip \
-  agent.cfr1p.model_path=/checkpoint/alerer/fairdiplomacy/sl_fbdata_20200717_minscore0_cpfix_vd0.5/checkpoint.pth.best \
+  agent.cfr1p.model_path=/checkpoint/alerer/fairdiplomacy/sl_fbdata_20200717_minscore0_solo_vsm_vlw0.7/checkpoint.pth.best \
   agent.cfr1p.use_final_iter=false \
   agent.cfr1p.reset_seed_on_rollout=true \
   agent.cfr1p.n_rollouts=2048 \
