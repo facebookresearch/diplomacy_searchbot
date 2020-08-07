@@ -7,7 +7,9 @@ from fairdiplomacy.env import Env
 from fairdiplomacy.models.consts import POWERS
 
 
-def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None):
+def run_1v6_trial(
+    agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None, *, max_turns=None
+):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
     Arguments:
@@ -16,6 +18,7 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
     - save_path: if specified, save game.json to this path
     - seed: random seed
     - cf_agent: print out the orders for each power assuming that this agent was in charge
+    - max_turns: finish game early; flag to speed up testing.
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
@@ -26,7 +29,7 @@ def run_1v6_trial(agent_one, agent_six, agent_one_power, save_path=None, seed=0,
         cf_agent=cf_agent,
     )
 
-    scores = env.process_all_turns()
+    scores = env.process_all_turns(max_turns=max_turns)
 
     if save_path is not None:
         env.save(save_path)

@@ -66,13 +66,17 @@ class Env:
 
         self.game.process()
 
-    def process_all_turns(self):
+    def process_all_turns(self, max_turns=0):
         """Process all turns until game is over
 
         Returns a dict mapping power -> supply count
         """
+        turn_id = 0
         while not self.game.is_game_done:
+            if max_turns and turn_id >= max_turns:
+                break
             self.process_turn()
+            turn_id += 1
 
         return {k: len(v) for k, v in self.game.get_state()["centers"].items()}
 

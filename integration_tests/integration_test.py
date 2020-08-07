@@ -24,7 +24,7 @@ def _load_task_cfg(cfg_path, overides=tuple()):
 
 
 def _create_supervised_model(sup_model_path):
-    TMP_DIR.mkdir(exist_ok=True, parents=True)
+    sup_model_path.parent.mkdir(exist_ok=True, parents=True)
     sl_cfg = _load_task_cfg(
         heyhi.CONF_ROOT / "c02_sup_train" / "sl.prototxt", ["num_encoder_blocks=1"]
     )
@@ -107,4 +107,19 @@ def test_build_cache():
     ]
     integration_tests.heyhi_utils.run_config(
         cfg=integration_tests.build_test_cache.BUILD_DB_CONF, overrides=overrides
+    )
+
+
+def test_compare_agents():
+    out_path = TMP_DIR / "c01_ag_cmp" / "model.pth"
+    _create_supervised_model(out_path)
+    integration_tests.heyhi_utils.run_config(
+        cfg=heyhi.CONF_ROOT / "c01_ag_cmp" / "cmp.prototxt",
+        overrides=[
+            "I.agent_one=agents/dipnet",
+            "I.agent_six=agents/dipnet",
+            f"agent_one.dipnet.model_path={out_path}",
+            f"agent_six.dipnet.model_path={out_path}",
+            "max_turns=1",
+        ],
     )

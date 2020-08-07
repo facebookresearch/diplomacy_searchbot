@@ -1,3 +1,5 @@
+import logging
+
 import torch
 
 from fairdiplomacy.models.consts import ADJACENCY_MATRIX, MASTER_ALIGNMENTS
@@ -50,6 +52,10 @@ def new_model(args, dialogue_emb_size=-1):
 
 
 def load_dipnet_model(checkpoint_path, map_location="cpu", eval=False):
+    if map_location != "cpu":
+        if not torch.cuda.is_available():
+            logging.warning("No CUDA so will load model to CPU instead of %s", map_location)
+            map_location = "cpu"
     checkpoint = torch.load(checkpoint_path, map_location=map_location)
 
     model = new_model(checkpoint["args"])

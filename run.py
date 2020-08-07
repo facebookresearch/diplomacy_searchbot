@@ -57,6 +57,7 @@ def compare_agents(cfg):
             cf_agent=cf_agent,
             num_processes=cfg.num_processes,
             num_trials=cfg.num_trials,
+            max_turns=cfg.max_turns,
         )
     else:
         result = run_1v6_trial(
