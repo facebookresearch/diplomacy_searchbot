@@ -40,7 +40,7 @@ class DipnetAgent(BaseAgent):
 
         temperature = temperature if temperature is not None else self.temperature
         top_p = top_p if top_p is not None else self.top_p
-        inputs = encode_batch_inputs(self.thread_pool, [game])
+        inputs = encode_inputs(game)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
