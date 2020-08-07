@@ -109,6 +109,7 @@ for game_json in glob.glob("/checkpoint/jsgray/diplomacy/6hgames/*.json"):
                         for x in (set(cc[a, b].tolist()) ^ set(py[a, b].tolist()))
                     ]:
                         import ipdb
+
                         ipdb.set_trace()
             elif not (torch.from_numpy(cc_valid_orders[1]) == py_valid_orders[1]).all():
                 print("VALID LOCS DIFFERS locs={}".format((cc != py).any(dim=-1).nonzero()))

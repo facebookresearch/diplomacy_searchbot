@@ -121,6 +121,7 @@ class BaseSearchAgent(BaseAgent):
             for power, orders_and_counts in most_common.items()
         }
 
+
 def compute_sampled_logprobs(sampled_idxs, logits):
     sampled_idxs = sampled_idxs[:, :, : logits.shape[-2]]  # trim off excess seq dim
     invalid_mask = sampled_idxs < 0

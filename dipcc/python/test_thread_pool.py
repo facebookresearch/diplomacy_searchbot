@@ -50,7 +50,7 @@ for game in games:
 t = time.time()
 # pool.process_multi(games)
 # print("THREADPOOL", time.time() - t)
-# 
+#
 # for game in games:
 #     assert game.current_short_phase == "F1901M"
 
