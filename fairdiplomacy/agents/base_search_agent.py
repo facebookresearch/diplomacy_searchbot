@@ -191,7 +191,7 @@ def are_supports_coordinated(orders: List[str]) -> bool:
         elif (
             len(req_order) > 2
             and req_order[2] == "-"
-            and (actual_order[2] != "-" or actual_order[3] != req_order[3])
+            and (actual_order[2] != "-" or actual_order[3][:3] != req_order[3][:3])
         ):
             # we supported a move, but the order given was (1) not a move, or
             # (2) a move to the wrong destination
