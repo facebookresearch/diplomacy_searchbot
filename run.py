@@ -118,7 +118,8 @@ def situation_check(cfg):
 
     agent = build_agent_from_cfg(cfg.agent)
 
-    with open(cfg.situation_json) as f:
+    # If not absolute path, assume relative to project root.
+    with open(heyhi.PROJ_ROOT / cfg.situation_json) as f:
         meta = json.load(f)
 
     selection = None

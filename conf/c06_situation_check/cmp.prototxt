@@ -1,5 +1,5 @@
 includes {path: "agents/cfr1p"; mount: "agent";}
 situation_check {
   seed: 0
-  situation_json: ""
+  situation_json: "test_situations.json"
 }
