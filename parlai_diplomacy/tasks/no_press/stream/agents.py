@@ -99,15 +99,28 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         for game_id, game in data.items():
             for phase_id, phase in game.items():
                 for player_id, data in phase.items():
-                    data["game_id"] = game_id
-                    data["phase_id"] = phase_id
-                    data["player_id"] = player_id
-                    data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
-                    lst.append(data)
+                    lst.extend(self._generate_example_tuples(game_id, phase_id, player_id, data))
 
         logging.info(f"Loaded {len(lst)} examples from chunk {chunk_idx}.")
 
         return lst
+
+    @staticmethod
+    def _generate_example_tuples(game_id, phase_id, player_id, data):
+        """
+        Yields example tuple(s) used in `_create_message`
+
+        :param game_id: Game id
+        :param phase_id: Phase ID
+        :param player_id: Player/Power ID
+        :param data: Chunk data
+        :return:
+        """
+        data["game_id"] = game_id
+        data["phase_id"] = phase_id
+        data["player_id"] = player_id
+        data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+        yield data
 
     def create_message(self, queue_output, entry_idx=0) -> "Message":
         """
