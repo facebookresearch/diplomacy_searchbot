@@ -22,3 +22,8 @@ def register_all_tasks():
     import parlai_diplomacy.tasks.no_press.stream.agents  # noqa: F401
     import parlai_diplomacy.tasks.no_press.regular.agents  # noqa: F401
     import parlai_diplomacy.tasks.new_reddit.agents  # noqa: F401
+
+
+def register_all_scripts():
+    # list all script modules here
+    import parlai_diplomacy.scripts.display_game_order_preds  # noqa: F401

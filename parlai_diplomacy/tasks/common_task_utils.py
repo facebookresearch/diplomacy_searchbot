@@ -16,6 +16,7 @@ from copy import deepcopy
 from datetime import date
 
 import parlai.utils.logging as logging
+import parlai_diplomacy.utils.game_loading as game_loading
 
 # TODO: this file needs some major cleanup
 
@@ -267,42 +268,6 @@ def flatten_state(state, special_tokens_map, with_special_token=True):
     return final_state_str
 
 
-def split_test_files():
-    final_data = {}
-    with open(VALID_JSON_DIR, "r") as fh:
-        raw_data = json.load(fh)
-
-    for data in raw_data:
-        game_id, phase_id, speaker_id, order = (
-            data["game"],
-            data["game_phase"],
-            int(data["speaker_id"]),
-            data["order"],
-        )
-        if game_id in final_data:
-            if phase_id in final_data[game_id]:
-                if speaker_id in final_data[game_id][phase_id]:
-                    assert ValueError("repeated speaker_id")
-                else:
-                    final_data[game_id][phase_id][speaker_id] = order
-            else:
-                final_data[game_id][phase_id] = {speaker_id: order}
-        else:
-            final_data[game_id] = {phase_id: {speaker_id: order}}
-
-    game_ids = list(final_data.keys())
-    game_id_splits = np.array_split(np.array(game_ids), TEST_SPLIT_INTO)
-
-    for i, split in enumerate(tqdm(game_id_splits)):
-        data_this_split = []
-        for data in raw_data:
-            game_id = data["game"]
-            if game_id in split:
-                data_this_split.append(data)
-        with open(f"{VALID_SPLIT_JSON_PATH}/valid_split_{i+1}.json", "w") as fh:
-            json.dump(data_this_split, fh)
-
-
 def phase_abbrev_to_phase(phase):
     """
     https://github.com/diplomacy/diplomacy/blob/master/diplomacy/integration/webdiplomacy_net/game.py#L20-L27
@@ -310,10 +275,7 @@ def phase_abbrev_to_phase(phase):
         season = 'W'
     {'Diplomacy': 'M', 'Retreats': 'R', 'Builds': 'A'}
     """
-    season_map = {"S": "Spring", "F": "Fall", "W": "W"}
     phase_map = {"M": "Diplomacy", "R": "Retreats", "A": "Builds"}
-    # season = season_map[phase[0]]
-    # year = phase[1:5]
     season_year = phase[:5]
     phase_type = phase_map[phase[5:]]
     phase_converted = f"{season_year} {phase_type}"
@@ -344,35 +306,6 @@ def get_valid_report_path(sweep_name, TEACHER):
     )
 
     return VALID_REPORT_SAVE_PATH, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH
-
-
-def process_game_json(game_json_path, special_tokens_map=None, with_special_token=None):
-    """
-    process the game.jsons to the format used by ParlAI teacher
-    for usage in interactive evaluation.
-    Note: if the format used in tasks.dialogue_and_state_stream.agents changes,
-    the format here should also change accordingly.
-    """
-    raw_order = load_order_data(order_path=game_json_path)
-    processed_input_seqs = {}
-    for game_id in tqdm(raw_order):
-        # set up game
-        processed_input_seqs[game_id] = {}
-        for phase in raw_order[game_id]:
-            # set up phase
-            if phase != "is_partial" and phase != "partial":
-                processed_input_seqs[game_id][phase] = {}
-                state = flatten_state(
-                    raw_order[game_id][phase]["state"], special_tokens_map, with_special_token
-                )
-                for speaker_id, speaker in COUNTRY_ID_TO_POWER.items():
-                    # set up speaker
-                    # the prompt format is from _get_player_prompt_token in tasks.dialogue_and_state_stream.agents
-                    player_prompt_token = f"{phase} {speaker.capitalize()}:"
-                    input_seq = f"{state} {player_prompt_token}"
-                    processed_input_seqs[game_id][phase][speaker.capitalize()] = input_seq
-
-    return processed_input_seqs
 
 
 def convert_test_results(sweep_name, TEACHER, return_data=False):
@@ -492,27 +425,6 @@ def load_data():
     return total_data
 
 
-def load_order_data(opt=None, order_path=ORDER_PATH):
-    total_data = {}
-    tot = len(glob(order_path))
-    print(f"[ Loading order data from path {order_path}, {tot} games in total ... ]")
-    if opt and opt.get("debug") is True:
-        files = glob(order_path)[: opt.get("debug_game_size")]
-    else:
-        files = glob(order_path)
-    for i, fle in enumerate(tqdm(files)):
-        with open(fle, "r") as f:
-            game_id = int(re.search("game_(.*).json", fle, re.IGNORECASE).group(1))
-            database = json.load(f)
-            # some games contain partial order information
-            total_data.setdefault(game_id, {"is_partial": "partial" in fle})
-            for phase in database["phases"]:
-                total_data[game_id].setdefault(phase["name"], phase)
-    # TODO: chunk teacher / stream datas
-
-    return total_data
-
-
 def join_order_and_msg(
     raw_order, raw_msg, include_message_from, save_dir, special_tokens_map, with_special_token, opt
 ):
@@ -576,14 +488,13 @@ def join_order_and_msg(
         get all speakers' previous orders
         #TODO under the assumption that phase in raw_order are sorted
         """
-        phase_idx = list(game_order.keys())
         flat_orders = []
         for phase in game_order:
             if phase != "is_partial" and phase != "partial":
                 if phase == cur_phase:
                     break
                 else:
-                    for speaker_id, speaker in COUNTRY_ID_TO_POWER.items():
+                    for _, speaker in COUNTRY_ID_TO_POWER.items():
                         order = game_order[phase]["orders"][speaker]
                         flat_order = flatten_orders(order, special_tokens_map, with_special_token,)
                         flat_order = f"{phase} {speaker.capitalize()}: {flat_order}"
@@ -601,9 +512,6 @@ def join_order_and_msg(
         print(
             f"{len(set(raw_order.keys())-set(raw_msg.keys()))} in game.json but not in messgage.json"
         )
-
-        in_msg_not_in_order_gameid = list(set(raw_msg.keys()) - set(raw_order.keys()))
-        only_order_game_ids = list(set(raw_order.keys()) - set(raw_msg.keys()))
 
         # check phase
         all_phases_order = []
@@ -625,8 +533,6 @@ def join_order_and_msg(
                     continue
                 else:
                     print(f"weird phase name: {phase}")
-        # season_map = {"S": "Spring", "F": "Fall", "W": "W"}
-        # phase_map = {"M": "Diplomacy", "R": "Retreats", "A": "Builds"}
 
         # check phase match
         num_weird_game = 0
@@ -643,7 +549,6 @@ def join_order_and_msg(
                 num_weird_game += 1
             num_weird_phases += len(phase_in_msg_not_in_game)
             num_all_phases_msg += len(raw_msg[game_id].keys())
-            # print(f"{game_id}: {phase_in_msg_not_in_game}")
 
         num_total_games_intersection = len(set(raw_order.keys()).intersection(set(raw_msg.keys())))
         print(f"{num_weird_game}/{num_total_games_intersection} games have phase-mismatch")
@@ -725,10 +630,6 @@ def join_order_and_msg(
                             "order_history": order_history,
                         }
                         num_data += 1
-                        # nl = "\n"
-                        # order_history = (
-                        #     f"{order_history}{phase} {speaker.capitalize()}:{speaker_order}{nl}"
-                        # )
                         prev_msgs[speaker] = cur_msg
                 else:
                     # TODO, inner join or left join or right join or?
@@ -757,10 +658,6 @@ def join_order_and_msg(
                             "order": speaker_order,
                             "order_history": order_history,
                         }
-                        # nl = "\n"
-                        # order_history = (
-                        #     f"{order_history}{phase} {speaker.capitalize()}:{speaker_order}{nl}"
-                        # )
 
                         if game_id not in raw_msg:
                             # no message data for this game
@@ -1147,7 +1044,8 @@ class MessageOrderDataIterator:
                 os.makedirs(json_dir)
 
             if raw_order is None:
-                self.raw_order = load_order_data(self.opt)
+                raw_order = game_loading.load_sql_format(debug=self.opt.get("debug"))
+                self.raw_order = game_loading.organize_game_dict_by_phase(raw_order)
                 self.raw_msg = select_by_game_and_phase(load_data())
             else:
                 self.raw_order = raw_order

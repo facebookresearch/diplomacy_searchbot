@@ -7,6 +7,7 @@ from parlai.core.script import superscript_main
 def main():
     load.register_all_agents()
     load.register_all_tasks()
+    load.register_all_scripts()
     superscript_main()
 
 
