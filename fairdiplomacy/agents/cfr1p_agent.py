@@ -5,6 +5,7 @@ import torch
 from collections import defaultdict
 from typing import List, Tuple, Dict
 import random
+import json
 
 import pydipcc
 from fairdiplomacy.agents.threaded_search_agent import ThreadedSearchAgent
@@ -80,6 +81,9 @@ class CFR1PAgent(ThreadedSearchAgent):
         self, game, early_exit_for_power=None
     ) -> Dict[str, Dict[Tuple[str], float]]:
         """Return dict {power: {action: prob}}"""
+
+        if type(game) != pydipcc.Game:
+            game = pydipcc.Game.from_json(json.dumps(game.to_saved_game_format()))
 
         # CFR data structures
         self.sigma: Dict[Tuple[Power, Action], float] = {}
