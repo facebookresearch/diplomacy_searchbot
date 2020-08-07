@@ -26,6 +26,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_len,
 )
+from fairdiplomacy.utils.parse_device import parse_device
 from fairdiplomacy.utils.timing_ctx import TimingCtx, DummyCtx
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
 from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
@@ -53,9 +54,9 @@ class ThreadedSearchAgent(BaseSearchAgent):
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
         self.mix_square_ratio_scoring = mix_square_ratio_scoring
-        device = int(device.lstrip("cuda:")) if type(device) == str else device
+        self.device = parse_device(device) if torch.cuda.is_available() else "cpu"
 
-        self.model = load_dipnet_model(model_path, map_location=f"cuda:{device}", eval=True)
+        self.model = load_dipnet_model(model_path, map_location=self.device, eval=True)
         self.thread_pool = pydipcc.ThreadPool(
             n_rollout_procs, ORDER_VOCABULARY_TO_IDX, get_order_vocabulary_idxs_len()
         )
@@ -71,7 +72,7 @@ class ThreadedSearchAgent(BaseSearchAgent):
         # model forward / transform
         with torch.no_grad():
             with timings("to_cuda"):
-                x = {k: v.to("cuda") for k, v in x.items()}
+                x = {k: v.to(self.device) for k, v in x.items()}
             with timings("model"):
                 y = self.model(**x)
             with timings("transform"):
