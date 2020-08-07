@@ -1,3 +1,3 @@
-includes {path: "agents/cfr1p_webdip_2020807.prototxt"; mount: "agent";}
+includes {path: "agents/cfr1p_webdip_20200807.prototxt"; mount: "agent";}
 play_webdip {
 }
