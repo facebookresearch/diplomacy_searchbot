@@ -23,9 +23,11 @@ import pydipcc
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(get_order_vocabulary())}
 
+_DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 class DipnetAgent(BaseAgent):
-    def __init__(self, model_path, temperature, top_p=1.0, device="cuda"):
+    def __init__(self, model_path, temperature, top_p=1.0, device=_DEFAULT_DEVICE):
         self.model = load_dipnet_model(model_path, map_location=device, eval=True)
         self.temperature = temperature
         self.device = device
