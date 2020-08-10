@@ -19,7 +19,7 @@ parser.add_argument("--new-model", action="store_true")
 parser.add_argument("-n", type=int, default=20)
 args = parser.parse_args()
 
-B = [1, 56, 700]
+B = [2 ** x for x in range(11)]
 
 
 def load_late_game():
@@ -58,7 +58,7 @@ for game_name, game in [("new_game", Game()), ("late_game", late_game)]:
             toc = time.time() - tic
 
             print(
-                f"[B={batch_size}] {toc}s / {args.n}, latency={toc/args.n}s, throughput={args.n*batch_size/toc}/s"
+                f"[B={batch_size}] {toc}s / {args.n}, latency={1000*toc/args.n}ms, throughput={args.n*batch_size/toc}/s"
             )
 
 
