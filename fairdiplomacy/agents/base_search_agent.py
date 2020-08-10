@@ -209,6 +209,8 @@ def safe_idx(seq, idx, default=None):
 
 
 def n_move_phases_later(from_phase, n):
+    if n == 0:
+        return from_phase
     year_idx = int(from_phase[1:-1]) - 1901
     season = from_phase[0]
     from_move_phase_idx = 2 * year_idx + (1 if season in "FW" else 0)
