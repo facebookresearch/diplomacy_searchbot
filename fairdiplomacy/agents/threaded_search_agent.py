@@ -62,7 +62,12 @@ class ThreadedSearchAgent(BaseSearchAgent):
         )
 
     def do_model_request(
-        self, x: DataFields, temperature: float, top_p: float, timings=DummyCtx()
+        self,
+        x: DataFields,
+        temperature: float,
+        top_p: float,
+        timings=DummyCtx(),
+        values_only: bool = False,
     ):
         with timings("model.pre"):
             B = x["x_board_state"].shape[0]
@@ -74,7 +79,10 @@ class ThreadedSearchAgent(BaseSearchAgent):
             with timings("to_cuda"):
                 x = {k: v.to(self.device) for k, v in x.items()}
             with timings("model"):
-                y = self.model(**x)
+                y = self.model(**x, values_only=values_only)
+            if values_only:
+                with timings("to_cpu"):
+                    return y.cpu()
             with timings("transform"):
                 y = model_output_transform(x, y)
             with timings("to_cpu"):
@@ -121,6 +129,8 @@ class ThreadedSearchAgent(BaseSearchAgent):
                 )
             }
 
+            has_other_powers = any(other_powers.values())
+
         rollout_start_phase = game_init.current_short_phase
         rollout_end_phase = n_move_phases_later(rollout_start_phase, self.max_rollout_length)
 
@@ -152,9 +162,26 @@ class ThreadedSearchAgent(BaseSearchAgent):
                 # batch_inputs = self.cat_pad_inputs(xs)
                 pass
 
-            batch_orders, _, batch_est_final_scores = self.do_model_request(
-                batch_inputs, self.rollout_temperature, self.rollout_top_p, timings=timings
-            )
+            if not has_other_powers:
+                # We already know action for each power.
+                if min_phase == rollout_end_phase:
+                    # Need to compute values though.
+                    batch_est_final_scores = self.do_model_request(
+                        batch_inputs,
+                        self.rollout_temperature,
+                        self.rollout_top_p,
+                        timings=timings,
+                        values_only=True,
+                    )
+                    batch_orders = None
+                else:
+                    # Don't need anything. Probably first phase.
+                    batch_est_final_scores = batch_orders = None
+
+            else:
+                batch_orders, _, batch_est_final_scores = self.do_model_request(
+                    batch_inputs, self.rollout_temperature, self.rollout_top_p, timings=timings
+                )
 
             with timings("score.max_rollout_len"):
                 if min_phase == rollout_end_phase:
@@ -166,13 +193,15 @@ class ThreadedSearchAgent(BaseSearchAgent):
                     break
 
             with timings("env.set_orders"):
-                assert len(batch_data) == len(batch_orders)
-                for (game, _), power_orders in zip(batch_data, batch_orders):
-                    power_orders = dict(zip(POWERS, power_orders))
-                    for other_power in other_powers[game.game_id]:
-                        game.set_orders(other_power, list(power_orders[other_power]))
-                    assert game.current_short_phase == min_phase
-                    other_powers[game.game_id] = POWERS  # no set orders on subsequent turns
+                if has_other_powers:
+                    assert len(batch_data) == len(batch_orders)
+                    for (game, _), power_orders in zip(batch_data, batch_orders):
+                        power_orders = dict(zip(POWERS, power_orders))
+                        for other_power in other_powers[game.game_id]:
+                            game.set_orders(other_power, list(power_orders[other_power]))
+                        assert game.current_short_phase == min_phase
+                        other_powers[game.game_id] = POWERS  # no set orders on subsequent turns
+                has_other_powers = True
 
             with timings("env.step"):
                 self.thread_pool.process_multi([game for game, _ in batch_data])

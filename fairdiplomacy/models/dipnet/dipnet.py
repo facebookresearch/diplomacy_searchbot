@@ -126,6 +126,7 @@ class DipNet(nn.Module):
         x_power=None,
         x_has_press=None,
         dialogue_emb=None,
+        values_only=False,
     ):
         """
         TODO(alerer): fix the docs.
@@ -145,6 +146,7 @@ class DipNet(nn.Module):
         - teacher_force_orders: [B, S] long or None, ORDER idxs, NOT candidate idxs, 0-padded
         - x_power: [B, 7] or None
         - x_has_press: [B, 1] or None
+        - values_only: if set, will return only final_sos
 
         if x_power is None, the model will decode for all 7 powers.
             - loc_idxs, all_cand_idxs, and teacher_force_orders must have an
@@ -207,6 +209,11 @@ class DipNet(nn.Module):
             ),
             dim=-1,
         )
+
+        if values_only:
+            assert x_power is None, "Not supported"
+            enc = self.encoder(x_bo_hat, x_po_hat)  # [B, 81, 240]
+            return self.value_decoder(enc, dialogue_emb=dialogue_emb)
 
         if x_power is None:
             return self.forward_all_powers(
