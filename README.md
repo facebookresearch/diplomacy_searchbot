@@ -112,7 +112,7 @@ Below are the most important tasks:
 ## Going deeper
 
 We use an in-house fast C++ implementation of the diplomacy environment.
-See [here](docs/game_engine.md) for how to interact with it.
+See [here](dipcc/README.md) for how to interact with it.
 
 The games could be serialized as JSON files, e.g., our GunBoat human data and test situations use this format.
 You can use [viz](docs/vizualization.md) tool to quickly see what's there.
