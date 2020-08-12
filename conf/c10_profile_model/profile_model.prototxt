@@ -1,0 +1,3 @@
+profile_model {
+  model_path: "/checkpoint/alerer/fairdiplomacy/sl_fbdata_all_lstm2_d0.2_featout/checkpoint.pth.best"
+}
