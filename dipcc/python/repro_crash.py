@@ -16,8 +16,13 @@ game = pydipcc.Game.from_json(json.dumps(j))
 if args.orders_json:
     with open(args.orders_json, "r") as f:
         all_orders = json.load(f)
-else:
+elif "staged_orders" in j:
     all_orders = j["staged_orders"]
+else:
+    # use last orders
+    last_phase = game.get_phase_history()[-1]
+    all_orders = last_phase.orders
+    game.rollback_to_phase(last_phase.name)
 
 for power, orders in all_orders.items():
     game.set_orders(power, orders)
@@ -25,3 +30,4 @@ for power, orders in all_orders.items():
 game.process()
 
 print("SUCCESS!")
+print(game.phase)
