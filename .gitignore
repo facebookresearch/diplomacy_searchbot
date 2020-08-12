@@ -20,3 +20,5 @@ conf/*_pb2.py
 client_secret.json
 service_account_credentials.json
 sheets.googleapis.com-python.json
+.mypy_cache
+dummy_situations.json
