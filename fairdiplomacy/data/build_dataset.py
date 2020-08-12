@@ -144,9 +144,9 @@ PROPER_START_TERR_IDS = {
 
 
 def group_by(collection, fn):
-    """Group the elements of a collection by the results of passing them through fn	
-    Returns a dict, {k_0: list[e_0, e_1, ...]} where e are elements of `collection` and	
-    f(e_0) = f(e_1) = k_0	
+    """Group the elements of a collection by the results of passing them through fn
+    Returns a dict, {k_0: list[e_0, e_1, ...]} where e are elements of `collection` and
+    f(e_0) = f(e_1) = k_0
     """
     r = defaultdict(list)
     for e in collection:
@@ -157,7 +157,7 @@ def group_by(collection, fn):
 
 def is_good_game(db, game_id):
     moves = db.execute(
-        f"""SELECT turn, terrID, type	
+        f"""SELECT turn, terrID, type
                FROM {TABLE_MOVES}
                WHERE hashed_gameID=?
             """,
@@ -192,17 +192,17 @@ def find_good_games(db, press_type=None):
 
 
 def move_row_to_order_str(row):
-    """Convert a db row from wD_MovesArchive into an order string	
-    Returns a 3-tuple:	
-      - turn	
-      - power string, e.g. "AUSTRIA"	
-      - order string, e.g. "A RUH - BEL"	
-    N.B. Some order strings are incomplete: supports, convoys, and destroys are	
-    missing the unit type, since it is not stored in the db and must be	
-    determined from the game context.	
-    e.g. this function will return "A PAR S BRE - PIC" instead of the proper	
-    "A PAR S A BRE - PIC", since it is unknown which unit type resides at BRE	
-    Similarly, this function may return "X BRE X" instead of "A BRE D" or "F BRE D"	
+    """Convert a db row from wD_MovesArchive into an order string
+    Returns a 3-tuple:
+      - turn
+      - power string, e.g. "AUSTRIA"
+      - order string, e.g. "A RUH - BEL"
+    N.B. Some order strings are incomplete: supports, convoys, and destroys are
+    missing the unit type, since it is not stored in the db and must be
+    determined from the game context.
+    e.g. this function will return "A PAR S BRE - PIC" instead of the proper
+    "A PAR S A BRE - PIC", since it is unknown which unit type resides at BRE
+    Similarly, this function may return "X BRE X" instead of "A BRE D" or "F BRE D"
     """
 
     (
@@ -262,8 +262,8 @@ def move_row_to_order_str(row):
 
 
 def get_game_orders(db, game_id):
-    """Return a dict mapping turn -> list of (turn, power, order) tuples	
-    i.e. return type is Dict[int, List[Tuple[int, str, str]]]	
+    """Return a dict mapping turn -> list of (turn, power, order) tuples
+    i.e. return type is Dict[int, List[Tuple[int, str, str]]]
     """
     # gather orders
     turn_power_orders = [
@@ -345,7 +345,12 @@ def process_game(db, game_id, log_path=None):
                     game.set_orders(power, [order])
 
             logging.getLogger("p").info("process {}".format(game.phase))
-            game.process()
+
+            # don't process if we are in the game over phase and there are no
+            # orders to process this phase
+            if turn < len(orders_by_turn) - 1 or any(game.get_orders().values()):
+                game.process()
+
             logging.getLogger("p").debug(
                 "post-process units: {}".format(pformat(game.get_state()["units"]))
             )
@@ -354,7 +359,12 @@ def process_game(db, game_id, log_path=None):
         if game.phase.split()[-1] == "ADJUSTMENTS":
             set_phase_orders(game, orders_by_category["BUILDS"] + orders_by_category["DISBANDS"])
             logging.getLogger("p").info("process {}".format(game.phase))
-            game.process()
+
+            # don't process if we are in the game over phase and there are no
+            # orders to process this phase
+            if turn < len(orders_by_turn) - 1 or any(game.get_orders().values()):
+                game.process()
+
             logging.getLogger("p").debug(
                 "post-process units: {}".format(pformat(game.get_state()["units"]))
             )
@@ -436,17 +446,17 @@ def set_phase_orders(game, phase_orders):
 
 
 def get_valid_coastal_variant(split, possible_orders):
-    """Find a variation on the `split` order that is in `possible_orders`	
-    Args:	
-        - split: a list of order string components,	
-                 e.g. ["F", "AEG", "S", "F", "BUL", "-", "GRE"]	
-        - possible_orders: a list of order strings,	
-                e.g. ["F AEG S F BUL/SC - GRE", "F AEG H", "F AEG - GRE", ...]	
-    This function tries variations (e.g. "BUL", "BUL/SC", etc.) of the `split`	
-    order until one is found in `possible_orders`.	
-    Returns a split order, or None if none is found	
-    e.g. for the example inputs above, this function returns:	
-            ["F", "AEG", "S", "F", "BUL/SC", "-", "GRE"]	
+    """Find a variation on the `split` order that is in `possible_orders`
+    Args:
+        - split: a list of order string components,
+                 e.g. ["F", "AEG", "S", "F", "BUL", "-", "GRE"]
+        - possible_orders: a list of order strings,
+                e.g. ["F AEG S F BUL/SC - GRE", "F AEG H", "F AEG - GRE", ...]
+    This function tries variations (e.g. "BUL", "BUL/SC", etc.) of the `split`
+    order until one is found in `possible_orders`.
+    Returns a split order, or None if none is found
+    e.g. for the example inputs above, this function returns:
+            ["F", "AEG", "S", "F", "BUL/SC", "-", "GRE"]
     """
     for idx in [1, 4, 6]:  # try loc, from_loc, and to_loc
         if len(split) <= idx:
@@ -459,9 +469,9 @@ def get_valid_coastal_variant(split, possible_orders):
 
 
 def pop_order_at_loc(tpos, loc):
-    """If there is an order at loc in tpos, remove and return it	
-    tpos: A list of (turn, power, order) tuples	
-    Returns: (power, order) if found, else (None, None)	
+    """If there is an order at loc in tpos, remove and return it
+    tpos: A list of (turn, power, order) tuples
+    Returns: (power, order) if found, else (None, None)
     """
     for i, (_, power, order) in enumerate(tpos):
         order_loc = order.split()[1]
@@ -472,8 +482,8 @@ def pop_order_at_loc(tpos, loc):
 
 
 def get_order_category(order):
-    """Given an order string, return the category type, one of:	
-    {"MOVEMENT, "RETREATS", "DISBANDS", "BUILDS"}	
+    """Given an order string, return the category type, one of:
+    {"MOVEMENT, "RETREATS", "DISBANDS", "BUILDS"}
     """
     order_type = order.split()[2]
     if order_type in ("X", "D"):
@@ -491,7 +501,8 @@ def process_and_save_game(game_id, db_path):
 
     save_path = os.path.join(args.out_dir, "game_{}.json".format(game_id))
     log_path = os.path.join(args.out_dir, "game_{}.log".format(game_id))
-    if not args.overwrite and os.path.isfile(save_path):
+    file_exists = os.path.isfile(save_path)
+    if not args.overwrite and file_exists:
         logging.info("Skipping game {}".format(game_id))
         return
 
@@ -507,6 +518,8 @@ def process_and_save_game(game_id, db_path):
         return
 
     # Save json file
+    if args.overwrite and file_exists:
+        os.remove(save_path)
     diplomacy.utils.export.to_saved_game_format(game, save_path)
     logging.info("Saved to {}".format(save_path))
 
