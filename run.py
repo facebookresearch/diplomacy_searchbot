@@ -154,6 +154,13 @@ def play_webdip(cfg):
     )
 
 
+@_register
+def profile_model(cfg):
+    from fairdiplomacy.profile_model import profile_model
+
+    profile_model(cfg.model_path)
+
+
 @heyhi.save_result_in_cwd
 def main(task, cfg):
     heyhi.setup_logging()

@@ -528,6 +528,13 @@ message PlayWebdipTask {
   optional string force_power = 7 [ default = "ENGLAND" ];
 }
 
+// Compute throughput and latency numbers for the no-press model
+message ProfileModelTask {
+  optional string model_path = 1;
+
+  optional Launcher launcher = 100;
+}
+
 // Every config is parsed as Cfg that is thin wrapper over actual config for the
 // task. Config inlude. Handled by HH.
 message Include {
@@ -558,6 +565,7 @@ message MetaCfg {
     PlayWebdipTask play_webdip = 108;
     BuildPressDbCacheTask build_press_db_cache = 109;
     PressTrainTask press_train = 110;
+    ProfileModelTask profile_model = 111;
     // Dummy task to test heyhi.
     TestTask test = 999;
   }
