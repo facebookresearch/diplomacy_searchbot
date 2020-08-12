@@ -951,6 +951,7 @@ public:
     cand.max -= cand.dislodge_self_support;
     cand.dislodge_self_support = 0;
     unresolved_self_support_dislodges_.erase(make_pair(src, loc));
+    _resolve_bounce(r, loc);
     return true;
   }
 
