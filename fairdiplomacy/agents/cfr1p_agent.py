@@ -118,13 +118,16 @@ class CFR1PAgent(ThreadedSearchAgent):
             n=self.plausible_orders_req_size,
             batch_size=self.plausible_orders_req_size,
         )
+
         for p, orders_to_logprob in power_plausible_orders.items():
             for o, prob in orders_to_logprob.items():
                 cfr_data.bp_sigma[(p, o)] = float(np.exp(prob))
+
         power_plausible_orders = {
             p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()
         }
 
+        # If there are <=1 plausible orders, no need to search
         if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 0:
             return {early_exit_for_power: {tuple(): 1.0}}
         if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 1:
@@ -144,85 +147,35 @@ class CFR1PAgent(ThreadedSearchAgent):
             ) or cfr_iter == self.n_rollouts - 1
 
             timings.start("start")
-            if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 4):
-                for pwr, actions in power_plausible_orders.items():
-                    paired_list = []
-                    for action in actions:
-                        ave_regret = cfr_data.cum_regrets[(pwr, action)] / iter_weight
-                        new_pair = (action, ave_regret)
-                        paired_list.append(new_pair)
-                    paired_list.sort(key=lambda tup: tup[1])
-                    for (action, ave_regret) in paired_list:
-                        ave_strat = cfr_data.cum_sigma[(pwr, action)] / iter_weight
-                        if (
-                            ave_regret < -0.06
-                            and ave_strat < 0.002
-                            and cfr_data.sigma[(pwr, action)] == 0
-                        ):
-                            cfr_data.cum_sigma[(pwr, action)] = 0
-                            logging.info(
-                                "pruning on iter {} action {} with ave regret {} and ave strat {}".format(
-                                    cfr_iter, action, ave_regret, ave_strat
-                                )
-                            )
-                            actions.remove(action)
 
-            if self.use_pruning and cfr_iter == 1 + int(self.n_rollouts / 2):
-                for pwr, actions in power_plausible_orders.items():
-                    paired_list = []
-                    for action in actions:
-                        ave_regret = cfr_data.cum_regrets[(pwr, action)] / iter_weight
-                        new_pair = (action, ave_regret)
-                        paired_list.append(new_pair)
-                    paired_list.sort(key=lambda tup: tup[1])
-                    for (action, ave_regret) in paired_list:
-                        ave_strat = cfr_data.cum_sigma[(pwr, action)] / iter_weight
-                        if (
-                            ave_regret < -0.03
-                            and ave_strat < 0.001
-                            and cfr_data.sigma[(pwr, action)] == 0
-                        ):
-                            cfr_data.cum_sigma[(pwr, action)] = 0
-                            logging.info(
-                                "pruning on iter {} action {} with ave regret {} and ave strat {}".format(
-                                    cfr_iter, action, ave_regret, ave_strat
-                                )
-                            )
-                            actions.remove(action)
+            self.maybe_do_pruning(
+                cfr_iter=cfr_iter,
+                iter_weight=iter_weight,
+                cfr_data=cfr_data,
+                power_plausible_orders=power_plausible_orders,
+            )
 
-            discount_factor = (cfr_iter + 0.000001) / (cfr_iter + 1)
-            iter_weight *= discount_factor
-            iter_weight += 1.0
-
-            for pwr, actions in power_plausible_orders.items():
-                if len(actions) == 0:
-                    continue
-                cfr_data.cum_utility[pwr] *= discount_factor
-                for action in actions:
-                    cfr_data.cum_regrets[(pwr, action)] *= discount_factor
-                    cfr_data.cum_sigma[(pwr, action)] *= discount_factor
+            iter_weight = self.linear_cfr(cfr_data, power_plausible_orders, cfr_iter, iter_weight)
 
             timings.start("query_policy")
             # get policy probs for all powers
-            power_action_cfr = {
-                pwr: self.strategy(cfr_data, pwr, actions)
-                for (pwr, actions) in power_plausible_orders.items()
-            }
             power_is_loser = {
                 pwr: self.is_loser(cfr_data, pwr, cfr_iter, actions, iter_weight)
                 for (pwr, actions) in power_plausible_orders.items()
             }
-
             power_action_ps: Dict[Power, List[float]] = {
                 pwr: (
                     self.bp_strategy(pwr, actions)
-                    if cfr_iter < self.bp_iters
-                    or np.random.rand() < self.bp_prob
-                    or power_is_loser[pwr]
+                    if (
+                        cfr_iter < self.bp_iters
+                        or np.random.rand() < self.bp_prob
+                        or power_is_loser[pwr]
+                    )
                     else self.strategy(cfr_data, pwr, actions)
                 )
                 for (pwr, actions) in power_plausible_orders.items()
             }
+
             timings.start("apply_orders")
             # sample policy for all powers
             idxs = {
@@ -238,7 +191,6 @@ class CFR1PAgent(ThreadedSearchAgent):
                 )
                 for pwr, action_ps in power_action_ps.items()
             }
-            logging.debug(f"{phase}.{cfr_iter} power_sampled_orders={power_sampled_orders}")
 
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
@@ -280,53 +232,22 @@ class CFR1PAgent(ThreadedSearchAgent):
 
                 # log some action values
                 if verbose_log_iter:
-                    logging.info(
-                        f"<> [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={cfr_data.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f} "
-                        f"is_loser= {int(power_is_loser[pwr])}"
+                    self.log_cfr_iter_state(
+                        game=game,
+                        pwr=pwr,
+                        actions=actions,
+                        cfr_data=cfr_data,
+                        cfr_iter=cfr_iter,
+                        iter_weight=iter_weight,
+                        power_is_loser=power_is_loser,
+                        state_utility=state_utility,
+                        action_utilities=action_utilities,
                     )
-                    logging.info(
-                        f"     {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders"
-                    )
-                    action_probs: List[float] = self.avg_strategy(
-                        cfr_data, pwr, power_plausible_orders[pwr]
-                    )
-                    bp_probs: List[float] = self.bp_strategy(
-                        cfr_data, pwr, power_plausible_orders[pwr]
-                    )
-                    avg_utilities = [
-                        (cfr_data.cum_regrets[(pwr, a)] + cfr_data.cum_utility[pwr]) / iter_weight
-                        for a in actions
-                    ]
-                    sorted_metrics = sorted(
-                        zip(actions, action_probs, bp_probs, avg_utilities, action_utilities),
-                        key=lambda ac: -ac[1],
-                    )
-                    for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
-                        logging.info(
-                            f"|>  {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}"
-                        )
 
                 # update cfr data structures
-                cfr_data.cum_utility[pwr] += state_utility
-                for action, regret, s in zip(actions, action_regrets, power_action_cfr[pwr]):
-                    cfr_data.cum_regrets[(pwr, action)] += regret
-                    cfr_data.last_regrets[(pwr, action)] = regret
-                    cfr_data.cum_sigma[(pwr, action)] += s
-
-                if self.use_optimistic_cfr:
-                    pos_regrets = [
-                        max(0, cfr_data.cum_regrets[(pwr, a)] + cfr_data.last_regrets[(pwr, a)])
-                        for a in actions
-                    ]
-                else:
-                    pos_regrets = [max(0, cfr_data.cum_regrets[(pwr, a)]) for a in actions]
-
-                sum_pos_regrets = sum(pos_regrets)
-                for action, pos_regret in zip(actions, pos_regrets):
-                    if sum_pos_regrets == 0:
-                        cfr_data.sigma[(pwr, action)] = 1.0 / len(actions)
-                    else:
-                        cfr_data.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
+                self.update_cfr_data(
+                    cfr_data, pwr, actions, state_utility, action_utilities, action_regrets
+                )
 
             if self.enable_compute_nash_conv and cfr_iter in (
                 24,
@@ -385,6 +306,123 @@ class CFR1PAgent(ThreadedSearchAgent):
         sum_sigmas = sum(sigmas)
         assert len(actions) == 0 or sum_sigmas > 0, f"{actions} {cfr_data.bp_sigma}"
         return [s / sum_sigmas for s in sigmas]
+
+    def update_cfr_data(
+        self, cfr_data, pwr, actions, state_utility, action_utilities, action_regrets
+    ):
+        sigmas = self.strategy(cfr_data, pwr, actions)
+        for action, regret, s in zip(actions, action_regrets, sigmas):
+            cfr_data.cum_regrets[(pwr, action)] += regret
+            cfr_data.last_regrets[(pwr, action)] = regret
+            cfr_data.cum_sigma[(pwr, action)] += s
+        cfr_data.cum_utility[pwr] += state_utility
+
+        if self.use_optimistic_cfr:
+            pos_regrets = [
+                max(0, cfr_data.cum_regrets[(pwr, a)] + cfr_data.last_regrets[(pwr, a)])
+                for a in actions
+            ]
+        else:
+            pos_regrets = [max(0, cfr_data.cum_regrets[(pwr, a)]) for a in actions]
+
+        sum_pos_regrets = sum(pos_regrets)
+        for action, pos_regret in zip(actions, pos_regrets):
+            if sum_pos_regrets == 0:
+                cfr_data.sigma[(pwr, action)] = 1.0 / len(actions)
+            else:
+                cfr_data.sigma[(pwr, action)] = pos_regret / sum_pos_regrets
+
+    def maybe_do_pruning(self, *, cfr_iter, **kwargs):
+        if not self.use_pruning:
+            return
+
+        if cfr_iter == 1 + int(self.n_rollouts / 4):
+            self.prune_actions(
+                cfr_iter=cfr_iter, ave_regret_thresh=-0.06, ave_strat_thresh=0.002, **kwargs
+            )
+
+        if cfr_iter == 1 + int(self.n_rollouts / 2):
+            self.prune_actions(
+                cfr_iter=cfr_iter, ave_regret_thresh=-0.03, ave_strat_thresh=0.001, **kwargs
+            )
+
+    @classmethod
+    def prune_actions(
+        cls,
+        *,
+        cfr_iter,
+        iter_weight,
+        cfr_data,
+        power_plausible_orders,
+        ave_regret_thresh,
+        ave_strat_thresh,
+    ):
+        for pwr, actions in power_plausible_orders.items():
+            paired_list = []
+            for action in actions:
+                ave_regret = cfr_data.cum_regrets[(pwr, action)] / iter_weight
+                new_pair = (action, ave_regret)
+                paired_list.append(new_pair)
+            paired_list.sort(key=lambda tup: tup[1])
+            for (action, ave_regret) in paired_list:
+                ave_strat = cfr_data.cum_sigma[(pwr, action)] / iter_weight
+                if (
+                    ave_regret < ave_regret_thresh
+                    and ave_strat < ave_strat_thresh
+                    and cfr_data.sigma[(pwr, action)] == 0
+                ):
+                    cfr_data.cum_sigma[(pwr, action)] = 0
+                    logging.info(
+                        "pruning on iter {} action {} with ave regret {} and ave strat {}".format(
+                            cfr_iter, action, ave_regret, ave_strat
+                        )
+                    )
+                    actions.remove(action)
+
+    @classmethod
+    def linear_cfr(cls, cfr_data, power_plausible_orders, cfr_iter, iter_weight) -> float:
+        discount_factor = (cfr_iter + 0.000001) / (cfr_iter + 1)
+
+        for pwr, actions in power_plausible_orders.items():
+            if len(actions) == 0:
+                continue
+            cfr_data.cum_utility[pwr] *= discount_factor
+            for action in actions:
+                cfr_data.cum_regrets[(pwr, action)] *= discount_factor
+                cfr_data.cum_sigma[(pwr, action)] *= discount_factor
+
+        return iter_weight * discount_factor + 1.0
+
+    def log_cfr_iter_state(
+        self,
+        *,
+        game,
+        pwr,
+        actions,
+        cfr_data,
+        cfr_iter,
+        iter_weight,
+        power_is_loser,
+        state_utility,
+        action_utilities,
+    ):
+        logging.info(
+            f"<> [ {cfr_iter+1} / {self.n_rollouts} ] {pwr} {game.phase} avg_utility={cfr_data.cum_utility[pwr] / iter_weight:.5f} cur_utility={state_utility:.5f} "
+            f"is_loser= {int(power_is_loser[pwr])}"
+        )
+        logging.info(f"     {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
+        action_probs: List[float] = self.avg_strategy(cfr_data, pwr, actions)
+        bp_probs: List[float] = self.bp_strategy(cfr_data, pwr, actions)
+        avg_utilities = [
+            (cfr_data.cum_regrets[(pwr, a)] + cfr_data.cum_utility[pwr]) / iter_weight
+            for a in actions
+        ]
+        sorted_metrics = sorted(
+            zip(actions, action_probs, bp_probs, avg_utilities, action_utilities),
+            key=lambda ac: -ac[1],
+        )
+        for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
+            logging.info(f"|>  {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
 
     def compute_nash_conv(self, cfr_data, cfr_iter, game, power_plausible_orders):
         """For each power, compute EV of each action assuming opponent ave policies"""
