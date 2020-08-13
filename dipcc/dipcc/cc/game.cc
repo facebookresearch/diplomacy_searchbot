@@ -151,6 +151,9 @@ string Game::to_json() {
     phase["state"] = state.to_json();
     JCHECK(map_contains(order_history_, state.get_phase()),
            "Game::to_json missing orders for " + state.get_phase().to_string());
+    for (auto &p : POWERS) {
+      phase["orders"][power_str(p)] = vector<string>();
+    }
     for (auto &p : order_history_.at(state.get_phase())) {
       string power = power_str(p.first);
       for (Order &order : p.second) {
