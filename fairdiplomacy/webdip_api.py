@@ -38,6 +38,12 @@ COAST_ID_TO_LOC_ID = {76: 8, 77: 8, 78: 32, 79: 32, 80: 20, 81: 20}
 def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
     game = Game()
     for phase in webdip_state_json["phases"]:
+        # an adj phase with no orders may not show up at all in the json: skip
+        # ahead to the spring phase to stay sync'd
+        if game.current_short_phase[-1] == "A" and phase["phase"] == "Diplomacy":
+            logger.debug(f"Skip empty {game.phase}")
+            game.process()
+
         # print(phase)
         terr_to_unit = {}
         for j in phase["units"]:
