@@ -60,6 +60,8 @@ public:
     return state_.get_square_scores();
   }
 
+  void clear_old_all_possible_orders();
+
   // python
 
   std::unordered_map<std::string, std::vector<std::string>>

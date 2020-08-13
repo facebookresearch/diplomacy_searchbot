@@ -283,4 +283,10 @@ GameState *Game::get_last_movement_phase() {
   return nullptr;
 }
 
+void Game::clear_old_all_possible_orders() {
+  for (auto &p : state_history_) {
+    p.second.clear_all_possible_orders();
+  }
+}
+
 } // namespace dipcc

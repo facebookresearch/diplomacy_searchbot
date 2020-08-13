@@ -37,7 +37,9 @@ PYBIND11_MODULE(pydipcc, m) {
       .def_property_readonly("phase_type", &Game::phase_type) // mila compat
       .def("get_units", &py_game_get_units,
            py::return_value_policy::move) // mila compat
-      .def("get_square_scores", &Game::get_square_scores);
+      .def("get_square_scores", &Game::get_square_scores)
+      .def("clear_old_all_possible_orders",
+           &Game::clear_old_all_possible_orders);
 
   // class PhaseData
   py::class_<PhaseData>(m, "PhaseData")
