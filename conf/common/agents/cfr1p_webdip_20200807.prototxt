@@ -14,7 +14,7 @@ cfr1p {
 
 
   max_batch_size: 700
-  plausible_orders_req_size: 2100
+  plausible_orders_req_size: 1024
   n_gpu: 1
   n_rollout_procs: 56
   n_server_procs: 1
