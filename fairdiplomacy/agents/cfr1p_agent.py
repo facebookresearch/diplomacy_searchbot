@@ -20,6 +20,7 @@ Power = str
 
 class CFRData:
     def __init__(self):
+        self.power_plausible_orders: Dict[Power, List[Action]] = {}
         self.sigma: Dict[Tuple[Power, Action], float] = {}
         self.cum_sigma: Dict[Tuple[Power, Action], float] = defaultdict(float)
         self.cum_regrets: Dict[Tuple[Power, Action], float] = defaultdict(float)
@@ -123,17 +124,24 @@ class CFR1PAgent(ThreadedSearchAgent):
             for o, prob in orders_to_logprob.items():
                 cfr_data.bp_sigma[(p, o)] = float(np.exp(prob))
 
-        power_plausible_orders = {
+        cfr_data.power_plausible_orders = {
             p: sorted(list(v.keys())) for p, v in power_plausible_orders.items()
         }
+        del power_plausible_orders
 
         # If there are <=1 plausible orders, no need to search
-        if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 0:
+        if (
+            early_exit_for_power
+            and len(cfr_data.power_plausible_orders[early_exit_for_power]) == 0
+        ):
             return {early_exit_for_power: {tuple(): 1.0}}
-        if early_exit_for_power and len(power_plausible_orders[early_exit_for_power]) == 1:
+        if (
+            early_exit_for_power
+            and len(cfr_data.power_plausible_orders[early_exit_for_power]) == 1
+        ):
             return {
                 early_exit_for_power: {
-                    tuple(list(power_plausible_orders[early_exit_for_power]).pop()): 1.0
+                    tuple(list(cfr_data.power_plausible_orders[early_exit_for_power]).pop()): 1.0
                 }
             }
 
@@ -148,32 +156,27 @@ class CFR1PAgent(ThreadedSearchAgent):
 
             timings.start("start")
 
-            self.maybe_do_pruning(
-                cfr_iter=cfr_iter,
-                iter_weight=iter_weight,
-                cfr_data=cfr_data,
-                power_plausible_orders=power_plausible_orders,
-            )
+            self.maybe_do_pruning(cfr_iter=cfr_iter, iter_weight=iter_weight, cfr_data=cfr_data)
 
-            iter_weight = self.linear_cfr(cfr_data, power_plausible_orders, cfr_iter, iter_weight)
+            iter_weight = self.linear_cfr(cfr_data, cfr_iter, iter_weight)
 
             timings.start("query_policy")
             # get policy probs for all powers
             power_is_loser = {
                 pwr: self.is_loser(cfr_data, pwr, cfr_iter, actions, iter_weight)
-                for (pwr, actions) in power_plausible_orders.items()
+                for (pwr, actions) in cfr_data.power_plausible_orders.items()
             }
             power_action_ps: Dict[Power, List[float]] = {
                 pwr: (
-                    self.bp_strategy(pwr, actions)
+                    self.bp_strategy(cfr_data, pwr)
                     if (
                         cfr_iter < self.bp_iters
                         or np.random.rand() < self.bp_prob
                         or power_is_loser[pwr]
                     )
-                    else self.strategy(cfr_data, pwr, actions)
+                    else self.strategy(cfr_data, pwr)
                 )
-                for (pwr, actions) in power_plausible_orders.items()
+                for (pwr, actions) in cfr_data.power_plausible_orders.items()
             }
 
             timings.start("apply_orders")
@@ -185,7 +188,7 @@ class CFR1PAgent(ThreadedSearchAgent):
             }
             power_sampled_orders: Dict[Power, Tuple[Action, float]] = {
                 pwr: (
-                    (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
+                    (cfr_data.power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
                     if pwr in idxs
                     else ((), 1.0)
                 )
@@ -195,7 +198,7 @@ class CFR1PAgent(ThreadedSearchAgent):
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
                 {**{p: a for p, (a, _) in power_sampled_orders.items()}, pwr: action}
-                for pwr, actions in power_plausible_orders.items()
+                for pwr, actions in cfr_data.power_plausible_orders.items()
                 for action in actions
             ]
 
@@ -215,7 +218,7 @@ class CFR1PAgent(ThreadedSearchAgent):
                 else on_miss()
             )
 
-            for pwr, actions in power_plausible_orders.items():
+            for pwr, actions in cfr_data.power_plausible_orders.items():
                 if len(actions) == 0:
                     continue
 
@@ -258,7 +261,7 @@ class CFR1PAgent(ThreadedSearchAgent):
                 self.n_rollouts - 1,
             ):
                 logging.info(f"Computing nash conv for iter {cfr_iter}")
-                self.compute_nash_conv(cfr_data, cfr_iter, game, power_plausible_orders)
+                self.compute_nash_conv(cfr_data, cfr_iter, game)
 
             if self.cache_rollout_results and (cfr_iter + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
@@ -270,29 +273,35 @@ class CFR1PAgent(ThreadedSearchAgent):
         # return prob. distributions for each power
         ret = {}
         for p in POWERS:
-            final_ps = self.strategy(cfr_data, p, power_plausible_orders[p])
-            avg_ps = self.avg_strategy(cfr_data, p, power_plausible_orders[p])
-            bp_ps = self.bp_strategy(cfr_data, p, power_plausible_orders[p])
+            final_ps = self.strategy(cfr_data, p)
+            avg_ps = self.avg_strategy(cfr_data, p)
+            bp_ps = self.bp_strategy(cfr_data, p)
             ps = bp_ps if power_is_loser[p] else (final_ps if self.use_final_iter else avg_ps)
-            ret[p] = dict(sorted(zip(power_plausible_orders[p], ps), key=lambda ac_p: -ac_p[1]))
+            ret[p] = dict(
+                sorted(zip(cfr_data.power_plausible_orders[p], ps), key=lambda ac_p: -ac_p[1])
+            )
 
             if early_exit_for_power == p:
                 avg_ps_dict = dict(
-                    sorted(zip(power_plausible_orders[p], avg_ps), key=lambda ac_p: -ac_p[1])
+                    sorted(
+                        zip(cfr_data.power_plausible_orders[p], avg_ps), key=lambda ac_p: -ac_p[1]
+                    )
                 )
                 logging.info(f"Final avg strategy: {avg_ps_dict}")
 
         return ret
 
     @classmethod
-    def strategy(cls, cfr_data, power, actions) -> List[float]:
+    def strategy(cls, cfr_data, power) -> List[float]:
+        actions = cfr_data.power_plausible_orders[power]
         try:
             return [cfr_data.sigma[(power, a)] for a in actions]
         except KeyError:
             return [1.0 / len(actions) for _ in actions]
 
     @classmethod
-    def avg_strategy(cls, cfr_data, power, actions) -> List[float]:
+    def avg_strategy(cls, cfr_data, power) -> List[float]:
+        actions = cfr_data.power_plausible_orders[power]
         sigmas = [cfr_data.cum_sigma[(power, a)] for a in actions]
         sum_sigmas = sum(sigmas)
         if sum_sigmas == 0:
@@ -301,7 +310,8 @@ class CFR1PAgent(ThreadedSearchAgent):
             return [s / sum_sigmas for s in sigmas]
 
     @classmethod
-    def bp_strategy(cls, cfr_data, power, actions) -> List[float]:
+    def bp_strategy(cls, cfr_data, power) -> List[float]:
+        actions = cfr_data.power_plausible_orders[power]
         sigmas = [cfr_data.bp_sigma[(power, a)] for a in actions]
         sum_sigmas = sum(sigmas)
         assert len(actions) == 0 or sum_sigmas > 0, f"{actions} {cfr_data.bp_sigma}"
@@ -310,7 +320,7 @@ class CFR1PAgent(ThreadedSearchAgent):
     def update_cfr_data(
         self, cfr_data, pwr, actions, state_utility, action_utilities, action_regrets
     ):
-        sigmas = self.strategy(cfr_data, pwr, actions)
+        sigmas = self.strategy(cfr_data, pwr)
         for action, regret, s in zip(actions, action_regrets, sigmas):
             cfr_data.cum_regrets[(pwr, action)] += regret
             cfr_data.last_regrets[(pwr, action)] = regret
@@ -348,16 +358,9 @@ class CFR1PAgent(ThreadedSearchAgent):
 
     @classmethod
     def prune_actions(
-        cls,
-        *,
-        cfr_iter,
-        iter_weight,
-        cfr_data,
-        power_plausible_orders,
-        ave_regret_thresh,
-        ave_strat_thresh,
+        cls, *, cfr_iter, iter_weight, cfr_data, ave_regret_thresh, ave_strat_thresh
     ):
-        for pwr, actions in power_plausible_orders.items():
+        for pwr, actions in cfr_data.power_plausible_orders.items():
             paired_list = []
             for action in actions:
                 ave_regret = cfr_data.cum_regrets[(pwr, action)] / iter_weight
@@ -380,10 +383,10 @@ class CFR1PAgent(ThreadedSearchAgent):
                     actions.remove(action)
 
     @classmethod
-    def linear_cfr(cls, cfr_data, power_plausible_orders, cfr_iter, iter_weight) -> float:
+    def linear_cfr(cls, cfr_data, cfr_iter, iter_weight) -> float:
         discount_factor = (cfr_iter + 0.000001) / (cfr_iter + 1)
 
-        for pwr, actions in power_plausible_orders.items():
+        for pwr, actions in cfr_data.power_plausible_orders.items():
             if len(actions) == 0:
                 continue
             cfr_data.cum_utility[pwr] *= discount_factor
@@ -411,8 +414,8 @@ class CFR1PAgent(ThreadedSearchAgent):
             f"is_loser= {int(power_is_loser[pwr])}"
         )
         logging.info(f"     {'probs':8s}  {'bp_p':8s}  {'avg_u':8s}  {'cur_u':8s}  orders")
-        action_probs: List[float] = self.avg_strategy(cfr_data, pwr, actions)
-        bp_probs: List[float] = self.bp_strategy(cfr_data, pwr, actions)
+        action_probs: List[float] = self.avg_strategy(cfr_data, pwr)
+        bp_probs: List[float] = self.bp_strategy(cfr_data, pwr)
         avg_utilities = [
             (cfr_data.cum_regrets[(pwr, a)] + cfr_data.cum_utility[pwr]) / iter_weight
             for a in actions
@@ -424,13 +427,13 @@ class CFR1PAgent(ThreadedSearchAgent):
         for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
             logging.info(f"|>  {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
 
-    def compute_nash_conv(self, cfr_data, cfr_iter, game, power_plausible_orders):
+    def compute_nash_conv(self, cfr_data, cfr_iter, game):
         """For each power, compute EV of each action assuming opponent ave policies"""
 
         # get policy probs for all powers
         power_action_ps: Dict[Power, List[float]] = {
             pwr: self.avg_strategy(cfr_data, pwr, actions)
-            for (pwr, actions) in power_plausible_orders.items()
+            for (pwr, actions) in cfr_data.power_plausible_orders.items()
         }
         logging.info("Policies: {}".format(power_action_ps))
 
@@ -438,7 +441,7 @@ class CFR1PAgent(ThreadedSearchAgent):
         temp_action_utilities: Dict[Tuple[Power, Action], float] = defaultdict(float)
         total_state_utility: Dict[Power, float] = defaultdict(float)
         max_state_utility: Dict[Power, float] = defaultdict(float)
-        for pwr, actions in power_plausible_orders.items():
+        for pwr, actions in cfr_data.power_plausible_orders.items():
             total_state_utility[pwr] = 0
             max_state_utility[pwr] = 0
         # total_state_utility = [0 for u in idxs]
@@ -453,7 +456,7 @@ class CFR1PAgent(ThreadedSearchAgent):
             }
             power_sampled_orders: Dict[Power, Tuple[Action, float]] = {
                 pwr: (
-                    (power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
+                    (cfr_data.power_plausible_orders[pwr][idxs[pwr]], action_ps[idxs[pwr]])
                     if pwr in idxs
                     else ((), 1.0)
                 )
@@ -463,14 +466,14 @@ class CFR1PAgent(ThreadedSearchAgent):
             # for each power: compare all actions against sampled opponent action
             set_orders_dicts = [
                 {**{p: a for p, (a, _) in power_sampled_orders.items()}, pwr: action}
-                for pwr, actions in power_plausible_orders.items()
+                for pwr, actions in cfr_data.power_plausible_orders.items()
                 for action in actions
             ]
             all_rollout_results = self.do_rollouts(
                 game, set_orders_dicts, average_n_rollouts=self.average_n_rollouts
             )
 
-            for pwr, actions in power_plausible_orders.items():
+            for pwr, actions in cfr_data.power_plausible_orders.items():
                 if len(actions) == 0:
                     continue
 
@@ -486,12 +489,12 @@ class CFR1PAgent(ThreadedSearchAgent):
                     temp_action_utilities[(pwr, action)] = val
                     total_action_utilities[(pwr, action)] += val
                 # logging.info("results for power={}".format(pwr))
-                # for i in range(len(power_plausible_orders[pwr])):
-                #     action = power_plausible_orders[pwr][i]
+                # for i in range(len(cfr_data.power_plausible_orders[pwr])):
+                #     action = cfr_data.power_plausible_orders[pwr][i]
                 #     util = action_utilities[i]
                 #     logging.info("{} {} = {}".format(pwr,action,util))
 
-                # for action in power_plausible_orders[pwr]:
+                # for action in cfr_data.power_plausible_orders[pwr]:
                 #     logging.info("{} {} = {}".format(pwr,action,action_utilities))
                 # logging.info("action utilities={}".format(action_utilities))
                 # logging.info("Results={}".format(results))
@@ -503,8 +506,8 @@ class CFR1PAgent(ThreadedSearchAgent):
                 # logging.info("Total action utilities={}".format(total_action_utilities))
                 # total_state_utility[pwr] += state_utility
         # total_state_utility[:] = [x / 100 for x in total_state_utility]
-        for pwr, actions in power_plausible_orders.items():
-            # ps = self.avg_strategy(pwr, power_plausible_orders[pwr])
+        for pwr, actions in cfr_data.power_plausible_orders.items():
+            # ps = self.avg_strategy(pwr, cfr_data.power_plausible_orders[pwr])
             for i in range(len(actions)):
                 action = actions[i]
                 total_action_utilities[(pwr, action)] /= br_iters
@@ -514,7 +517,7 @@ class CFR1PAgent(ThreadedSearchAgent):
                     total_action_utilities[(pwr, action)] * power_action_ps[pwr][i]
                 )
 
-        for pwr, actions in power_plausible_orders.items():
+        for pwr, actions in cfr_data.power_plausible_orders.items():
             logging.info(
                 "results for power={} value={} diff={}".format(
                     pwr,
