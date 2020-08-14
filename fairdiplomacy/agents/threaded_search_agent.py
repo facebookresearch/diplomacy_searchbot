@@ -200,7 +200,9 @@ class ThreadedSearchAgent(BaseSearchAgent):
                         for other_power in other_powers[game.game_id]:
                             game.set_orders(other_power, list(power_orders[other_power]))
                         assert game.current_short_phase == min_phase
-                        other_powers[game.game_id] = POWERS  # no set orders on subsequent turns
+
+                for game in games:
+                    other_powers[game.game_id] = POWERS  # no set orders on subsequent turns
                 has_other_powers = True
 
             with timings("env.step"):
