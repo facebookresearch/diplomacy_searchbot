@@ -16,7 +16,7 @@ std::unordered_map<Loc, Order> organize_orders_by_src(
   for (auto &it : orders) {
     for (const Order order : it.second) {
 
-      r[order.get_unit().loc] = order;
+      r[root_loc(order.get_unit().loc)] = order;
     }
   }
   return r;

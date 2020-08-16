@@ -1106,7 +1106,7 @@ GameState GameState::process_m(
           DLOG(WARNING) << "Accepting implicit via for order: "
                         << order.to_string();
           order = order.with_via(true);
-          orders_by_src[order.get_unit().loc] = order;
+          orders_by_src[root_loc(order.get_unit().loc)] = order;
         } else {
           DLOG(WARNING) << "Order not possible: " << order.to_string();
           illegal_orderers.insert(root_loc(order.get_unit().loc));
@@ -1132,7 +1132,7 @@ GameState GameState::process_m(
         // handle supports after determining which moves are legal
         support_orders.push_back(order);
       } else if (order.get_type() == OrderType::C) {
-        auto target = orders_by_src.find(order.get_target().loc);
+        auto target = orders_by_src.find(root_loc(order.get_target().loc));
         if (target != orders_by_src.end() &&
             target->second.get_type() == OrderType::M &&
             target->second.get_dest() == order.get_dest() &&
@@ -1168,7 +1168,8 @@ GameState GameState::process_m(
   for (Order &order : support_orders) {
     // Check for support coordination, e.g. that we are not support-holding a
     // unit that is moving, or support-moving a unit to the wrong destination
-    auto target = orders_by_src.find(order.get_target().loc);
+    auto target = orders_by_src.find(root_loc(order.get_target().loc));
+
     if (set_contains(unconvoyed_movers, root_loc(order.get_target().loc))) {
       DLOG(WARNING) << "Support of unconvoyed mover: " << order.to_string();
       continue;
