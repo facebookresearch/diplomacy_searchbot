@@ -148,7 +148,8 @@ def play_webdip(cfg):
     agent = build_agent_from_cfg(cfg.agent)
 
     play_webdip_impl(
-        api_key=cfg.api_key,
+        webdip_url=cfg.webdip_url,
+        api_keys=cfg.api_key.split(","),
         game_id=cfg.game_id,
         agent=agent,
         check_phase=cfg.check_phase,

@@ -20,11 +20,12 @@ from fairdiplomacy.models.consts import POWERS
 from diplomacy.integration.webdiplomacy_net.orders import Order as WebdipOrder
 from diplomacy.integration.webdiplomacy_net.game import state_dict_to_game_and_power
 
-API_URL = "http://webdiplomacy.net/api.php"
+API_PATH = "/api.php"
 
 STATUS_ROUTE = "game/status"
 MISSING_ORDERS_ROUTE = "players/missing_orders"
 POST_ORDERS_ROUTE = "game/orders"
+SEND_MESSAGE_ROUTE = "game/sendmessage"
 
 logger = logging.getLogger("webdip")
 
@@ -186,8 +187,17 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
 #     return j
 
 
+def safe_json_loads(json_str: str):
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.warn(f"Bad JSON: {json_str}")
+        raise e
+
+
 def play_webdip(
-    api_key: str,
+    webdip_url: str,
+    api_keys: List[str],
     game_id=0,
     agent=None,
     check_phase=None,
@@ -195,17 +205,20 @@ def play_webdip(
     force=False,
     force_power="ENGLAND",
 ):
-    api_header = {"Authorization": f"Bearer {api_key}"}
 
+    api_url = webdip_url + API_PATH
+    iter_ = 0
     while True:
+        api_header = {"Authorization": f"Bearer {api_keys[iter_ % len(api_keys)]}"}
+        iter_ += 1
         logging.info("========================================================================")
         if check_phase or force or json_out:
             next_game = {"gameID": game_id, "countryID": COUNTRY_POWER_TO_ID[force_power]}
         else:
             missing_orders_resp = requests.get(
-                API_URL, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header
+                api_url, params={"route": MISSING_ORDERS_ROUTE}, headers=api_header
             )
-            missing_orders_json = json.loads(missing_orders_resp.content)
+            missing_orders_json = safe_json_loads(missing_orders_resp.content)
             logger.info(missing_orders_json)
             if game_id != 0:
                 missing_orders_json = [x for x in missing_orders_json if x["gameID"] == game_id]
@@ -219,7 +232,7 @@ def play_webdip(
 
         power = COUNTRY_ID_TO_POWER[next_game["countryID"]]
         status_resp = requests.get(
-            API_URL,
+            api_url,
             params={
                 "route": STATUS_ROUTE,
                 "gameID": next_game["gameID"],
@@ -227,7 +240,30 @@ def play_webdip(
             },
             headers=api_header,
         )
-        status_json = json.loads(status_resp.content)
+        status_json = safe_json_loads(status_resp.content)
+
+        if "pressType" in status_json and status_json["pressType"] == "Regular":
+            # send a message!
+            all_messages = [phase.get("messages", []) for phase in status_json["phases"]]
+            all_messages = [
+                message["message"]
+                for sublist in all_messages
+                for message in sublist
+                if message["fromCountryID"] != next_game["countryID"]
+            ]
+            if len(all_messages) > 0:
+                msg = "Last I heard was: " + all_messages[-1]
+            else:
+                msg = "Say something!"
+            msg_json = {
+                "gameID": next_game["gameID"],
+                "countryID": next_game["countryID"],
+                "toCountryID": 2 if next_game["countryID"] == 1 else 1,  # someone who's not me
+                "message": msg,
+            }
+            requests.post(
+                api_url, params={"route": SEND_MESSAGE_ROUTE}, headers=api_header, json=msg_json,
+            )
 
         # I can probably use the diplomacy API for this, but it wasn't
         # working out ofthebox for some reason
@@ -236,7 +272,7 @@ def play_webdip(
         game = webdip_state_to_game(status_json, stop_at_phase=check_phase)
 
         if json_out:
-            game_json = json.loads(game.to_json())
+            game_json = safe_json_loads(game.to_json())
             with open(json_out, "w") as jf:
                 json.dump(game_json, jf)
             return
@@ -254,7 +290,7 @@ def play_webdip(
                 f"Got exception while trying to get actions for {power}."
                 f" Saving game to {tmp_path}"
             )
-            game_json = json.loads(game.to_json())
+            game_json = safe_json_loads(game.to_json())
             with open(tmp_path, "w") as jf:
                 json.dump(game_json, jf)
             raise
@@ -290,7 +326,7 @@ def play_webdip(
         # print([p['turn'] for p in status_json['phases']])
         logging.info(f"JSON: {pformat(agent_orders_json)}")
         orders_resp = requests.post(
-            API_URL,
+            api_url,
             params={"route": POST_ORDERS_ROUTE},
             headers=api_header,
             json=agent_orders_json,
@@ -301,11 +337,11 @@ def play_webdip(
         ###############################################################################
 
         if (
-            orders_resp.status_code == 400
-            and orders_resp.content.startswith(b"Invalid phase, expected `Retreats`, got ")
+            orders_resp.content.startswith(b"Invalid phase, expected `Retreats`, got ")
             and len(game.get_state()["units"][power])
             < len(game.get_phase_history()[-1].state["units"][power])
             and game.get_phase_history()[-1].name.endswith("M")
+            # and orders_resp.status_code == 400
         ):
             # This sometimes happens when a unit is dislodged and has nowhere to
             # retreat -- webdip expects a disband, but the
@@ -317,11 +353,12 @@ def play_webdip(
                 orders=[],  # just provide empty orders; webdip will process the disband automatically
             )
             orders_resp = requests.post(
-                API_URL, params={"route": POST_ORDERS_ROUTE}, headers=api_header, json=retreat_json
+                api_url, params={"route": POST_ORDERS_ROUTE}, headers=api_header, json=retreat_json
             )
+
             continue
             # orders_resp = requests.post(
-            #     API_URL,
+            #     api_url,
             #     params={"route": POST_ORDERS_ROUTE},
             #     headers=api_header,
             #     json=agent_orders_json,
@@ -337,7 +374,7 @@ def play_webdip(
 
         # logger.info(orders_resp.content)
         try:
-            orders_resp_json = json.loads(orders_resp.content)
+            orders_resp_json = safe_json_loads(orders_resp.content)
         except json.decoder.JSONDecodeError as e:
             logger.info("GOT ERROR DECODING ORDER RESPONSE!")
             logger.info(orders_resp.content)
@@ -383,4 +420,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    play_webdip(args.api_key, args.game_id, args.country)
+    play_webdip("http://webdiplomacy.net", [args.api_key], args.game_id, args.country)

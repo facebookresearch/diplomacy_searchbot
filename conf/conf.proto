@@ -538,6 +538,7 @@ message PlayWebdipTask {
   optional string json_out = 5;
   optional bool force = 6 [ default = false ];
   optional string force_power = 7 [ default = "ENGLAND" ];
+  optional string webdip_url = 8 [ default = "http://webdiplomacy.net" ];
 }
 
 // Compute throughput and latency numbers for the no-press model
