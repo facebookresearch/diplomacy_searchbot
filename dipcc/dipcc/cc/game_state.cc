@@ -173,8 +173,8 @@ void GameState::load_all_possible_orders_m() {
 
         // Pop fleet to consider
         auto fleet_it = adj_fleets_todo.begin();
-        adj_fleets_todo.erase(fleet_it);
         Unit fleet = *fleet_it;
+        adj_fleets_todo.erase(fleet_it);
         local_fleets_visited.insert(fleet);
         global_fleets_visited.insert(fleet.loc);
 
