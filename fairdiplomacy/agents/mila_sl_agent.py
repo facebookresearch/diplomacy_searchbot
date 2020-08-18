@@ -1,6 +1,7 @@
 import asyncio
 import threading
 import queue
+import json
 
 import diplomacy
 from tornado import gen
@@ -23,6 +24,8 @@ class MilaSLAgent(BaseAgent):
         self.thread.start()
 
     def get_orders(self, game, power):
+        if not isinstance(game, diplomacy.Game):
+            game = diplomacy.utils.export.from_saved_game_format(json.loads(game.to_json()))
         self.q_in.put((game, power))
         orders = self.q_out.get()
         return orders
