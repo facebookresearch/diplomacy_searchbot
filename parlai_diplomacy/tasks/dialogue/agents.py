@@ -7,6 +7,7 @@
 import json
 import os
 import random
+import copy
 from glob import glob
 from typing import List, Tuple
 
@@ -255,6 +256,36 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
     Label is next message
     """
 
+    @staticmethod
+    def add_silence_messages(power, messages, message_history):
+        """
+        Static method that adds the SILENCE tokens to messages
+        :param power:
+        :param messages:
+        :param message_history:
+        :return:
+        """
+        empty_output = f"{power}: SILENCE"
+        updated_msgs = []
+        if not message_history:
+            updated_msgs.append(empty_output)
+            power_cur_speaker = False
+        else:
+            power_cur_speaker = message_history[-1].startswith(power)
+
+        for msg in messages:
+            if msg.startswith(power):
+                power_cur_speaker = True
+                updated_msgs.append(msg)
+            else:
+                if not power_cur_speaker:
+                    updated_msgs.append(empty_output)
+
+                updated_msgs.append(msg)
+                power_cur_speaker = False
+
+        return updated_msgs
+
     def get_num_samples(self, opt) -> Tuple[int, int]:
         """
         Return the number of samples given the datatype.
@@ -262,13 +293,12 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         # TODO: get actual counts here
         datatype = opt["datatype"]
         if "train" in datatype:
-            return 10463131, 10463131
+            return 6351029, 6351029
 
         if "valid" in datatype:
-            return 557029, 557029
+            return 336355, 336355
 
-    @staticmethod
-    def _generate_example_tuples(game_id, phase_id, player_id, data):
+    def _generate_example_tuples(self, game_id, phase_id, player_id, data):
         """
         Yields example tuple(s) used in `_create_message`
 
@@ -281,23 +311,82 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         data["game_id"] = game_id
         data["phase_id"] = phase_id
         data["player_id"] = player_id
-        data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+        cur_power = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+        data["player"] = cur_power
+
+        # We only include Game_Phase_Msg
+        if data["data_status"] != "Game_Phase_Msg":
+            return
 
         # We convert a single data example into several different ones by splitting each "message" into
         # a different example and adapting "message_history" accordingly at each phase
         msgs = data["message"].split("\n")  # check
-        msg_history = (
+
+        msg_history_list = (
             data["message_history"].replace(data["message"], "").split("\n")
         )  # Small hack to fix message history
-        msg_history_buffer = msg_history.copy()
+
+        msgs = self.add_silence_messages(cur_power, msgs, msg_history_list)
+
+        msg_history_buffer_list = msg_history_list.copy()
+        pre_msg_history_buffer_list = msg_history_list.copy()
+
+        # We include self-talks, messages to GameMaster and SILENCE
+        default_msg_dict = {
+            f"{cur_power} -> {v.capitalize()}": [] for _, v in utls.COUNTRY_ID_TO_POWER.items()
+        }
+        default_msg_dict[f"{cur_power} -> GameMaster"] = []
+        default_msg_dict[f"{cur_power}"] = []
+
+        msg_dict = copy.deepcopy(default_msg_dict)
+        yield_example = False
+
         for msg in msgs:
-            if msg.startswith(data["player"]):
-                data_dict = data.copy()
-                data_dict["message"] = msg
-                data_dict["message_history"] = "\n".join(msg_history_buffer)
-                yield data_dict
+            if msg.startswith(cur_power):
+                if not yield_example:
+                    pre_msg_history_buffer_list = msg_history_buffer_list.copy()
+
+                if "SILENCE" not in msg:
+                    msg_history_buffer_list.append(msg)
+
+                yield_example = True
+
+                key, msg = msg.split(":", 1)
+                msg_dict[key].append(msg)
+
             else:
-                msg_history_buffer.append(msg)
+                if yield_example:
+                    yield self._construct_example_dict(
+                        data.copy(), msg_dict, pre_msg_history_buffer_list
+                    )
+                    yield_example = False
+                    msg_dict = copy.deepcopy(default_msg_dict)
+
+                msg_history_buffer_list.append(msg)
+
+        if yield_example:
+            yield self._construct_example_dict(data.copy(), msg_dict, pre_msg_history_buffer_list)
+
+    @staticmethod
+    def _construct_example_dict(data_dict, msg_dict, pre_msg_history_buffer_list):
+        """
+        Static method that takes the data dict and updates "messages" and "message_history"
+        with the msg_dict
+        :param data_dict:
+        :param msg_dict: 
+        :param pre_msg_history_buffer_list:
+        :return:
+        """
+        output_message_list = []
+        for k, v in msg_dict.items():
+            if v:
+                joined_msg = " ".join(v)
+                output_message_list.append(f"{k}: {joined_msg}")
+
+        data_dict["message"] = "\n".join(output_message_list)
+        data_dict["message_history"] = "\n".join(pre_msg_history_buffer_list)
+
+        return data_dict
 
     def _get_base_msg(self, queue_output):
         base_msg = {

@@ -10,7 +10,8 @@ Committing here as an example for iterating/performing analysis on this data
 "press_dialogue" -> [messages, state] -> [message]
 "full_press" -> [messages, state] -> [message or order]
 """
-import parlai_diplomacy.tasks.common_task_utils as utls
+
+from parlai_diplomacy.tasks.dialogue.agents import utls, BaseDialogueChunkTeacher
 from parlai_diplomacy.tasks.no_press.stream.agents import TRAIN_VAL_SPLIT
 from parlai.utils import logging
 from parlai_diplomacy.tasks.common_task_utils import COUNTRY_ID_TO_POWER
@@ -35,7 +36,7 @@ def print_count(variant):
                             tot += len(phase)
                             fle_total += len(phase)
                         elif (
-                            variant == "press_dialogue" or variant == "full_press"
+                            variant == "full_press"
                         ):  # press_dialogue: Train: 10463131, Valid: 557029
                             for power, value in phase.items():
                                 from_msgs = [
@@ -43,9 +44,38 @@ def print_count(variant):
                                     for s in phase[power]["message"].split("\n")
                                     if s.startswith(COUNTRY_ID_TO_POWER[int(power)].capitalize())
                                 ]
-                                num_msgs = len(from_msgs) + (
-                                    1 if variant == "full_press" else 0
-                                )  # Add 1 for orders
+                                num_msgs = len(from_msgs) + (1 if variant == "full_press" else 0)
+                                # Add 1 for orders
+                                tot += num_msgs
+                                fle_total += num_msgs
+                        elif variant == "press_dialogue":
+                            # press_dialogue_new: Train: 6120613, Valid: 327647
+                            for power, value in phase.items():
+                                if value["data_status"] != "Game_Phase_Msg":
+                                    break
+
+                                num_msgs = 0
+
+                                cur_power = utls.COUNTRY_ID_TO_POWER[int(power)].capitalize()
+                                messages = value["message"]
+                                message_history = value["message_history"].replace(messages, "")
+
+                                all_msgs = messages.split("\n")
+                                message_history_list = message_history.split("\n")
+
+                                all_msgs = BaseDialogueChunkTeacher.add_silence_messages(
+                                    cur_power, all_msgs, message_history_list
+                                )
+
+                                cur_power_consec = False
+                                for msg in all_msgs:
+                                    if msg.startswith(cur_power):
+                                        if not cur_power_consec:
+                                            cur_power_consec = True
+                                            num_msgs += 1
+                                    else:
+                                        cur_power_consec = False
+
                                 tot += num_msgs
                                 fle_total += num_msgs
 

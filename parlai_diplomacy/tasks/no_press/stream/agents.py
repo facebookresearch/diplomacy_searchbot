@@ -105,8 +105,7 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
 
         return lst
 
-    @staticmethod
-    def _generate_example_tuples(game_id, phase_id, player_id, data):
+    def _generate_example_tuples(self, game_id, phase_id, player_id, data):
         """
         Yields example tuple(s) used in `_create_message`
 
