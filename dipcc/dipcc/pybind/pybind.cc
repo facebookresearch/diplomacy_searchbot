@@ -14,7 +14,7 @@ using namespace dipcc;
 PYBIND11_MODULE(pydipcc, m) {
   // class Game
   py::class_<Game>(m, "Game")
-      .def(py::init<>())
+      .def(py::init<int>(), py::arg("draw_on_stalemate_years") = -1)
       .def(py::init<const Game &>())
       .def("process", &Game::process)
       .def("set_orders", &Game::set_orders)

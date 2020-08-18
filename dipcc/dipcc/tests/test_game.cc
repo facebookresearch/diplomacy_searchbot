@@ -123,4 +123,36 @@ TEST_F(GameTest, TestOrderParsing7) {
   EXPECT_EQ(order.get_dest(), Loc::RUM);
 }
 
+TEST_F(GameTest, TestDrawOnStalemateOff) {
+  Game game;
+  game.set_orders("RUSSIA", {"F SEV - RUM"});
+  game.process(); // S1901M
+  game.process(); // F1901M
+  game.set_orders("RUSSIA", {"F SEV B"});
+  for (int i = 0; i < 10; ++i) {
+    game.process();
+  }
+  EXPECT_EQ(game.is_game_done(), false);
+}
+
+TEST_F(GameTest, TestDrawOnStalemateTwo) {
+  Game game(2);
+  game.set_orders("RUSSIA", {"F SEV - RUM"});
+  game.process(); // S1901M
+  game.process(); // F1901M
+  game.set_orders("RUSSIA", {"F SEV B"});
+  while (game.get_state().get_phase().year < 1904) {
+    EXPECT_EQ(game.is_game_done(), false);
+    game.process();
+  }
+  EXPECT_EQ(game.is_game_done(), true);
+}
+
+TEST_F(GameTest, TestDrawOnStalemateOne) {
+  Game game(1);
+  game.process(); // S1901M
+  game.process(); // F1901M
+  EXPECT_EQ(game.is_game_done(), true);
+}
+
 } // namespace dipcc

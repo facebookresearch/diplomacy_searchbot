@@ -30,6 +30,7 @@ void Game::process() {
 
   try {
     state_ = state_.process(staged_orders_);
+    maybe_early_exit();
   } catch (const std::exception &e) {
     this->crash_dump();
     LOG(ERROR) << "Exception: " << e.what();
@@ -54,7 +55,9 @@ Game::get_all_possible_orders() {
   return state_.get_all_possible_orders();
 }
 
-Game::Game() {
+Game::Game(int draw_on_stalemate_years)
+    : draw_on_stalemate_years_(draw_on_stalemate_years) {
+
   // game id
   this->game_id = gen_game_id();
 
@@ -287,6 +290,30 @@ void Game::clear_old_all_possible_orders() {
   for (auto &p : state_history_) {
     p.second.clear_all_possible_orders();
   }
+}
+
+void Game::maybe_early_exit() {
+  Phase phase = state_.get_phase();
+
+  if (draw_on_stalemate_years_ < 1 ||
+      phase.year - 1901 < draw_on_stalemate_years_ || phase.season != 'S' ||
+      phase.phase_type != 'M') {
+    return;
+  }
+
+  for (int i = 1; i <= draw_on_stalemate_years_; ++i) {
+    if (state_.get_centers() !=
+        state_history_.at(Phase('S', phase.year - i, 'M')).get_centers()) {
+      // no stalemate
+      return;
+    }
+  }
+
+  // we have a stalemate
+  DLOG(INFO) << "Game over! Stalemate after " << draw_on_stalemate_years_
+             << " years";
+
+  state_.set_phase(phase.completed());
 }
 
 } // namespace dipcc

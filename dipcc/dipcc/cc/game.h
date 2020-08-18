@@ -26,7 +26,7 @@ namespace dipcc {
 
 class Game {
 public:
-  Game();
+  Game(int draw_on_stalemate_years = -1);
   Game(const std::string &json_str);
 
   void set_orders(const std::string &power,
@@ -86,6 +86,7 @@ public:
 
 private:
   void crash_dump();
+  void maybe_early_exit();
 
   // Members
   GameState state_;
@@ -93,6 +94,7 @@ private:
   std::map<Phase, GameState> state_history_;
   std::map<Phase, std::unordered_map<Power, std::vector<Order>>> order_history_;
   std::vector<std::string> rules_ = {"NO_PRESS", "POWER_CHOICE"};
+  int draw_on_stalemate_years_ = -1;
 };
 
 } // namespace dipcc
