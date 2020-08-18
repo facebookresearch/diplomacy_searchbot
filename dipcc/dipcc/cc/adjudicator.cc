@@ -28,9 +28,10 @@ struct LocCandidate {
   int min_pending_convoy_h2h; // pending both convoy and h2h result
   int dislodge_self_support; // support strength of a power to dislodge own unit
   bool via;                  // is via convoy?
+  bool via_adj;              // is via convoy but non-convoy move also possible?
 };
 const LocCandidate NONE_LOC_CANDIDATE = {
-    Loc::NONE, Loc::NONE, Power::NONE, 0, 0, 0, 0, 0, 0, false};
+    Loc::NONE, Loc::NONE, Power::NONE, 0, 0, 0, 0, 0, 0, false, false};
 
 // Output of resolve()
 struct Resolution {
@@ -52,7 +53,7 @@ struct UnresolvedSupport {
 
 class LocCandidates {
 public:
-  void add_candidate(Loc dest, OwnedUnit unit, bool via) {
+  void add_candidate(Loc dest, OwnedUnit unit, bool via, bool via_adj) {
     Loc dest_root = root_loc(dest);
     Loc src_root = root_loc(unit.loc);
 
@@ -73,7 +74,8 @@ public:
                                    int(!via && is_h2h),  // min_pending_h2h
                                    int(via && is_h2h), // min_pending_convoy_h2h
                                    0,                  // dislodge_self_support
-                                   via};
+                                   via,
+                                   via_adj};
 
     if (src_root != dest_root) {
       // move request
@@ -488,17 +490,7 @@ public:
       LocCandidate &army_cand = cands_[army_dest][army_src];
       confirmed_convoy_fleets_[army_src].insert(winner.src);
       if (is_convoy_possible(army_src, army_dest, true)) {
-        DLOG(INFO) << "CONFIRM CONVOY " << army_src << " - " << army_dest;
-        // pending convoy + h2h -> pending h2h
-        army_cand.min_pending_h2h += army_cand.min_pending_convoy_h2h;
-        army_cand.min_pending_convoy_h2h = 0;
-        // pending convoy -> min
-        army_cand.min += army_cand.min_pending_convoy;
-        army_cand.min_pending_convoy = 0;
-        // check for support cut
-        if (remove_unresolved_support(army_dest)) {
-          DLOG(INFO) << "BROKEN SUPPORT: " << army_dest;
-        }
+        _confirm_convoy(army_cand);
       }
     }
 
@@ -800,21 +792,31 @@ public:
     maybe_convoy_orders_by_dest_[dest].erase(order);
     maybe_convoy_orders_by_fleet_.erase(it);
     if (!is_convoy_possible(order.get_target().loc, order.get_dest())) {
-      DLOG(INFO) << "BROKEN CONVOY " << src << " -> " << dest;
-      // army no longer attempts to move via
-      cands_[dest][src].min = 0;
-      cands_[dest][src].max = 0;
-      // army attempts to hold current loc
-      cands_[src][src].min = 1;
-      cands_[src][src].max = 1;
+      bool via_adj = cands_[dest][src].via_adj;
+      DLOG(INFO) << "BROKEN CONVOY " << src << " -> " << dest
+                 << ", via_adj=" << via_adj;
       // erase all other pending convoys for this army
       erase_all_pending_convoys(src, dest);
-      // Even if unit at dest already won their loc, they may have had an
-      // unresolved support which could now be confirmed.
-      if (maybe_convoy_orders_by_dest_[dest].size() == 0 &&
-          map_contains(r.winners, dest) &&
-          root_loc(r.winners.at(dest).src) == dest) {
-        _resolve_support_if_exists(r, dest);
+
+      if (via_adj) {
+        // convoy broken but army is adjacent to dest: just move normally
+        _confirm_convoy(cands_[dest][src]);
+        cands_[dest][src].via = false;
+        cands_[dest][src].via_adj = false;
+      } else {
+        // army no longer attempts to move
+        cands_[dest][src].min = 0;
+        cands_[dest][src].max = 0;
+        // army attempts to hold current loc
+        cands_[src][src].min = 1;
+        cands_[src][src].max = 1;
+        // Even if unit at dest already won their loc, they may have had an
+        // unresolved support which could now be confirmed.
+        if (maybe_convoy_orders_by_dest_[dest].size() == 0 &&
+            map_contains(r.winners, dest) &&
+            root_loc(r.winners.at(dest).src) == dest) {
+          _resolve_support_if_exists(r, dest);
+        }
       }
     }
   }
@@ -1018,6 +1020,22 @@ public:
     }
   }
 
+  void _confirm_convoy(LocCandidate &army_cand) {
+    Loc army_src = army_cand.src;
+    Loc army_dest = army_cand.dest;
+    DLOG(INFO) << "CONFIRM CONVOY " << army_src << " - " << army_dest;
+    // pending convoy + h2h -> pending h2h
+    army_cand.min_pending_h2h += army_cand.min_pending_convoy_h2h;
+    army_cand.min_pending_convoy_h2h = 0;
+    // pending convoy -> min
+    army_cand.min += army_cand.min_pending_convoy;
+    army_cand.min_pending_convoy = 0;
+    // check for support cut
+    if (remove_unresolved_support(army_dest)) {
+      DLOG(INFO) << "BROKEN SUPPORT: " << army_dest;
+    }
+  }
+
   /////////////////////
   // MEMBER VARIABLES
   /////////////////////
@@ -1072,7 +1090,7 @@ GameState GameState::process_m(
 
   // Build up candidate data
   LocCandidates loc_candidates;
-  vector<Order> move_via_orders;
+  vector<pair<Order, bool>> move_via_orders;
   vector<Order> support_orders;
   set<Loc> illegal_orderers;
   set<Loc> unconvoyed_movers;
@@ -1082,7 +1100,7 @@ GameState GameState::process_m(
   for (auto &it : this->units_) {
     Loc loc = it.first;
     OwnedUnit unit = it.second;
-    loc_candidates.add_candidate(loc, unit, false);
+    loc_candidates.add_candidate(loc, unit, false, false);
   }
 
   // Loop through all orders and build up data structures
@@ -1114,18 +1132,25 @@ GameState GameState::process_m(
         }
       }
 
+      // check if via move is to adjacent loc (i.e. non-via move also
+      // allowed)
+      bool via_adj =
+          (order.get_via() &&
+           loc_possible_orders_it != all_possible_orders.end() &&
+           set_contains(loc_possible_orders_it->second, order.with_via(false)));
+
       // add all loc candidates and set aside supports
       if (order.get_type() == OrderType::H) {
         // do nothing, hold candidates already added
       } else if (order.get_type() == OrderType::M) {
         if (order.get_via()) {
-          // handle via moves after gathering convoy orders
-          move_via_orders.push_back(order);
+          // Handle via moves after gathering convoy orders.
+          move_via_orders.push_back(make_pair(order, via_adj));
         } else {
           // move to dest with max=1
           loc_candidates.add_candidate(order.get_dest(),
                                        this->get_unit(order.get_unit().loc),
-                                       order.get_via());
+                                       false, false);
         }
       } else if (order.get_type() == OrderType::SM ||
                  order.get_type() == OrderType::SH) {
@@ -1150,17 +1175,26 @@ GameState GameState::process_m(
 
   // Check for valid convoy path before adding move via order. Move may still
   // fail if a convoying fleet is dislodged
-  for (auto &order : move_via_orders) {
+  for (auto & [ order, via_adj ] : move_via_orders) {
     if (loc_candidates.is_convoy_possible(root_loc(order.get_unit().loc),
                                           root_loc(order.get_dest()))) {
       loc_candidates.add_candidate(order.get_dest(),
                                    this->get_unit(order.get_unit().loc),
-                                   order.get_via());
+                                   order.get_via(), via_adj);
     } else {
       DLOG(INFO) << "Unconvoyed via move: " << order.to_string();
-      unconvoyed_movers.insert(order.get_unit().loc);
       loc_candidates.erase_all_pending_convoys(order.get_unit().loc,
                                                order.get_dest());
+
+      if (via_adj) {
+        DLOG(INFO) << "Unconvoyed via move converted to normal move: "
+                   << order.to_string();
+        loc_candidates.add_candidate(order.get_dest(),
+                                     this->get_unit(order.get_unit().loc),
+                                     false, false);
+      } else {
+        unconvoyed_movers.insert(order.get_unit().loc);
+      }
     }
   }
 
