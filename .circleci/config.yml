@@ -62,7 +62,7 @@ jobs:
            pip install /postman/postman*.whl
            # Due to a bug postman wheel doesn't contain .so. So installing it manually.
            cp /postman/*.so $CONDA_PREFIX/lib/python3.*/site-packages/postman
-           N_DIPCC_JOBS=8 make deps all
+           N_DIPCC_JOBS=8 SKIP_TESTS=1 make deps all
            pip install -U protobuf
 
       - save_cache:
