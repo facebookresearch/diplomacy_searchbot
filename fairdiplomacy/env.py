@@ -12,14 +12,14 @@ logging.getLogger().setLevel(logging.INFO)
 
 
 class Env:
-    def __init__(self, agents, seed=0, cf_agent=None):
+    def __init__(self, agents, seed=0, cf_agent=None, max_year=1935):
         """
         agents must be one of:
             1. a list of 7 Agent objects, which will be randomly assigned to powers
             2. a dict of power name -> Agent object,
                 e.g.  {"AUSTRIA": <Agent>, "FRANCE": <Agent>, ...}
         """
-        self.game = Game()
+        self.game = Game(max_year=max_year)
         self.thread_pool = ThreadPoolExecutor(max_workers=len(self.game.powers))
 
         # set random seeds

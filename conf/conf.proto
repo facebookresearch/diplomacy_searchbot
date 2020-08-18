@@ -67,6 +67,8 @@ message CompareAgentsTask {
   // Optional. For tests - max number of turns to run.
   optional int32 max_turns = 8;
 
+  optional int32 max_year = 9 [ default = 1935 ];
+
   optional int32 num_processes = 90
       [ default = 0 ];                            // for data collection only!
   optional int32 num_trials = 91 [ default = 0 ]; // for data collection only!

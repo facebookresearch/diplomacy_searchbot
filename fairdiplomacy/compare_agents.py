@@ -8,7 +8,15 @@ from fairdiplomacy.models.consts import POWERS
 
 
 def run_1v6_trial(
-    agent_one, agent_six, agent_one_power, save_path=None, seed=0, cf_agent=None, *, max_turns=None
+    agent_one,
+    agent_six,
+    agent_one_power,
+    save_path=None,
+    seed=0,
+    cf_agent=None,
+    *,
+    max_turns=None,
+    max_year=1935,
 ):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
@@ -19,6 +27,7 @@ def run_1v6_trial(
     - seed: random seed
     - cf_agent: print out the orders for each power assuming that this agent was in charge
     - max_turns: finish game early; flag to speed up testing.
+    - max_year: finish game early; flag to speed up testing.
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
@@ -27,6 +36,7 @@ def run_1v6_trial(
         {power: agent_one if power == agent_one_power else agent_six for power in POWERS},
         seed=seed,
         cf_agent=cf_agent,
+        max_year=max_year,
     )
 
     scores = env.process_all_turns(max_turns=max_turns)

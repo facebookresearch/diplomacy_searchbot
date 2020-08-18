@@ -4,7 +4,8 @@ POWERS = ["AUSTRIA", "ENGLAND", "FRANCE", "GERMANY", "ITALY", "RUSSIA", "TURKEY"
 
 
 class Game(diplomacy.Game):
-    def __init__(self, **kwargs):
+    def __init__(self, max_year=1935, **kwargs):
+        self.max_year = max_year
         if "rules" not in kwargs:
             kwargs["rules"] = [
                 "NO_DEADLINE",
@@ -23,7 +24,7 @@ class Game(diplomacy.Game):
 
     @property
     def is_game_done(self):
-        return super().is_game_done or int(self.phase.split()[1]) >= 1935
+        return super().is_game_done or int(self.phase.split()[1]) >= self.max_year
 
     def to_saved_game_format(self, *args, **kwargs):
         return diplomacy.utils.export.to_saved_game_format(self, *args, **kwargs)
