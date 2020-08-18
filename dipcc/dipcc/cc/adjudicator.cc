@@ -258,7 +258,7 @@ public:
                    << unresolved_self_dislodges_.size()
                    << " unresolved self-dislodges";
         this->log();
-        _clear_unresolved_self_dislodges(r);
+        _clear_unresolved_self_dislodges(r, unresolved_self_dislodges_);
         continue; // keep iterating with cleared self dislodges
       }
 
@@ -267,7 +267,7 @@ public:
                    << unresolved_self_support_dislodges_.size()
                    << " unresolved self-support dislodges";
         this->log();
-        _clear_unresolved_self_support_dislodges(r);
+        _clear_unresolved_self_dislodges(r, unresolved_self_support_dislodges_);
         continue; // keep iterating with cleared self-support dislodges
       }
 
@@ -957,25 +957,20 @@ public:
     return true;
   }
 
-  void _clear_unresolved_self_dislodges(Resolution &r) {
-    while (unresolved_self_dislodges_.size() > 0) {
-      auto it = unresolved_self_dislodges_.begin();
-      Loc dest = root_loc(it->second);
-      _resolve_bounce(r, dest);
-    }
-  }
-
   // If we have made it to this point without resolution, remove self-dislodge
   // support entirely
-  void _clear_unresolved_self_support_dislodges(Resolution &r) {
+  //
+  void _clear_unresolved_self_dislodges(
+      Resolution &r, set<pair<Loc, Loc>> &unresolved_self_dislodges) {
+
     set<Loc> resolved_cycle_locs;
-    while (unresolved_self_support_dislodges_.size() > 0) {
-      auto it = unresolved_self_support_dislodges_.begin();
+    while (unresolved_self_dislodges.size() > 0) {
+      auto it = unresolved_self_dislodges.begin();
       pair<Loc, Loc> p = *it;
       Loc src = p.first;
       Loc dest = p.second;
       if (set_contains(resolved_cycle_locs, src)) {
-        unresolved_self_support_dislodges_.erase(it);
+        unresolved_self_dislodges.erase(it);
         continue;
       }
       MoveCycle cycle = _detect_unresolved_move_cycle(dest);
@@ -1001,7 +996,7 @@ public:
 
       // erase by value, not by iterator, since set may have been modified in
       // the _resolve_* calls
-      unresolved_self_support_dislodges_.erase(p);
+      unresolved_self_dislodges.erase(p);
     }
   }
 
