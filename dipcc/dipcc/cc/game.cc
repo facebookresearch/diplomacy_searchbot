@@ -163,6 +163,8 @@ string Game::to_json() {
         phase["orders"][power].push_back(order.to_string());
       }
     }
+    phase["results"] = json::value_type::object(); // mila compat
+    phase["messages"] = json::value_type::array(); // mila compat
 
     j["phases"].push_back(phase);
   }
@@ -171,6 +173,9 @@ string Game::to_json() {
   json current;
   current["name"] = state_.get_phase().to_string();
   current["state"] = state_.to_json();
+  current["orders"] = json::value_type::object();  // mila compat
+  current["results"] = json::value_type::object(); // mila compat
+  current["messages"] = json::value_type::array(); // mila compat
   j["phases"].push_back(current);
 
   // staged orders
