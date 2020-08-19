@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(dipcc VERSION 0.0.1 LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
 
 # For pybind11 to work on Linux.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
