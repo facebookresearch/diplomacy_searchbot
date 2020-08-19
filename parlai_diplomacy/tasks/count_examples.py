@@ -4,108 +4,85 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 """
-Simple script for iterating through the chunk data to count examples.
+Count data for chunk teachers.
 
-Committing here as an example for iterating/performing analysis on this data
-"press_dialogue" -> [messages, state] -> [message]
-"full_press" -> [messages, state] -> [message or order]
+Example usage:
+
+```
+pyhon parlai_diplomacy/tasks/count_examples.py -t message_order_chunk
+```
 """
-
-from parlai_diplomacy.tasks.dialogue.agents import utls, BaseDialogueChunkTeacher
-from parlai_diplomacy.tasks.no_press.stream.agents import TRAIN_VAL_SPLIT
 from parlai.utils import logging
-from parlai_diplomacy.tasks.common_task_utils import COUNTRY_ID_TO_POWER
-from glob import glob
-import json
-import os
-import argparse
+from parlai.core.agents import create_agent_from_shared
+from parlai.core.params import ParlaiParser
+from parlai.core.loader import load_teacher_module
+
+import parlai_diplomacy.utils.loading as load
+
+from copy import deepcopy
+from collections import defaultdict
+import multiprocessing
+
+load.register_all_agents()
+load.register_all_tasks()
+
+NUM_PROCESSES = 60  # change this depending on your CPU/mem needs
 
 
-def print_count(variant):
-    train, valid = get_split_chunk_files()
-    for dt, lst in [("train", train), ("valid", valid)]:
-        by_fle = {}
-        tot = 0
-        for i, fle in enumerate(lst):
-            fle_total = 0
-            with open(fle, "r") as f:
-                data = json.load(f)
-                for _, game in data.items():
-                    for _, phase in game.items():
-                        if variant == "default":
-                            tot += len(phase)
-                            fle_total += len(phase)
-                        elif (
-                            variant == "full_press"
-                        ):  # press_dialogue: Train: 10463131, Valid: 557029
-                            for power, value in phase.items():
-                                from_msgs = [
-                                    s
-                                    for s in phase[power]["message"].split("\n")
-                                    if s.startswith(COUNTRY_ID_TO_POWER[int(power)].capitalize())
-                                ]
-                                num_msgs = len(from_msgs) + (1 if variant == "full_press" else 0)
-                                # Add 1 for orders
-                                tot += num_msgs
-                                fle_total += num_msgs
-                        elif variant == "press_dialogue":
-                            # press_dialogue_new: Train: 6120613, Valid: 327647
-                            for power, value in phase.items():
-                                if value["data_status"] != "Game_Phase_Msg":
-                                    break
-
-                                num_msgs = 0
-
-                                cur_power = utls.COUNTRY_ID_TO_POWER[int(power)].capitalize()
-                                messages = value["message"]
-                                message_history = value["message_history"].replace(messages, "")
-
-                                all_msgs = messages.split("\n")
-                                message_history_list = message_history.split("\n")
-
-                                all_msgs = BaseDialogueChunkTeacher.add_silence_messages(
-                                    cur_power, all_msgs, message_history_list
-                                )
-
-                                cur_power_consec = False
-                                for msg in all_msgs:
-                                    if msg.startswith(cur_power):
-                                        if not cur_power_consec:
-                                            cur_power_consec = True
-                                            num_msgs += 1
-                                    else:
-                                        cur_power_consec = False
-
-                                tot += num_msgs
-                                fle_total += num_msgs
-
-                if i > 0 and i % 10 == 0:
-                    complete = round((i / len(lst)) * 100, 2)
-                    logging.info(f"({complete}%) Loaded {tot} {dt} examples so far...")
-            by_fle[fle] = fle_total
-
-        print("\n\n\n\n\n")
-        print("=" * 50)
-        print(f"FINISHED {dt}: loaded {tot} total examples.")
-        print("By file: ")
-        for fle, total in by_fle.items():
-            print(f"{os.path.basename(fle)}:\t{total}")
+def chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]
 
 
-def get_split_chunk_files():
-    file_lst = sorted(glob(utls.CHUNK_ORDER_PATH))
-    train = file_lst[:TRAIN_VAL_SPLIT]
-    valid = file_lst[TRAIN_VAL_SPLIT:]
-    return train, valid
+def get_fold_chunks(opt):
+    """
+    We create an agent from shared here to avoid enqueueing requests
+    """
+    task_module = load_teacher_module(opt["task"])
+    teacher = task_module(opt)  # switch to your teacher here
+    fold_chunks = teacher.get_fold_chunks(opt)
+
+    del teacher
+
+    return fold_chunks
+
+
+def count_single_chunk(opt, chunk_idx):
+    task_module = load_teacher_module(opt["task"])
+    teacher = task_module(opt)
+    exs = teacher.load_from_chunk(chunk_idx)
+
+    del teacher
+
+    return len(exs)
+
+
+def count_single_chunk_wrapper(args):
+    return count_single_chunk(*args)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Count number of examples for chunk teachers")
-    parser.add_argument(
-        "--variant",
-        choices=["default", "press_dialogue", "full_press"],
-        help="Stream teacher variant",
-    )
-    args = parser.parse_args()
+    pp = ParlaiParser()
+    opt = pp.parse_args()
+    total_dct = defaultdict(int)
+    for dt in ["train:stream", "valid:stream"]:
+        opt["datatype"] = dt
+        opt["no_auto_enqueues"] = True
+        total = 0
+        fold_chunks = get_fold_chunks(opt)
+        for i, chunk_lst in enumerate(chunks(fold_chunks, n=NUM_PROCESSES)):
+            args = [(deepcopy(opt), chunk_num) for chunk_num in chunk_lst]
+            logging.info(f"Creating pool: {i} with chunks: {chunk_lst}")
+            pool = multiprocessing.Pool(processes=NUM_PROCESSES)
+            ret = pool.map(count_single_chunk_wrapper, args)
+            logging.info(f"Return value for pool: {i} is {ret}")
+            pool.close()
+            pool.join()
+            total += sum(ret)
+            logging.warn(f"Current subtotal: {total}")
 
-    print_count(args.variant)
+        logging.success(f"Final value for datatype: {dt} -- {total} examples")
+        total_dct[dt] = total
+
+    for dt, cnt in total_dct.items():
+        logging.success(f"Final count for {dt}: {cnt}")

@@ -17,6 +17,7 @@ from parlai.core.teachers import FixedDialogTeacher, ChunkTeacher
 from parlai.utils import logging
 
 import parlai_diplomacy.tasks.common_task_utils as utls
+import parlai_diplomacy.utils.datapath_constants as constants
 from parlai_diplomacy.tasks.no_press.stream.agents import BaseOrderChunkTeacher
 
 """
@@ -148,7 +149,7 @@ class DialogueChunkTeacher(ChunkTeacher):
         super().__init__(opt, shared)
 
     def _get_data_folder(self):
-        return utls.CHUNK_DIALOGUE_PATH
+        return constants.CHUNK_DIALOGUE_PATH
 
     def get_num_samples(self, opt) -> Tuple[int, int]:
         """
@@ -293,10 +294,10 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         # TODO: get actual counts here
         datatype = opt["datatype"]
         if "train" in datatype:
-            return 6351029, 6351029
+            return 10343021, 10343021
 
         if "valid" in datatype:
-            return 336355, 336355
+            return 113013, 113013
 
     def _generate_example_tuples(self, game_id, phase_id, player_id, data):
         """
@@ -315,8 +316,19 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         data["player"] = cur_power
 
         # We only include Game_Phase_Msg
-        if data["data_status"] != "Game_Phase_Msg":
+        if data["metadata"]["data_status"] != "Game_Phase_Msg":
             return
+
+        # format orders
+        data["order"] = self.format_order(data["order"])
+        data["order_history"] = self.format_order_history(data["order_history"])
+
+        # format state
+        data["state"] = self.format_state(data["state"])
+
+        # format messages
+        data["message"] = self.format_msg(data)
+        data["message_history"] = self.format_msg_history(data)
 
         # We convert a single data example into several different ones by splitting each "message" into
         # a different example and adapting "message_history" accordingly at each phase
@@ -373,7 +385,7 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         Static method that takes the data dict and updates "messages" and "message_history"
         with the msg_dict
         :param data_dict:
-        :param msg_dict: 
+        :param msg_dict:
         :param pre_msg_history_buffer_list:
         :return:
         """

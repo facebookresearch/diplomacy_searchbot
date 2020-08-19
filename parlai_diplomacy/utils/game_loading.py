@@ -9,15 +9,14 @@ Utils for loading Diplomacy games.
 """
 import parlai.utils.logging as logging
 from fairdiplomacy.game import Game
+import pydipcc
+from parlai_diplomacy.utils.datapath_constants import GAME_JSONS_PATH
 
 from glob import glob
+import gzip
 import json
 import re
 from tqdm import tqdm
-
-ORDER_PATH = (
-    "/checkpoint/fairdiplomacy/processed_orders_jsons/game_*.json*"  # some are json.partial
-)
 
 
 def load_json(path):
@@ -30,9 +29,16 @@ def load_json(path):
     return data
 
 
-def load_viz_format(path):
+def load_from_gz(fle):
+    with gzip.open(fle, "rb") as f:
+        dct = json.load(f)
+
+    return dct
+
+
+def load_viz_to_dip_format(path):
     """
-    Load a game in viz format
+    Load a game in viz format to diplomacy.Game format
     """
     logging.info(f"Loading viz format data from path: {path}")
     loaded_path = load_json(path)
@@ -42,15 +48,43 @@ def load_viz_format(path):
     return game_json
 
 
-def load_single_sql_game(path):
+def load_viz_to_dipcc_format(path):
+    """
+    Load a game in viz format to pydipCC format
+    """
+    logging.info(f"Loading viz format data from path: {path}")
+    loaded_path = load_json(path)
+    game = pydipcc.Game.from_json(json.dumps(loaded_path))  # dipCC game object
+    game_json = json.loads(game.to_json())  # get dict version
+
+    return game_json
+
+
+def load_single_sql_game(path, data_format="dipcc", debug=False):
     """
     Load a single game in SQL format
+
+    :param path: path to Game JSON
+    :parm data_format: dipcc or dip -- format to load the data in
+
+    :return: game dict
     """
     game = load_json(path)
+    if data_format == "dipcc":
+        # convert to dipcc format; this gets rid of some extraneous state fields
+        # like "influence"
+        try:
+            game_obj = pydipcc.Game.from_json(json.dumps(game))  # dipCC game object
+            game = json.loads(game_obj.to_json())  # get dict version
+        except RuntimeError as e:
+            if debug:
+                logging.warn(f"Path {path} encountered error: \n{e}")
+            return None
+
     return game
 
 
-def load_sql_format(dir_path=ORDER_PATH, game_id_lst=None, debug=False):
+def load_sql_format(dir_path=GAME_JSONS_PATH, game_id_lst=None, debug=False, data_format="dipcc"):
     """
     Load all games in a directory
 
@@ -77,10 +111,18 @@ def load_sql_format(dir_path=ORDER_PATH, game_id_lst=None, debug=False):
 
     logging.info(f"Loading game data from path {dir_path}, {len(all_fles)} games in total")
     all_games = {}
-    for fle in tqdm(all_fles):
+
+    missing_orders = 0
+    for i, fle in enumerate(tqdm(all_fles)):
         game_id = get_game_id(fle)
-        game = load_single_sql_game(fle)
-        all_games[game_id] = game
+        game = load_single_sql_game(fle, data_format=data_format)
+        if game is not None:
+            # we return None if games are missing phases
+            all_games[game_id] = game
+        else:
+            missing_orders += 1
+
+    logging.warn(f"{missing_orders}/{len(all_fles)} games were excluded due to missing orders.")
 
     return all_games
 

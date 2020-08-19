@@ -4,8 +4,6 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
-import os
 from typing import List, Tuple
 
 from parlai.core.loader import register_teacher
@@ -28,16 +26,14 @@ class PressChunkTeacher(BaseOrderChunkTeacher):
         """
         Return the number of samples given the datatype.
         """
-        # TODO: get actual counts here
         datatype = opt["datatype"]
         if "train" in datatype:
-            return 25092949, 25092949
+            return 24402625, 24402625
 
         if "valid" in datatype:
-            return 1327701, 1327701
+            return 253758, 253758
 
-    @staticmethod
-    def _generate_example_tuples(game_id, phase_id, player_id, data):
+    def _generate_example_tuples(self, game_id, phase_id, player_id, data):
         """
         Yields example tuple(s) used in `_create_message`
 
@@ -51,6 +47,17 @@ class PressChunkTeacher(BaseOrderChunkTeacher):
         data["phase_id"] = phase_id
         data["player_id"] = player_id
         data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+
+        # format orders
+        data["order"] = self.format_order(data["order"])
+        data["order_history"] = self.format_order_history(data["order_history"])
+
+        # format state
+        data["state"] = self.format_state(data["state"])
+
+        # format messages
+        data["message"] = self.format_msg(data)
+        data["message_history"] = self.format_msg_history(data)
 
         # We convert a single data example into several different ones by splitting each "message" into
         # a different example and adapting message_history accordingly at each phase

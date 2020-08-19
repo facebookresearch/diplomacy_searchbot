@@ -50,3 +50,91 @@ def order_seq_to_fairdip(order_sequence):
     order = order_sequence.replace(" [EO_O]", "")
     order_lst = order.split("; ")
     return order_lst
+
+
+def map_special_tokens(token, special_tokens_map):
+    """
+    Convert token to a special token if it exists
+    """
+    if token in special_tokens_map:
+        return special_tokens_map[token]
+    else:
+        return token
+
+
+def add_end_token(text, end_token, with_special_token=False, special_tokens_map=None):
+    """
+    Add end and possibly special tokens
+    """
+    if with_special_token:
+        converted_text = f"{text} {map_special_tokens(end_token, special_tokens_map)}"
+    else:
+        converted_text = f"{text} {end_token}"
+    return converted_text
+
+
+def flatten_orders(order_list, special_tokens_map=None, with_special_token=False):
+    """
+    Flatten the order in game*.json
+    """
+
+    if type(order_list) is not list:
+        order_list = [str(order_list)]
+    # sort the orders
+    order_list = sorted(order_list)
+    # convert to special tokens
+    if with_special_token:
+        order_list = [
+            " ".join([map_special_tokens(token, special_tokens_map) for token in order.split()])
+            for order in order_list
+        ]
+    # join the orders
+    flat_order_str = "; ".join(order_list)
+    # add end_of_order token: [EO_O]
+    flat_order_str = add_end_token(
+        flat_order_str, "[EO_O]", with_special_token, special_tokens_map
+    )
+
+    return flat_order_str
+
+
+def flatten_state(state, special_tokens_map=None, with_special_token=False):
+    """
+    Flatten the state in game*.json
+    """
+
+    def flatten_country_status(key, country_status):
+        status_list = []
+        for country, status in country_status.items():
+            if type(status) is not list:
+                status = [str(status)]
+            status = sorted(status)
+            if with_special_token:
+                status = [
+                    " ".join(
+                        [map_special_tokens(token, special_tokens_map) for token in sta.split()]
+                    )
+                    for sta in status
+                ]
+            status_list.append(f'{country.capitalize()}: {", ".join(status)}')
+        final_status = f'{key}: {"; ".join(status_list)}'
+
+        return final_status
+
+    keys = [
+        "units",
+        "retreats",
+        "centers",
+        "homes",
+        "influence",
+        "civil_disorder",
+        "builds",
+    ]
+    state_list = [flatten_country_status(key, state[key]) for key in keys if key in state]
+    final_state_str = "\n".join(state_list)
+    # add end_or_state_token: [EO_STATE]
+    final_state_str = add_end_token(
+        final_state_str, "[EO_STATE]", with_special_token, special_tokens_map
+    )
+
+    return final_state_str

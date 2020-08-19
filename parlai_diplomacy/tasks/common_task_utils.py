@@ -13,10 +13,10 @@ import sys
 import time
 import numpy as np
 from copy import deepcopy
-from datetime import date
 
 import parlai.utils.logging as logging
 import parlai_diplomacy.utils.game_loading as game_loading
+import parlai_diplomacy.utils.datapath_constants as constants
 import parlai_diplomacy.scripts.processing.join_game_and_message as data_joining
 
 # TODO: this file needs some major cleanup
@@ -24,17 +24,6 @@ import parlai_diplomacy.scripts.processing.join_game_and_message as data_joining
 ###########################################
 # CONSTANTS
 ###########################################
-
-# TODO: better ways to organize the paths
-CHUNK_DIALOGUE_PATH = (
-    "/checkpoint/fairdiplomacy/press_diplomacy/chat_messages/chat_messages_jsons/"
-)
-CHUNK_ORDER_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/dumps_State_OrderHistory_MessageHistory-all-msg-SpecialToken-False_order/*.json"
-
-DATAPATH = "/checkpoint/fairdiplomacy/press_diplomacy/processed_chat_jsons/game_phases/redacted_messages_runthree_*.json"
-ORDER_PATH = (
-    "/checkpoint/fairdiplomacy/processed_orders_jsons/game_*.json*"  # some are json.partial
-)
 
 # special token path
 SPECIAL_TOKEN_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/model_utils/special_tokens.txt"
@@ -67,7 +56,7 @@ def is_training(datatype):
 
 
 def analyze_redacted():
-    data = load_data()
+    data = load_message_data()
     msgs = [d["message"] for d in data]
     extracted = []
     all_tokens = []
@@ -137,21 +126,6 @@ def load_special_tokens():
     return special_tokens, special_tokens_map
 
 
-def map_special_tokens(token, special_tokens_map):
-    if token in special_tokens_map:
-        return special_tokens_map[token]
-    else:
-        return token
-
-
-def add_end_token(text, end_token, with_special_token, special_tokens_map):
-    if with_special_token:
-        converted_text = f"{text} {map_special_tokens(end_token, special_tokens_map)}"
-    else:
-        converted_text = f"{text} {end_token}"
-    return converted_text
-
-
 def replace_with_special_token(text):
     """replace order and state_str with special tokens
         A S LON --> __A__ __S__ __LON__
@@ -191,73 +165,6 @@ def replace_with_special_token(text):
     return new_text_newline
 
 
-def flatten_orders(order_list, special_tokens_map, with_special_token=True):
-    """
-    Flatten the order in game*.json
-    """
-
-    if type(order_list) is not list:
-        order_list = [str(order_list)]
-    # sort the orders
-    order_list = sorted(order_list)
-    # convert to special tokens
-    if with_special_token:
-        order_list = [
-            " ".join([map_special_tokens(token, special_tokens_map) for token in order.split()])
-            for order in order_list
-        ]
-    # join the orders
-    flat_order_str = "; ".join(order_list)
-    # add end_of_order token: [EO_O]
-    flat_order_str = add_end_token(
-        flat_order_str, "[EO_O]", with_special_token, special_tokens_map
-    )
-
-    return flat_order_str
-
-
-def flatten_state(state, special_tokens_map, with_special_token=True):
-    """
-    Flatten the state in game*.json
-    """
-
-    def flatten_country_status(key, country_status):
-        status_list = []
-        for country, status in country_status.items():
-            if type(status) is not list:
-                status = [str(status)]
-            status = sorted(status)
-            if with_special_token:
-                status = [
-                    " ".join(
-                        [map_special_tokens(token, special_tokens_map) for token in sta.split()]
-                    )
-                    for sta in status
-                ]
-            status_list.append(f'{country.capitalize()}: {", ".join(status)}')
-        final_status = f'{key}: {"; ".join(status_list)}'
-
-        return final_status
-
-    keys = [
-        "units",
-        "retreats",
-        "centers",
-        "homes",
-        "influence",
-        "civil_disorder",
-        "builds",
-    ]
-    state_list = [flatten_country_status(key, state[key]) for key in keys]
-    final_state_str = "\n".join(state_list)
-    # add end_or_state_token: [EO_STATE]
-    final_state_str = add_end_token(
-        final_state_str, "[EO_STATE]", with_special_token, special_tokens_map
-    )
-
-    return final_state_str
-
-
 def phase_abbrev_to_phase(phase):
     """
     https://github.com/diplomacy/diplomacy/blob/master/diplomacy/integration/webdiplomacy_net/game.py#L20-L27
@@ -287,13 +194,13 @@ def add_common_args(argparser):
     return argparser
 
 
-def load_data():
+def load_message_data():
     """
     Load data JSONs from DATAPATH
     """
     total_data = []
-    tot = len(glob(DATAPATH))
-    for i, fle in enumerate(glob(DATAPATH)):
+    tot = len(glob(constants.NONCHUNK_DIALOGUE_PATH))
+    for i, fle in enumerate(glob(constants.NONCHUNK_DIALOGUE_PATH)):
         logging.info(f"[ Loading data from path {i} / {tot}: {fle} ... ]")
         with open(fle, "r") as f:
             database = json.load(f)
@@ -534,7 +441,7 @@ class DataIterator:
 
     def __init__(self, raw_data=None):
         if raw_data is None:
-            self.raw_data = select_by_game_and_turn(load_data())
+            self.raw_data = select_by_game_and_turn(load_message_data())
         else:
             self.raw_data = raw_data
         self.key_map = {i: key for i, key in enumerate(self.raw_data.keys())}
@@ -665,7 +572,7 @@ class MessageOrderDataIterator:
             if raw_order is None:
                 raw_order = game_loading.load_sql_format(debug=self.opt.get("debug"))
                 self.raw_order = game_loading.organize_game_dict_by_phase(raw_order)
-                self.raw_msg = select_by_game_and_phase(load_data())
+                self.raw_msg = select_by_game_and_phase(load_message_data())
             else:
                 self.raw_order = raw_order
                 self.raw_msg = raw_msg

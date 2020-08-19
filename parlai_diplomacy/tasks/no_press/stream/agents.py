@@ -10,17 +10,19 @@ from parlai.core.teachers import ChunkTeacher
 from parlai.utils import logging
 
 import parlai_diplomacy.tasks.common_task_utils as utls
+import parlai_diplomacy.utils.datapath_constants as constants
+import parlai_diplomacy.utils.game_to_sequence_formatting as game_formatting
+import parlai_diplomacy.utils.game_loading as game_loading
 
 from abc import ABC
 from glob import glob
-import json
 import os
 from typing import List, Tuple
 
 """
 File that takes board state data to predict orders. (streaming)
 """
-TRAIN_VAL_SPLIT = 475  # 95% of 500 to mimic what Weiyan is doing
+TRAIN_VAL_SPLIT = 990  # 99% of 1000 to mimic fairdip NOTE: this changed recently!
 
 
 @register_teacher("base_order_chunk")
@@ -46,19 +48,19 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         super().__init__(opt, shared)
 
     def _get_data_folder(self):
-        return utls.CHUNK_ORDER_PATH
+        return constants.CHUNK_MESSAGE_ORDER_PATH
 
     def get_num_samples(self, opt) -> Tuple[int, int]:
         """
         Return the number of samples given the datatype.
         """
-        # TODO: get actual counts here
         datatype = opt["datatype"]
+        # TODO: Emily update me
         if "train" in datatype:
-            return 14629818, 14629818
+            return 14211400, 14211400
 
         if "valid" in datatype:
-            return 770672, 770672
+            return 141624, 141624
 
     def _set_chunk_idx_to_file(self):
         folder = self._get_data_folder()
@@ -92,11 +94,10 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         """
         chunk_path = os.path.join(self.folder, self.chunk_idx_to_file[chunk_idx])
 
-        with open(chunk_path, "r") as f:
-            data = json.load(f)
+        game_data = game_loading.load_from_gz(chunk_path)
 
         lst = []
-        for game_id, game in data.items():
+        for game_id, game in game_data.items():
             for phase_id, phase in game.items():
                 for player_id, data in phase.items():
                     lst.extend(self._generate_example_tuples(game_id, phase_id, player_id, data))
@@ -119,7 +120,70 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         data["phase_id"] = phase_id
         data["player_id"] = player_id
         data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+
+        # format orders
+        data["order"] = self.format_order(data["order"])
+        data["order_history"] = self.format_order_history(data["order_history"])
+
+        # format state
+        data["state"] = self.format_state(data["state"])
+
+        # format messages
+        data["message"] = self.format_msg(data)
+        data["message_history"] = self.format_msg_history(data)
+
         yield data
+
+    def format_order(self, order_lst):
+        """
+        Format order
+
+        Left easily overridable to change formatting
+        """
+        return game_formatting.flatten_orders(order_lst)
+
+    def format_order_history(self, order_history_dct):
+        """
+        Format order
+
+        Left easily overridable to change formatting
+        """
+        flat_orders = []
+        for phase, data in order_history_dct.items():
+            for speaker, order in data.items():
+                flat_order = game_formatting.flatten_orders(order)
+                flat_order = f"{phase} {speaker.capitalize()}: {flat_order}"
+                flat_orders.append(flat_order)
+
+        return "\n".join(flat_orders)
+
+    def format_state(self, state_dct):
+        """
+        Format state
+
+        Left easily overridable to change formatting
+        """
+        return game_formatting.flatten_state(state_dct)
+
+    def format_msg(self, data):
+        """
+        Format messages
+
+        Left easily overridable to change formatting
+        """
+        msg = data["message_processed"]
+        del data["message_processed"]
+        return msg
+
+    def format_msg_history(self, data):
+        """
+        Format message history
+
+        Left easily overridable to change formatting
+        """
+        msg_hist = data["message_history_processed"]
+        del data["message_history_processed"]
+        return msg_hist
 
     def create_message(self, queue_output, entry_idx=0) -> "Message":
         """

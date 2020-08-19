@@ -6,7 +6,7 @@
 
 """
 Script that generates jsons which have the same train/valid splits that fairdiplomacy uses
-python produce_split_json.py --data_cache=[DATA_CACHE] --json_dir=[PROCESSED_GAME_JSONS] --save_dir=[SAVE_DIR]
+python produce_nopress_split_json.py --data_cache=[DATA_CACHE] --json_dir=[PROCESSED_GAME_JSONS] --save_dir=[SAVE_DIR]
 """
 import argparse
 import json
@@ -17,9 +17,10 @@ from tqdm import tqdm
 
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import POWERS
+import pydipcc
 
 
-def get_game(game_id, data_dir):
+def get_game(game_id, data_dir, data_format="dipcc"):
     """
     Creates game object from game_id
     :param game_id:
@@ -30,12 +31,17 @@ def get_game(game_id, data_dir):
 
     with open(game_path) as f:
         j = json.load(f)
-    game = Game.from_saved_game_format(j)
+
+    if data_format == "dipcc":
+        game = pydipcc.Game.from_json(j)  # dipCC game object
+    else:
+        # dip format
+        game = Game.from_saved_game_format(j)
 
     return game
 
 
-def save_split_json(dataset, save_file, data_dir):
+def save_split_json(dataset, save_file, data_dir, data_format):
     """
     Saves splits in json format
     :param dataset:
@@ -58,7 +64,7 @@ def save_split_json(dataset, save_file, data_dir):
 
         # To avoid loading games multiple times
         if game_id != cur_game_id:
-            cur_game = get_game(game_id, data_dir)
+            cur_game = get_game(game_id, data_dir, data_format)
             cur_game_id = game_id
 
         phase_id = phase_ids[i]
@@ -94,6 +100,7 @@ def create_split_jsons(args):
         dataset=train_set,
         save_file=os.path.join(args.save_dir, f"{file_name}_train.json"),
         data_dir=args.json_dir,
+        data_format=args.data_format,
     )
 
 
@@ -110,6 +117,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--save_dir", type=str, default="/tmp/",
+    )
+    parser.add_argument(
+        "--data-format",
+        type=str,
+        default="dipcc",
+        choices={"dip", "dipcc"},
+        help="Which data format to use",
     )
 
     args = parser.parse_args()

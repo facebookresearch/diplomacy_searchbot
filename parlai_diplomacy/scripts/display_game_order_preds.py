@@ -11,7 +11,7 @@ It outputs a model's predictions on a set of test cases
 
 Example usage:
 ```
-diplom dgop -mf /checkpoint/wyshi/diplomacy/Bart/Bart_diplomacy_lower_lr/18e/model --datapath /private/home/wyshi/ParlAI/data
+diplom dgop -mf /checkpoint/wyshi/diplomacy/Bart/Bart_diplomacy_lower_lr/18e/model --datapath /private/home/wyshi/ParlAI/data --game-format viz2dip
 ```
 """
 from parlai.core.agents import create_agent
@@ -41,16 +41,17 @@ def setup_args():
         help="Path to test case, see default at fairdiplomacy/test_situations.json",
     )
     parser.add_argument(
-        "--format",
+        "--data-format",
         type=str,
         default="state_order",
         help="Format that the data is expected to be in; for example, state_order takes state as input and returns an order",
     )
     parser.add_argument(
-        "--viz-format",
-        type="bool",
-        default=True,
-        help="viz format instead of SQL format, different than what is used in ParlAI",
+        "--game-format",
+        type=str,
+        default="viz2dipcc",
+        choices={"sql", "viz2dipcc", "viz2dip"},
+        help="Format that the game is loaded in",
     )
     parser.set_params(
         interactive_mode=True, skip_generation=False,
@@ -77,14 +78,16 @@ def load_game(opt, path):
     """
     Load the game from the specified path in the specified format
     """
-    if opt["viz_format"]:
-        game = game_load.load_viz_format(path)
+    if opt["game_format"] == "viz2dip":
+        game = game_load.load_viz_to_dip_format(path)
+    elif opt["game_format"] == "viz2dipcc":
+        game = game_load.load_viz_to_dipcc_format(path)
     else:
         # SQL format
         game = game_load.load_single_sql_game(path)
     game = game_load.organize_game_by_phase(game)
     # convert to format expected by the model
-    format_sequences = formatter.SequenceFormatHelper.change_format(game, opt["format"])
+    format_sequences = formatter.SequenceFormatHelper.change_format(game, opt["data_format"])
 
     return format_sequences
 

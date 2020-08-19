@@ -106,7 +106,6 @@ class BaseOrderTeacher(FixedDialogTeacher):
         # calculate the sequence length stat
         self._calculate_seq_len_stat(stage="init")
 
-        self.valid_json_dir = utls.VALID_JSON_PATH
         self.is_train = utls.is_training(opt["datatype"])
 
         if shared is None:
@@ -414,12 +413,6 @@ class BaseOrderTeacher(FixedDialogTeacher):
 
         if self.is_train:
             random.shuffle(pairs)
-
-        # save the json for validation evaluation
-        if "valid" in opt["datatype"]:
-            if not os.path.exists(self.valid_json_dir):
-                with open(self.valid_json_dir, "w") as fh:
-                    json.dump(pairs, fh)
 
         return pairs
 
