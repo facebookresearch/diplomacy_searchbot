@@ -7,6 +7,7 @@
 
 #include "adjacencies.h"
 #include "checks.h"
+#include "exceptions.h"
 #include "game_state.h"
 #include "power.h"
 #include "unit.h"
@@ -1013,6 +1014,9 @@ public:
       Loc convoy_fleet = it->first;
       Order &convoy_order = it->second;
       DLOG(INFO) << "CONVOY PARADOX: " << convoy_order.to_string();
+      if (exception_on_convoy_paradox_) {
+        throw ConvoyParadoxException();
+      }
       _disable_convoy_fleet(r, convoy_fleet);
     }
   }
@@ -1072,10 +1076,15 @@ public:
   // Non-dislodged fleets organized by *army loc*
   // Map of army loc -> set of fleet locs
   map<Loc, set<Loc>> confirmed_convoy_fleets_;
+
+  // For debugging: if true, raise a custom exception when a convoy paradox is
+  // encountered
+  bool exception_on_convoy_paradox_ = false;
 };
 
 GameState GameState::process_m(
-    const std::unordered_map<Power, std::vector<Order>> &orders) {
+    const std::unordered_map<Power, std::vector<Order>> &orders,
+    bool exception_on_convoy_paradox) {
   JCHECK(this->get_phase().phase_type == 'M',
          "Bad phase_type: " + this->get_phase().phase_type);
   DLOG(INFO) << "Process phase: " << this->get_phase().to_string();
@@ -1091,6 +1100,9 @@ GameState GameState::process_m(
   vector<Order> support_orders;
   set<Loc> illegal_orderers;
   set<Loc> unconvoyed_movers;
+
+  // Set debugging flags
+  loc_candidates.exception_on_convoy_paradox_ = exception_on_convoy_paradox;
 
   // First add all existing units as candidates to remain in their
   // current location

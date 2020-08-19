@@ -3,6 +3,7 @@
 
 #include "adjacencies.h"
 #include "checks.h"
+#include "exceptions.h"
 #include "game.h"
 #include "game_id.h"
 #include "thirdparty/nlohmann/json.hpp"
@@ -29,8 +30,10 @@ void Game::process() {
   order_history_[state_.get_phase()] = staged_orders_;
 
   try {
-    state_ = state_.process(staged_orders_);
+    state_ = state_.process(staged_orders_, exception_on_convoy_paradox_);
     maybe_early_exit();
+  } catch (const ConvoyParadoxException &e) {
+    throw e;
   } catch (const std::exception &e) {
     this->crash_dump();
     LOG(ERROR) << "Exception: " << e.what();

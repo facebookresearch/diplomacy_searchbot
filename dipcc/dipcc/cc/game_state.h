@@ -53,8 +53,8 @@ public:
 
   std::vector<float> get_square_scores() const;
 
-  GameState
-  process(const std::unordered_map<Power, std::vector<Order>> &orders);
+  GameState process(const std::unordered_map<Power, std::vector<Order>> &orders,
+                    bool exception_on_convoy_paradox = false);
 
   nlohmann::json to_json();
 
@@ -65,7 +65,8 @@ private:
   void copy_possible_orders_to_root_loc();
 
   GameState
-  process_m(const std::unordered_map<Power, std::vector<Order>> &orders);
+  process_m(const std::unordered_map<Power, std::vector<Order>> &orders,
+            bool exception_on_convoy_paradox = false);
   GameState
   process_r(const std::unordered_map<Power, std::vector<Order>> &orders);
   GameState

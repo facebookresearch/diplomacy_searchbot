@@ -361,8 +361,8 @@ void GameState::clear_all_possible_orders() {
   orders_loaded_ = false;
 }
 
-GameState
-GameState::process(const unordered_map<Power, vector<Order>> &orders) {
+GameState GameState::process(const unordered_map<Power, vector<Order>> &orders,
+                             bool exception_on_convoy_paradox) {
   DLOG(INFO) << "Processing " << this->get_phase().to_string();
   DLOG(INFO) << "Orders:";
   for (auto &it : orders) {
@@ -376,7 +376,7 @@ GameState::process(const unordered_map<Power, vector<Order>> &orders) {
     this->get_all_possible_orders();
   }
   if (phase_.phase_type == 'M') {
-    return process_m(orders);
+    return process_m(orders, exception_on_convoy_paradox);
   } else if (phase_.phase_type == 'R') {
     return process_r(orders);
   } else if (phase_.phase_type == 'A') {

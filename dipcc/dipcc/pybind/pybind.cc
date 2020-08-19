@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "../cc/exceptions.h"
 #include "../cc/game.h"
 #include "../cc/thread_pool.h"
 #include "encoding.h"
@@ -39,7 +40,9 @@ PYBIND11_MODULE(pydipcc, m) {
            py::return_value_policy::move) // mila compat
       .def("get_square_scores", &Game::get_square_scores)
       .def("clear_old_all_possible_orders",
-           &Game::clear_old_all_possible_orders);
+           &Game::clear_old_all_possible_orders)
+      .def("set_exception_on_convoy_paradox",
+           &Game::set_exception_on_convoy_paradox);
 
   // class PhaseData
   py::class_<PhaseData>(m, "PhaseData")
@@ -64,4 +67,7 @@ PYBIND11_MODULE(pydipcc, m) {
         py::return_value_policy::move);
   m.def("encode_prev_orders", &py_encode_prev_orders,
         py::return_value_policy::move);
+
+  // Exceptions
+  py::register_exception<ConvoyParadoxException>(m, "ConvoyParadoxException");
 }

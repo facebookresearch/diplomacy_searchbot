@@ -62,6 +62,10 @@ public:
 
   void clear_old_all_possible_orders();
 
+  void set_exception_on_convoy_paradox() {
+    exception_on_convoy_paradox_ = true;
+  }
+
   // python
 
   std::unordered_map<std::string, std::vector<std::string>>
@@ -95,6 +99,7 @@ private:
   std::map<Phase, std::unordered_map<Power, std::vector<Order>>> order_history_;
   std::vector<std::string> rules_ = {"NO_PRESS", "POWER_CHOICE"};
   int draw_on_stalemate_years_ = -1;
+  bool exception_on_convoy_paradox_ = false;
 };
 
 } // namespace dipcc
