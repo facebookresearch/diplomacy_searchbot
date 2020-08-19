@@ -1323,8 +1323,11 @@ GameState GameState::build_next_state(const Resolution &r) const {
     next.set_phase(this->get_phase().next(true));
 
     for (Loc dislodged : r.dislodged) {
-      next.add_dislodged_unit(this->get_unit_rooted(dislodged),
-                              r.winners.at(dislodged).src);
+      auto &dislodger_cand = r.winners.at(dislodged);
+      // hack: NONE dislodger loc if dislodged by convoy, since units may
+      // retreat to dislodger src in this scenario
+      Loc dislodger_loc = dislodger_cand.via ? Loc::NONE : dislodger_cand.src;
+      next.add_dislodged_unit(this->get_unit_rooted(dislodged), dislodger_loc);
     }
     for (Loc contested : r.contested) {
       next.add_contested_loc(contested);
