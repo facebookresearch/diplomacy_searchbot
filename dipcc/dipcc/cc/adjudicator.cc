@@ -592,9 +592,11 @@ public:
       cands_[dest][cand_loc].max = 0;
 
       // All move candidates now contend to hold their current position with
-      // str=1
-      cands_[cand_loc][cand_loc].min = 1;
-      cands_[cand_loc][cand_loc].max = 1;
+      // str=1. Ordinarily min will be 0 because this is a move candidate, but
+      // we hack H2H bounces by pretending they're holding, in which case we
+      // just want to keep the larger min/max that resulted from this hack.
+      cands_[cand_loc][cand_loc].min = max(cands_[cand_loc][cand_loc].min, 1);
+      cands_[cand_loc][cand_loc].max = max(cands_[cand_loc][cand_loc].max, 1);
     }
 
     // Remove any unresolved self-dislodges at this location
