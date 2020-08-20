@@ -168,8 +168,33 @@ public:
     }
   }
 
-  bool remove_unresolved_support(Loc loc) {
-    auto it = unresolved_supports_.find(root_loc(loc));
+  // Remove any unresolved support, unless it supports an attack on an
+  // attacker, e.g. if "A S B - C" and "C - A", then this support is in defence
+  // and is not broken
+  bool remove_unresolved_support_except_defence(Loc supporter_loc) {
+    auto it = unresolved_supports_.find(root_loc(supporter_loc));
+    if (it == unresolved_supports_.end()) {
+      // no support: nothing to do
+      return false;
+    }
+    auto &order = it->second.order;
+    if (order.get_type() == OrderType::SH) {
+      // support-hold is broken
+      remove_unresolved_support(order);
+      return true;
+    }
+    auto support_dest_dest_it = move_reqs_.find(root_loc(order.get_dest()));
+    if (support_dest_dest_it == move_reqs_.end() ||
+        root_loc(support_dest_dest_it->second) != supporter_loc) {
+      // support-move against unit not attacking supporter: broken
+      remove_unresolved_support(order);
+      return true;
+    }
+    // support is in defence! do not remove it
+  }
+
+  bool remove_unresolved_support(Loc supporter_loc) {
+    auto it = unresolved_supports_.find(root_loc(supporter_loc));
     if (it != unresolved_supports_.end()) {
       remove_unresolved_support(it->second.order);
       return true;
@@ -177,22 +202,22 @@ public:
     return false;
   }
 
-  void remove_unresolved_support(Order &order) {
-    if (order.get_type() == OrderType::SM) {
+  void remove_unresolved_support(Order &support_order) {
+    if (support_order.get_type() == OrderType::SM) {
       // support-move
-      Loc dest_root = root_loc(order.get_dest());
-      Loc src_root = root_loc(order.get_target().loc);
+      Loc dest_root = root_loc(support_order.get_dest());
+      Loc src_root = root_loc(support_order.get_target().loc);
       map<Loc, LocCandidate> &dest_cands = cands_.at(dest_root);
       LocCandidate &supportee = dest_cands.at(src_root);
       supportee.max -= 1;
     } else {
       // support-hold
-      Loc target_root = root_loc(order.get_target().loc);
+      Loc target_root = root_loc(support_order.get_target().loc);
       LocCandidate &supportee = cands_.at(target_root).at(target_root);
       supportee.max -= 1;
     }
 
-    unresolved_supports_.erase(root_loc(order.get_unit().loc));
+    unresolved_supports_.erase(root_loc(support_order.get_unit().loc));
   }
 
   void add_convoy_order(const Order &order) {
@@ -1089,7 +1114,7 @@ public:
     army_cand.min += army_cand.min_pending_convoy;
     army_cand.min_pending_convoy = 0;
     // check for support cut
-    if (remove_unresolved_support(army_dest)) {
+    if (remove_unresolved_support_except_defence(army_dest)) {
       DLOG(INFO) << "BROKEN SUPPORT: " << army_dest;
     }
   }
