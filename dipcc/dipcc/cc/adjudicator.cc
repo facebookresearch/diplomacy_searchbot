@@ -220,7 +220,7 @@ public:
   void log() {
     DLOG(INFO) << "Adjudicator State:";
     for (auto &it : cands_) {
-      if (map_contains(loc_prev_str_, it.first)) {
+      if (loc_prev_str_[root_loc(it.first)] > 0) {
         DLOG(INFO) << " Dest: " << loc_str(it.first)
                    << ", prev=" << loc_prev_str_[root_loc(it.first)];
       } else {
@@ -497,8 +497,7 @@ public:
     _confirm_supporter_not_dislodged(r, winner_root);
 
     // If this was previously an unresolved self-support or self-dislodge
-    // move,
-    // it has clearly been resolved
+    // move, it has clearly been resolved
     unresolved_self_support_dislodges_.erase(make_pair(winner_root, dest));
     unresolved_self_dislodges_.erase(make_pair(winner_root, dest));
 
