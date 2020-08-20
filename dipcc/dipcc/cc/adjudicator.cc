@@ -420,8 +420,8 @@ public:
               return true;
             } else {
               // hold cand may still vacate: wait until that's resolved
-              unresolved_self_dislodges_.insert(
-                  make_pair(largest_min_cand->second.src, dest));
+              unresolved_self_dislodges_.insert(make_pair(
+                  root_loc(largest_min_cand->second.src), root_loc(dest)));
               return false;
             }
           }
