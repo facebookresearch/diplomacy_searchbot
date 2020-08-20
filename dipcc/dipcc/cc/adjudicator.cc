@@ -220,7 +220,13 @@ public:
   void log() {
     DLOG(INFO) << "Adjudicator State:";
     for (auto &it : cands_) {
-      DLOG(INFO) << " Dest: " << loc_str(it.first);
+      if (map_contains(loc_prev_str_, it.first)) {
+        DLOG(INFO) << " Dest: " << loc_str(it.first)
+                   << ", prev=" << loc_prev_str_[root_loc(it.first)];
+      } else {
+        DLOG(INFO) << " Dest: " << loc_str(it.first);
+      }
+
       for (auto &jt : it.second) {
         DLOG(INFO) << "   " << loc_str(jt.first) << " " << jt.second.min << " "
                    << jt.second.max << " / " << jt.second.min_pending_convoy
@@ -348,6 +354,22 @@ public:
         return true;
       }
 
+      // check largest min/max against loc's prevent strength
+      if (largest_max <= loc_prev_str_[dest]) {
+        // no unit can beat the prev strength: either units holds, or we bounce
+        if (cands_[dest][dest].min > 0) {
+          _resolve_winner(r, dest, cands_[dest][dest]);
+        } else {
+          _resolve_bounce(r, dest);
+        }
+        return true;
+      }
+      if (largest_min < loc_prev_str_[dest]) {
+        // no unit's min beats prev strength, but >=1 units' max beats prev
+        // strength: we are undecided
+        return false;
+      }
+
       // if largest min dominates other units' max, this unit wins
       bool is_winner = true;
       bool is_bounce = false;
@@ -405,6 +427,7 @@ public:
           }
 
           _resolve_winner(r, dest, largest_min_cand->second);
+
           if (other_units_max == 0) {
             // no other unit managed to attack this loc: if the unit had an
             // unresolved support, resolve it
@@ -473,7 +496,8 @@ public:
     // If winner has an unresolved support, maybe resolve it
     _confirm_supporter_not_dislodged(r, winner_root);
 
-    // If this was previously an unresolved self-support or self-dislodge move,
+    // If this was previously an unresolved self-support or self-dislodge
+    // move,
     // it has clearly been resolved
     unresolved_self_support_dislodges_.erase(make_pair(winner_root, dest));
     unresolved_self_dislodges_.erase(make_pair(winner_root, dest));
@@ -542,7 +566,8 @@ public:
           if (root_loc(r.winners.at(loser_loc).src) == loser_loc) {
             // unit has already successfully held: nothing to do here
           } else {
-            // someone else has won the loser's loc: loser cannot hold, they are
+            // someone else has won the loser's loc: loser cannot hold, they
+            // are
             // dislodged
             _resolve_dislodge(r, loser_loc);
           }
@@ -574,11 +599,16 @@ public:
         _confirm_supporter_not_dislodged(r, dest);
 
         // Unit is not dislodged: if they are in a H2H, their attack has
-        // effect
-        // (see DATC 6.E.4)
+        // effect (see DATC 6.E.4)
         auto mov_it = move_reqs_.find(dest);
         if (mov_it != move_reqs_.end()) {
-          _resolve_pending_h2h_strength(cands_.at(mov_it->second).at(dest));
+          if (map_contains(unresolved_h2h_, cand_loc)) {
+            _resolve_pending_h2h_strength(cands_.at(mov_it->second).at(dest));
+          } else {
+            // h2h was already resolved, which means this cand lost a h2h. Add
+            // pending strength to dest's prev strength
+            _move_pending_h2h_str_to_prev(cands_.at(mov_it->second).at(dest));
+          }
         }
 
         // Don't adjust strength for the unit already in this loc, who may
@@ -592,12 +622,8 @@ public:
       cands_[dest][cand_loc].min_pending_convoy = 0;
       cands_[dest][cand_loc].max = 0;
 
-      // All move candidates now contend to hold their current position with
-      // str=1. Ordinarily min will be 0 because this is a move candidate, but
-      // we hack H2H bounces by pretending they're holding, in which case we
-      // just want to keep the larger min/max that resulted from this hack.
-      cands_[cand_loc][cand_loc].min = max(cands_[cand_loc][cand_loc].min, 1);
-      cands_[cand_loc][cand_loc].max = max(cands_[cand_loc][cand_loc].max, 1);
+      // Move candidates now attempt to hold their current position
+      _failed_move_attempt_hold(cand_loc);
     }
 
     // Remove any unresolved self-dislodges at this location
@@ -609,6 +635,9 @@ public:
         ++it;
       }
     }
+
+    // FIXME: rm
+    this->log();
   }
 
   void _resolve_dislodge(Resolution &r, Loc loc) {
@@ -711,23 +740,33 @@ public:
         DLOG(INFO) << "H2H WINNER: " << cand_ab->second.src << " -> "
                    << cand_ba->second.src;
         _resolve_pending_h2h_strength(cand_ab->second);
+        // zero max, but keep loser pending_h2h which may be
+        // added to loc_prev_str_
+        cand_ba->second.max = 0;
+        _failed_move_attempt_hold(loc_b);
       } else {
         DLOG(INFO) << "H2H WINNER W/ SELF-DISLODGE: " << cand_ab->second.src
                    << " -> " << cand_ba->second.src;
         // a wins h2h only with self-dislodge support: h2h bounce
         _resolve_h2h_bounce(cand_ab->second, cand_ba->second);
       }
+
     } else if (min_ba > max_ab) {
       if (min_ba - cand_ba->second.dislodge_self_support > max_ab) {
         DLOG(INFO) << "H2H WINNER: " << cand_ba->second.src << " -> "
                    << cand_ab->second.src;
         _resolve_pending_h2h_strength(cand_ba->second);
+        // zero max, but keep loser pending_h2h which may be
+        // added to loc_prev_str_
+        cand_ab->second.max = 0;
+        _failed_move_attempt_hold(loc_a);
       } else {
         DLOG(INFO) << "H2H WINNER W/ SELF-DISLODGE: " << cand_ba->second.src
                    << " -> " << cand_ab->second.src;
         // b wins h2h only with self-dislodge support: h2h bounce
         _resolve_h2h_bounce(cand_ab->second, cand_ba->second);
       }
+
     } else if (min_ab == min_ba && max_ab == max_ba) {
       DLOG(INFO) << "H2H BOUNCE: " << loc_b << " <> " << loc_a;
       _resolve_h2h_bounce(cand_ab->second, cand_ba->second);
@@ -739,6 +778,13 @@ public:
     this->log();
     unresolved_h2h_.erase(loc_a);
     unresolved_h2h_.erase(loc_b);
+  }
+
+  void _move_pending_h2h_str_to_prev(LocCandidate &cand) {
+    JCHECK(cand.min_pending_convoy_h2h == 0,
+           "_move_pending_h2h_str_to_prev with pending_convoy_h2h");
+    loc_prev_str_[root_loc(cand.dest)] += cand.min_pending_h2h;
+    cand.min_pending_h2h = 0;
   }
 
   void _resolve_pending_h2h_strength(LocCandidate &cand) {
@@ -766,7 +812,8 @@ public:
     LocCandidate &a_dest_hold_cand = a_dest_cands.at(a_dest);
     LocCandidate &b_dest_hold_cand = b_dest_cands.at(b_dest);
 
-    // move h2h strength to hold candidates instead: these units will not swap,
+    // move h2h strength to hold candidates instead: these units will not
+    // swap,
     // but third party invaders must still beat these strengths to dislodge
     a_dest_hold_cand.min = a_min_pending_h2h;
     a_dest_hold_cand.max = a_min_pending_h2h;
@@ -782,6 +829,15 @@ public:
     move_cand_b.max = 0;
     move_reqs_.erase(a_dest);
     move_reqs_.erase(b_dest);
+  }
+
+  void _failed_move_attempt_hold(Loc loc) {
+    // Failed move candidate now contends to hold their current position with
+    // str=1. Ordinarily min will be 0 because this is a move candidate, but
+    // we hack H2H bounces by pretending they're holding, in which case we
+    // just want to keep the larger min/max that resulted from this hack.
+    cands_[loc][loc].min = max(cands_[loc][loc].min, 1);
+    cands_[loc][loc].max = max(cands_[loc][loc].max, 1);
   }
 
   void _disable_convoy_fleet(Resolution &r, Loc loc) {
@@ -940,7 +996,8 @@ public:
         unresolved_self_support_dislodges_.insert(make_pair(src, loc));
         return false;
       } else if (root_loc(dest_winner_it->second.src) == root_loc(cand.dest)) {
-        // unit at loc successfully vacated, so this is not a self-dislodge and
+        // unit at loc successfully vacated, so this is not a self-dislodge
+        // and
         // we can safely resolve the winning candidate
         DLOG(INFO) << "self-support dislodge resolve winner";
         _resolve_winner(r, loc, cand);
@@ -1005,7 +1062,8 @@ public:
 
   // This should be called after process iteration has converged with
   // unresolved convoys. This is indicative of a convoy paradox.  Resolve the
-  // paradox according to the Szykman rule: paradoxical convoys have no effect.
+  // paradox according to the Szykman rule: paradoxical convoys have no
+  // effect.
   //
   // See http://web.inter.nl.net/users/L.B.Kruijswijk/#4.A.2
   void _clear_convoy_paradoxes(Resolution &r) {
@@ -1076,6 +1134,9 @@ public:
   // Non-dislodged fleets organized by *army loc*
   // Map of army loc -> set of fleet locs
   map<Loc, set<Loc>> confirmed_convoy_fleets_;
+
+  // Minimum strength necessary to move to a loc.
+  map<Loc, int> loc_prev_str_;
 
   // For debugging: if true, raise a custom exception when a convoy paradox is
   // encountered
@@ -1233,7 +1294,8 @@ GameState GameState::process_m(
       continue;
     }
 
-    // Check for support cuts.  Anyone (of a different power) trying to move to
+    // Check for support cuts.  Anyone (of a different power) trying to move
+    // to
     // any coastal variant is a cut candidate
     Power supporter_power = this->get_unit(order.get_unit().loc).power;
     set<Loc> cut_candidates;
