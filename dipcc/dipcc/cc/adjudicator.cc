@@ -1284,11 +1284,8 @@ GameState GameState::process_m(
       } else if (cut_candidates.size() == 1) {
         // pending_dislodge: potential cutter is being attacked by this
         // support: support is conditional on dislodgedment (see DATC 6.D.17)
-        bool pending_dislodge =
-            root_loc(*cut_candidates.begin()) == root_loc(order.get_dest());
-        if (pending_dislodge || convoy_cut_candidates.size() > 0) {
-          loc_candidates.add_unresolved_support(order, supporter_power,
-                                                pending_dislodge);
+        if (root_loc(*cut_candidates.begin()) == root_loc(order.get_dest())) {
+          loc_candidates.add_unresolved_support(order, supporter_power, true);
         }
       }
     }
