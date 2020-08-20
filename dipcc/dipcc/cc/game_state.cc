@@ -393,8 +393,9 @@ GameState::process_r(const unordered_map<Power, vector<Order>> &orders) {
   next_state.set_units(this->get_units());
   next_state.set_centers(this->get_centers());
 
-  std::map<OwnedUnit, Loc> dislodged_units(this->dislodged_units_);
+  map<OwnedUnit, Loc> dislodged_units(this->dislodged_units_);
   const auto &all_possible_orders(this->get_all_possible_orders());
+  set<Loc> multiple_retreater_locs;
 
   for (const auto &p : orders) {
     Power power = p.first;
@@ -415,7 +416,8 @@ GameState::process_r(const unordered_map<Power, vector<Order>> &orders) {
       // retreat order is valid: mark so another valid order is not accepted
       dislodged_units.erase(dislodged_it);
 
-      if (order.get_type() == OrderType::D) {
+      if (order.get_type() == OrderType::D ||
+          set_contains(multiple_retreater_locs, root_loc(order.get_dest()))) {
         // do nothing: unit not added to next_state
       } else if (next_state.get_unit_rooted(order.get_dest()).type !=
                  UnitType::NONE) {
@@ -423,6 +425,7 @@ GameState::process_r(const unordered_map<Power, vector<Order>> &orders) {
         // dest is now occupied: another unit has already retreated there, so
         // disband both
         next_state.remove_unit_rooted(order.get_dest());
+        multiple_retreater_locs.insert(root_loc(order.get_dest()));
       } else {
         next_state.set_unit(power, order.get_unit().type, order.get_dest());
       }
