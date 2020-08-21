@@ -984,13 +984,38 @@ public:
     if (unresolved_support_it == unresolved_supports_.end()) {
       return;
     }
-    if (maybe_convoy_orders_by_dest_[loc].size() == 0) {
+    set<Order> &maybe_inbound_convoys = maybe_convoy_orders_by_dest_[loc];
+    if (maybe_inbound_convoys.size() == 0) {
       // support is not cut
       _resolve_support_if_exists(r, loc);
     } else {
-      // support may still be cut by convoyed army, so don't confirm it yet
-      unresolved_support_it->second.pending_dislodge = false;
+      // At this point, support may still be cut by convoyed army, and we can't
+      // confirm it yet. The only exception is if all inbound convoys are
+      // ferrying an army on which we are supporting an attack. Check for this
+      // case.
+      Order &support_order = unresolved_support_it->second.order;
+      if (support_order.get_type() == OrderType::SM &&
+          _all_convoys_src_eq(maybe_inbound_convoys,
+                              root_loc(support_order.get_dest()))) {
+        // confirm support-attack on army which attacks us via convoy
+        _resolve_support_if_exists(r, loc);
+      } else {
+        // support may still be cut by convoyed army, so don't confirm it yet
+        unresolved_support_it->second.pending_dislodge = false;
+      }
     }
+  }
+
+  // Return true if all convoy orders' src loc == loc
+  bool _all_convoys_src_eq(const set<Order> &convoy_orders, Loc loc) {
+    for (const Order &order : convoy_orders) {
+      JCHECK(order.get_type() == OrderType::C,
+             "_all_convoys_src_eq called with non-convoy");
+      if (order.get_target().loc != loc) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // Called when a move candidate would win only with self-dislodge support.
