@@ -35,14 +35,13 @@ def build_db_cache_from_cfg(cfg):
     logging.info("Expanding the glob")
     game_json_paths = sorted(glob.glob(cfg.glob))
     logging.info("Found games: %s", len(game_json_paths))
-    assert len(game_json_paths) >= 10, f"weird ({len(game_json_paths)})"
 
     logging.info("Building metadata")
     game_metadata = make_ratings_table(game_json_paths)
     game_ids = list(game_metadata.keys())
 
     random.seed(0)
-    val_game_ids = sorted(random.sample(game_ids, max(1, int(len(game_ids) * cfg.val_set_pct))))
+    val_game_ids = sorted(random.sample(game_ids, int(len(game_ids) * cfg.val_set_pct)))
     train_game_ids = sorted(set(game_ids) - set(val_game_ids))
 
     kwargs = dict(
@@ -60,14 +59,22 @@ def build_db_cache_from_cfg(cfg):
         n_cf_agent_samples=cfg.n_cf_agent_samples,
     )
 
-    logging.info("Building val dataset")
-    val_dataset = Dataset(game_ids=val_game_ids, **kwargs)
-    val_dataset.preprocess()
+    if len(val_game_ids) > 0:
+        logging.info("Building val dataset")
+        val_dataset = Dataset(game_ids=val_game_ids, **kwargs)
+        val_dataset.preprocess()
+    else:
+        val_dataset = None
+
     logging.info("Building train dataset")
     train_dataset = Dataset(game_ids=train_game_ids, **kwargs)
     train_dataset.preprocess()
 
     pathlib.Path(cfg.out_path).parent.mkdir(exist_ok=True, parents=True)
+
+    for dataset in (val_dataset, train_dataset):
+        if hasattr(dataset, "cf_agent"):
+            del dataset.cf_agent
 
     logging.info("Saving")
     torch.save((train_dataset, val_dataset), cfg.out_path)
