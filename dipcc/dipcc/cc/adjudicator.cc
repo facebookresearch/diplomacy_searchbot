@@ -168,10 +168,11 @@ public:
     }
   }
 
-  // Remove any unresolved support, unless it supports an attack on an
-  // attacker, e.g. if "A S B - C" and "C - A", then this support is in defence
-  // and is not broken
-  bool remove_unresolved_support_except_defence(Loc supporter_loc) {
+  // Remove any unresolved support, unless it supports an attack on an attacker
+  // from from_loc, e.g. if "A S B - C" and "C - A", then this support is in
+  // defence and is not broken
+  bool remove_unresolved_support_except_defence_from(Loc supporter_loc,
+                                                     Loc from_loc) {
     auto it = unresolved_supports_.find(root_loc(supporter_loc));
     if (it == unresolved_supports_.end()) {
       // no support: nothing to do
@@ -180,6 +181,11 @@ public:
     auto &order = it->second.order;
     if (order.get_type() == OrderType::SH) {
       // support-hold is broken
+      remove_unresolved_support(order);
+      return true;
+    }
+    if (root_loc(order.get_dest()) != from_loc) {
+      // support-move dest is not from_loc
       remove_unresolved_support(order);
       return true;
     }
@@ -1139,7 +1145,7 @@ public:
     army_cand.min += army_cand.min_pending_convoy;
     army_cand.min_pending_convoy = 0;
     // check for support cut
-    if (remove_unresolved_support_except_defence(army_dest)) {
+    if (remove_unresolved_support_except_defence_from(army_dest, army_src)) {
       DLOG(INFO) << "BROKEN SUPPORT: " << army_dest;
     }
   }
