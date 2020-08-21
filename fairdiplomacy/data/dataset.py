@@ -489,7 +489,7 @@ def encode_phase(
     for power_i, power in enumerate(POWERS):
         orders_samples = power_orders_samples[power]
         if len(orders_samples) == 0:
-            valid_power_idxs[0, power_i] = False
+            valid_power_idxs[power_i] = False
             y_actions_lst.append(
                 torch.empty(n_cf_agent_samples, MAX_SEQ_LEN, dtype=torch.int32).fill_(EOS_IDX)
             )
