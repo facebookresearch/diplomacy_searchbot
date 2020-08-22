@@ -158,7 +158,7 @@ public:
                      ? unresolved_support.order.get_dest()
                      : root_loc(unresolved_support.order.get_target().loc);
       if (!set_contains(r.contested, dest) && !map_contains(r.winners, dest)) {
-        DLOG(INFO) << "CONFIRM SUPPORT: " << dest;
+        DLOG(INFO) << "CONFIRM SUPPORT: " << supporter_loc;
         add_support(unresolved_support.order,
                     unresolved_support.supporter_power);
       } else {
@@ -454,7 +454,8 @@ public:
 
           _resolve_winner(r, dest, largest_min_cand->second);
 
-          if (other_units_max == 0) {
+          if (other_units_max == 0 &&
+              maybe_convoy_orders_by_dest_[dest].size() == 0) {
             // no other unit managed to attack this loc: if the unit had an
             // unresolved support, resolve it
             _resolve_support_if_exists(r, dest);
