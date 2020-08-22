@@ -291,22 +291,17 @@ public:
         change_this_iter |= _try_resolve_loc(r, dest, loc_cands);
       }
 
-      if (!change_this_iter && unresolved_self_dislodges_.size() > 0) {
+      if (!change_this_iter &&
+          (unresolved_self_dislodges_.size() > 0 ||
+           unresolved_self_support_dislodges_.size() > 0)) {
         DLOG(INFO) << "process() converged after " << i << " iterations with "
                    << unresolved_self_dislodges_.size()
-                   << " unresolved self-dislodges";
-        this->log();
-        _clear_unresolved_self_dislodges(r, unresolved_self_dislodges_);
-        continue; // keep iterating with cleared self dislodges
-      }
-
-      if (!change_this_iter && unresolved_self_support_dislodges_.size() > 0) {
-        DLOG(INFO) << "process() converged after " << i << " iterations with "
+                   << " unresolved self-dislodges and "
                    << unresolved_self_support_dislodges_.size()
                    << " unresolved self-support dislodges";
         this->log();
-        _clear_unresolved_self_dislodges(r, unresolved_self_support_dislodges_);
-        continue; // keep iterating with cleared self-support dislodges
+        _clear_unresolved_self_dislodges(r);
+        continue; // keep iterating with cleared self dislodges
       }
 
       if (!change_this_iter && maybe_convoy_orders_by_fleet_.size() > 0) {
@@ -1052,8 +1047,7 @@ public:
         return false;
       } else if (root_loc(dest_winner_it->second.src) == root_loc(cand.dest)) {
         // unit at loc successfully vacated, so this is not a self-dislodge
-        // and
-        // we can safely resolve the winning candidate
+        // and we can safely resolve the winning candidate
         DLOG(INFO) << "self-support dislodge resolve winner";
         _resolve_winner(r, loc, cand);
         unresolved_self_support_dislodges_.erase(make_pair(src, loc));
@@ -1075,10 +1069,18 @@ public:
   // If we have made it to this point without resolution, remove self-dislodge
   // support entirely
   //
-  void _clear_unresolved_self_dislodges(
-      Resolution &r, set<pair<Loc, Loc>> &unresolved_self_dislodges) {
+  void _clear_unresolved_self_dislodges(Resolution &r) {
+
+    // Combine both unresolved self dislodge sets
+    set<pair<Loc, Loc>> unresolved_self_dislodges(unresolved_self_dislodges_);
+    for (auto &p : unresolved_self_support_dislodges_) {
+      unresolved_self_dislodges.insert(p);
+    }
+    unresolved_self_dislodges_.clear();
+    unresolved_self_support_dislodges_.clear();
 
     set<Loc> resolved_cycle_locs;
+    vector<set<Loc>> maybe_valid_cycles;
     while (unresolved_self_dislodges.size() > 0) {
       auto it = unresolved_self_dislodges.begin();
       pair<Loc, Loc> p = *it;
@@ -1093,25 +1095,39 @@ public:
       if (set_contains(cycle.locs, src) &&
           (cycle.locs.size() >= 3 || cycle.convoy_swap)) {
         // self-dislodger is part of a move cycle, and therefore would not
-        // dislodge dest if the cycle all moved. This is not a self-dislodge!
+        // dislodge dest if the cycle all moved. This is not a self-dislodge
+        // unless another self-dislodger bounces this cycle. Save it as a
+        // potentially valid cycle until all self-dislodge bounces have been
+        // accounted for, and then allow the move cycle to continue
         DLOG(INFO) << "would-be self-dislodger part of move cycle: " << src
                    << " -> " << dest;
-        _resolve_winner(r, dest, cands_.at(dest).at(src));
+        maybe_valid_cycles.push_back(cycle.locs);
       } else {
         // self-dislodger would move into a move cycle, and therefore the
         // cycle will bounce
         DLOG(INFO) << "self-dislodger bounces move cycle: " << src << " -> "
                    << dest;
         _resolve_bounce(r, dest);
-      }
-
-      for (Loc loc : cycle.locs) {
-        resolved_cycle_locs.insert(loc);
+        for (Loc loc : cycle.locs) {
+          resolved_cycle_locs.insert(loc);
+        }
       }
 
       // erase by value, not by iterator, since set may have been modified in
       // the _resolve_* calls
       unresolved_self_dislodges.erase(p);
+    }
+
+    // Resolve valid move cycles if they were not later resolved by a bounce
+    for (set<Loc> &cycle : maybe_valid_cycles) {
+      Loc loc = *cycle.begin();
+      if (!set_contains(resolved_cycle_locs, loc)) {
+        Loc dest = move_reqs_.at(loc);
+        _resolve_winner(r, dest, cands_.at(dest).at(loc));
+        for (Loc c : cycle) {
+          resolved_cycle_locs.insert(c);
+        }
+      }
     }
   }
 
@@ -1350,8 +1366,7 @@ GameState GameState::process_m(
     }
 
     // Check for support cuts.  Anyone (of a different power) trying to move
-    // to
-    // any coastal variant is a cut candidate
+    // to any coastal variant is a cut candidate
     Power supporter_power = this->get_unit(order.get_unit().loc).power;
     set<Loc> cut_candidates;
     set<Loc> convoy_cut_candidates;
