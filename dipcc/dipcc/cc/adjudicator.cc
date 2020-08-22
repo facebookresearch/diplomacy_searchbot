@@ -735,12 +735,21 @@ public:
       return;
     }
 
-    // This is a h2h via swap or 3+ unit move cycle: they all move
-    DLOG(INFO) << "RESOLVE " << cycle.locs.size() << " unit move cycle";
+    // Swap if a h2h via swap or 3+ unit move cycle. Bounce for a 2-unit non-via
+    // cycle (I'm 99% sure this should only happen for an adjacent convoy which
+    // degrades to a non-via move, fwiw)
+    bool swap = cycle.convoy_swap || cycle.locs.size() > 2;
+    DLOG(INFO) << "RESOLVE " << cycle.locs.size()
+               << " unit move cycle, via=" << cycle.convoy_swap;
     for (Loc d = loc;;) {
       Loc n = move_reqs_.at(d);
-      r.winners[d] = cands_[n][d];
-      DLOG(INFO) << "  " << d << " -> " << n;
+      if (swap) {
+        r.winners[d] = cands_[n][d];
+        DLOG(INFO) << "  " << d << " -> " << n;
+      } else {
+        r.winners[d] = cands_[d][d];
+        DLOG(INFO) << "  " << d << " -> " << d;
+      }
       unresolved_units_.erase(d);
       if (n == loc) {
         break;
