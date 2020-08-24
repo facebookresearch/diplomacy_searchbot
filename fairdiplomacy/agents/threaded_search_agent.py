@@ -122,106 +122,94 @@ class ThreadedSearchAgent(BaseSearchAgent):
                 for power, orders in set_orders_dict.items():
                     game.set_orders(power, list(orders))
 
-            other_powers = {
-                game.game_id: [p for p in POWERS if p not in set_orders_dict]
+            # for each game, a list of powers whose orders need to be generated
+            # by the model on the first phase.
+            missing_start_orders = {
+                game.game_id: frozenset(p for p in POWERS if p not in set_orders_dict)
                 for game, set_orders_dict in zip(
                     games, repeat(set_orders_dicts, average_n_rollouts)
                 )
             }
 
-            has_other_powers = any(other_powers.values())
+        if self.max_rollout_length > 0:
+            rollout_end_phase_id = sort_phase_key(
+                n_move_phases_later(game_init.current_short_phase, self.max_rollout_length)
+            )
+            max_steps = 1000000
+        else:
+            rollout_end_phase_id = 1000000
+            max_steps = 1
 
-        rollout_start_phase = game_init.current_short_phase
-        rollout_end_phase = n_move_phases_later(rollout_start_phase, self.max_rollout_length)
-
-        while True:
-            # exit loop if all games are done before max_rollout_length
+        # This loop steps the games until one of the conditions is true:
+        #   - all games are done
+        #   - at least one game was stepped for max_steps steps
+        #   - all games are either completed or reach a phase such that
+        #     sort_phase_key(phase) >= rollout_end_phase_id
+        for step_id in range(max_steps):
             ongoing_game_phases = [
                 game.current_short_phase for game in games if not game.is_game_done
             ]
+
             if len(ongoing_game_phases) == 0:
+                # all games are done
                 break
 
             # step games together at the pace of the slowest game, e.g. process
             # games with retreat phases alone before moving on to the next move phase
             min_phase = min(ongoing_game_phases, key=sort_phase_key)
 
-            with timings("encoding"):
-                games_to_encode = [
-                    game
-                    for game in games
-                    if not game.is_game_done and game.current_short_phase == min_phase
-                ]
-                batch_inputs = encode_batch_inputs(self.thread_pool, games_to_encode)
-                batch_data = list(
-                    zip(games_to_encode, games_to_encode)
-                )  # FIXME: remove zip, only need games
+            if sort_phase_key(min_phase) >= rollout_end_phase_id:
+                break
 
-            with timings("cat_pad"):
-                # xs = [inputs for game, inputs in batch_data]
-                # batch_inputs = self.cat_pad_inputs(xs)
-                pass
+            games_to_step = [
+                game
+                for game in games
+                if not game.is_game_done and game.current_short_phase == min_phase
+            ]
 
-            if not has_other_powers:
-                # We already know action for each power.
-                if min_phase == rollout_end_phase:
-                    # Need to compute values though.
-                    batch_est_final_scores = self.do_model_request(
-                        batch_inputs,
-                        self.rollout_temperature,
-                        self.rollout_top_p,
-                        timings=timings,
-                        values_only=True,
-                    )
-                    batch_orders = None
-                else:
-                    # Don't need anything. Probably first phase.
-                    batch_est_final_scores = batch_orders = None
+            if step_id > 0 or any(missing_start_orders.values()):
+                with timings("encoding"):
+                    batch_inputs = encode_batch_inputs(self.thread_pool, games_to_step)
 
-            else:
-                batch_orders, _, batch_est_final_scores = self.do_model_request(
+                batch_orders, _, _ = self.do_model_request(
                     batch_inputs, self.rollout_temperature, self.rollout_top_p, timings=timings
                 )
 
-            with timings("score.max_rollout_len"):
-                if min_phase == rollout_end_phase:
-                    for game_idx, (game, _) in enumerate(batch_data):
-                        est_final_scores[game.game_id] = np.array(batch_est_final_scores[game_idx])
-
-                    # skip env step and exit loop once we've accumulated the estimated
-                    # scores for all games up to max_rollout_length
-                    break
-
-            with timings("env.set_orders"):
-                if has_other_powers:
-                    assert len(batch_data) == len(batch_orders)
-                    for (game, _), power_orders in zip(batch_data, batch_orders):
-                        power_orders = dict(zip(POWERS, power_orders))
-                        for other_power in other_powers[game.game_id]:
-                            game.set_orders(other_power, list(power_orders[other_power]))
-                        assert game.current_short_phase == min_phase
-
-                for game in games:
-                    other_powers[game.game_id] = POWERS  # no set orders on subsequent turns
-                has_other_powers = True
+                with timings("env.set_orders"):
+                    assert len(games_to_step) == len(batch_orders)
+                    for game, orders_per_power in zip(games_to_step, batch_orders):
+                        for power, orders in zip(POWERS, orders_per_power):
+                            if step_id == 0 and power not in missing_start_orders[game.game_id]:
+                                continue
+                            game.set_orders(power, list(orders))
 
             with timings("env.step"):
-                self.thread_pool.process_multi([game for game, _ in batch_data])
+                self.thread_pool.process_multi([game for game in games_to_step])
 
-            with timings("score.gameover"):
-                for (game, _) in batch_data:
-                    if game.is_game_done:
-                        final_scores = np.array(get_square_scores_from_game(game))
-                        est_final_scores[game.game_id] = final_scores
+        # Compute SoS for done game and query the net for not-done games.
+        not_done_games = [game for game in games if not game.is_game_done]
+        if not_done_games:
+            with timings("encoding"):
+                batch_inputs = encode_batch_inputs(self.thread_pool, not_done_games)
 
-        # out of loop: rollouts are done
+            batch_est_final_scores = self.do_model_request(
+                batch_inputs,
+                self.rollout_temperature,
+                self.rollout_top_p,
+                timings=timings,
+                values_only=True,
+            )
+            for game_idx, game in enumerate(not_done_games):
+                est_final_scores[game.game_id] = np.array(batch_est_final_scores[game_idx])
+        for game in games:
+            if game.is_game_done:
+                est_final_scores[game.game_id] = np.array(get_square_scores_from_game(game))
 
-        with timings("final_scores.0"):
+        with timings("final_scores"):
             final_game_scores = [
                 dict(zip(POWERS, est_final_scores[game.game_id])) for game in games
             ]
 
-        with timings("final_scores.mix"):
             # mix in current sum of squares ratio to encourage losing powers to try hard
             # get GameScores objects for current game state
             if self.mix_square_ratio_scoring > 0:
@@ -233,7 +221,6 @@ class ThreadedSearchAgent(BaseSearchAgent):
                             self.mix_square_ratio_scoring * current_scores[pi]
                         )
 
-        with timings("final_scores.average"):
             r = [
                 (set_orders_dict, average_score_dicts(scores_dicts))
                 for set_orders_dict, scores_dicts in zip(
