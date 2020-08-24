@@ -50,14 +50,14 @@ public:
 
   void rollback_to_phase(const std::string &phase_s);
 
-  std::map<Phase, GameState> &get_state_history() { return state_history_; }
+  std::map<Phase, std::shared_ptr<GameState>> &get_state_history() { return state_history_; }
   std::map<Phase, std::unordered_map<Power, std::vector<Order>>> &
   get_order_history() {
     return order_history_;
   }
 
   std::vector<float> get_square_scores() const {
-    return state_.get_square_scores();
+    return state_->get_square_scores();
   }
 
   void clear_old_all_possible_orders();
@@ -80,22 +80,22 @@ public:
 
   static Game from_json(const std::string &s) { return Game(s); }
 
-  std::string get_phase_long() { return state_.get_phase().to_string_long(); }
-  std::string get_phase_short() { return state_.get_phase().to_string(); }
+  std::string get_phase_long() { return state_->get_phase().to_string_long(); }
+  std::string get_phase_short() { return state_->get_phase().to_string(); }
 
   // mila compat
 
   std::string map_name() { return "standard"; }
-  char phase_type() { return state_.get_phase().phase_type; }
+  char phase_type() { return state_->get_phase().phase_type; }
 
 private:
   void crash_dump();
   void maybe_early_exit();
 
   // Members
-  GameState state_;
+  std::shared_ptr<GameState> state_;
   std::unordered_map<Power, std::vector<Order>> staged_orders_;
-  std::map<Phase, GameState> state_history_;
+  std::map<Phase, std::shared_ptr<GameState>> state_history_;
   std::map<Phase, std::unordered_map<Power, std::vector<Order>>> order_history_;
   std::vector<std::string> rules_ = {"NO_PRESS", "POWER_CHOICE"};
   int draw_on_stalemate_years_ = -1;

@@ -44,6 +44,11 @@ void ThreadPool::process_multi(vector<Game *> &games) {
   for (int i = 0; i < games.size(); ++i) {
     jobs_[i % n_threads].games.push_back(games[i]);
   }
+  for (int i = 0; i < games.size(); ++i) {
+    // Poor man's race condition elimination. Should not take so much time as
+    // stepping job calls get_all_possible_orders on all produced states.
+    games[i]->get_all_possible_orders();
+  }
 
   // maybe handle in-thread
   if (threads_.size() == 0) {

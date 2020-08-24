@@ -26,11 +26,12 @@ void Game::set_orders(const std::string &power_str,
 }
 
 void Game::process() {
-  state_history_[state_.get_phase()] = state_;
-  order_history_[state_.get_phase()] = staged_orders_;
+  state_history_[state_->get_phase()] = state_;
+  order_history_[state_->get_phase()] = staged_orders_;
 
   try {
-    state_ = state_.process(staged_orders_, exception_on_convoy_paradox_);
+    state_ = std::make_shared<GameState>(
+      state_->process(staged_orders_, exception_on_convoy_paradox_));
     maybe_early_exit();
   } catch (const ConvoyParadoxException &e) {
     throw e;
@@ -46,71 +47,72 @@ void Game::process() {
   staged_orders_.clear();
 }
 
-GameState &Game::get_state() { return state_; }
+GameState &Game::get_state() { return *state_; }
 
 std::unordered_map<Power, std::unordered_set<Loc>>
 Game::get_orderable_locations() {
-  return state_.get_orderable_locations();
+  return state_->get_orderable_locations();
 }
 
 const std::unordered_map<Loc, std::set<Order>> &
 Game::get_all_possible_orders() {
-  return state_.get_all_possible_orders();
+  return state_->get_all_possible_orders();
 }
 
 Game::Game(int draw_on_stalemate_years)
-    : draw_on_stalemate_years_(draw_on_stalemate_years) {
+    : state_(std::make_shared<GameState>())
+    , draw_on_stalemate_years_(draw_on_stalemate_years) {
 
   // game id
   this->game_id = gen_game_id();
 
   // units
-  state_.set_unit(Power::AUSTRIA, UnitType::ARMY, Loc::BUD);
-  state_.set_unit(Power::AUSTRIA, UnitType::ARMY, Loc::VIE);
-  state_.set_unit(Power::AUSTRIA, UnitType::FLEET, Loc::TRI);
-  state_.set_unit(Power::ENGLAND, UnitType::FLEET, Loc::EDI);
-  state_.set_unit(Power::ENGLAND, UnitType::FLEET, Loc::LON);
-  state_.set_unit(Power::ENGLAND, UnitType::ARMY, Loc::LVP);
-  state_.set_unit(Power::FRANCE, UnitType::FLEET, Loc::BRE);
-  state_.set_unit(Power::FRANCE, UnitType::ARMY, Loc::MAR);
-  state_.set_unit(Power::FRANCE, UnitType::ARMY, Loc::PAR);
-  state_.set_unit(Power::GERMANY, UnitType::FLEET, Loc::KIE);
-  state_.set_unit(Power::GERMANY, UnitType::ARMY, Loc::BER);
-  state_.set_unit(Power::GERMANY, UnitType::ARMY, Loc::MUN);
-  state_.set_unit(Power::ITALY, UnitType::FLEET, Loc::NAP);
-  state_.set_unit(Power::ITALY, UnitType::ARMY, Loc::ROM);
-  state_.set_unit(Power::ITALY, UnitType::ARMY, Loc::VEN);
-  state_.set_unit(Power::RUSSIA, UnitType::ARMY, Loc::WAR);
-  state_.set_unit(Power::RUSSIA, UnitType::ARMY, Loc::MOS);
-  state_.set_unit(Power::RUSSIA, UnitType::FLEET, Loc::SEV);
-  state_.set_unit(Power::RUSSIA, UnitType::FLEET, Loc::STP_SC);
-  state_.set_unit(Power::TURKEY, UnitType::FLEET, Loc::ANK);
-  state_.set_unit(Power::TURKEY, UnitType::ARMY, Loc::CON);
-  state_.set_unit(Power::TURKEY, UnitType::ARMY, Loc::SMY);
+  state_->set_unit(Power::AUSTRIA, UnitType::ARMY, Loc::BUD);
+  state_->set_unit(Power::AUSTRIA, UnitType::ARMY, Loc::VIE);
+  state_->set_unit(Power::AUSTRIA, UnitType::FLEET, Loc::TRI);
+  state_->set_unit(Power::ENGLAND, UnitType::FLEET, Loc::EDI);
+  state_->set_unit(Power::ENGLAND, UnitType::FLEET, Loc::LON);
+  state_->set_unit(Power::ENGLAND, UnitType::ARMY, Loc::LVP);
+  state_->set_unit(Power::FRANCE, UnitType::FLEET, Loc::BRE);
+  state_->set_unit(Power::FRANCE, UnitType::ARMY, Loc::MAR);
+  state_->set_unit(Power::FRANCE, UnitType::ARMY, Loc::PAR);
+  state_->set_unit(Power::GERMANY, UnitType::FLEET, Loc::KIE);
+  state_->set_unit(Power::GERMANY, UnitType::ARMY, Loc::BER);
+  state_->set_unit(Power::GERMANY, UnitType::ARMY, Loc::MUN);
+  state_->set_unit(Power::ITALY, UnitType::FLEET, Loc::NAP);
+  state_->set_unit(Power::ITALY, UnitType::ARMY, Loc::ROM);
+  state_->set_unit(Power::ITALY, UnitType::ARMY, Loc::VEN);
+  state_->set_unit(Power::RUSSIA, UnitType::ARMY, Loc::WAR);
+  state_->set_unit(Power::RUSSIA, UnitType::ARMY, Loc::MOS);
+  state_->set_unit(Power::RUSSIA, UnitType::FLEET, Loc::SEV);
+  state_->set_unit(Power::RUSSIA, UnitType::FLEET, Loc::STP_SC);
+  state_->set_unit(Power::TURKEY, UnitType::FLEET, Loc::ANK);
+  state_->set_unit(Power::TURKEY, UnitType::ARMY, Loc::CON);
+  state_->set_unit(Power::TURKEY, UnitType::ARMY, Loc::SMY);
 
   // centers
-  state_.set_center(Loc::BUD, Power::AUSTRIA);
-  state_.set_center(Loc::TRI, Power::AUSTRIA);
-  state_.set_center(Loc::VIE, Power::AUSTRIA);
-  state_.set_center(Loc::EDI, Power::ENGLAND);
-  state_.set_center(Loc::LON, Power::ENGLAND);
-  state_.set_center(Loc::LVP, Power::ENGLAND);
-  state_.set_center(Loc::BRE, Power::FRANCE);
-  state_.set_center(Loc::MAR, Power::FRANCE);
-  state_.set_center(Loc::PAR, Power::FRANCE);
-  state_.set_center(Loc::BER, Power::GERMANY);
-  state_.set_center(Loc::KIE, Power::GERMANY);
-  state_.set_center(Loc::MUN, Power::GERMANY);
-  state_.set_center(Loc::NAP, Power::ITALY);
-  state_.set_center(Loc::ROM, Power::ITALY);
-  state_.set_center(Loc::VEN, Power::ITALY);
-  state_.set_center(Loc::MOS, Power::RUSSIA);
-  state_.set_center(Loc::SEV, Power::RUSSIA);
-  state_.set_center(Loc::STP, Power::RUSSIA);
-  state_.set_center(Loc::WAR, Power::RUSSIA);
-  state_.set_center(Loc::ANK, Power::TURKEY);
-  state_.set_center(Loc::CON, Power::TURKEY);
-  state_.set_center(Loc::SMY, Power::TURKEY);
+  state_->set_center(Loc::BUD, Power::AUSTRIA);
+  state_->set_center(Loc::TRI, Power::AUSTRIA);
+  state_->set_center(Loc::VIE, Power::AUSTRIA);
+  state_->set_center(Loc::EDI, Power::ENGLAND);
+  state_->set_center(Loc::LON, Power::ENGLAND);
+  state_->set_center(Loc::LVP, Power::ENGLAND);
+  state_->set_center(Loc::BRE, Power::FRANCE);
+  state_->set_center(Loc::MAR, Power::FRANCE);
+  state_->set_center(Loc::PAR, Power::FRANCE);
+  state_->set_center(Loc::BER, Power::GERMANY);
+  state_->set_center(Loc::KIE, Power::GERMANY);
+  state_->set_center(Loc::MUN, Power::GERMANY);
+  state_->set_center(Loc::NAP, Power::ITALY);
+  state_->set_center(Loc::ROM, Power::ITALY);
+  state_->set_center(Loc::VEN, Power::ITALY);
+  state_->set_center(Loc::MOS, Power::RUSSIA);
+  state_->set_center(Loc::SEV, Power::RUSSIA);
+  state_->set_center(Loc::STP, Power::RUSSIA);
+  state_->set_center(Loc::WAR, Power::RUSSIA);
+  state_->set_center(Loc::ANK, Power::TURKEY);
+  state_->set_center(Loc::CON, Power::TURKEY);
+  state_->set_center(Loc::SMY, Power::TURKEY);
 }
 
 unordered_map<string, vector<string>> Game::py_get_all_possible_orders() {
@@ -137,7 +139,7 @@ unordered_map<string, vector<string>> Game::py_get_all_possible_orders() {
   return r;
 }
 
-bool Game::is_game_done() const { return state_.get_phase().phase_type == 'C'; }
+bool Game::is_game_done() const { return state_->get_phase().phase_type == 'C'; }
 
 string Game::to_json() {
   json j;
@@ -150,7 +152,7 @@ string Game::to_json() {
   }
 
   for (auto &q : state_history_) {
-    GameState &state = q.second;
+    GameState &state = *q.second;
 
     json phase;
     phase["name"] = state.get_phase().to_string();
@@ -174,8 +176,8 @@ string Game::to_json() {
 
   // current phase
   json current;
-  current["name"] = state_.get_phase().to_string();
-  current["state"] = state_.to_json();
+  current["name"] = state_->get_phase().to_string();
+  current["state"] = state_->to_json();
   current["orders"] = json::value_type::object();  // mila compat
   current["results"] = json::value_type::object(); // mila compat
   current["messages"] = json::value_type::array(); // mila compat
@@ -214,7 +216,7 @@ Game::Game(const string &json_str) {
     string phase_str;
     for (auto &j_phase : j["phases"]) {
       phase_str = j_phase["name"];
-      state_history_[phase_str] = GameState(j_phase["state"]);
+      state_history_[phase_str] = std::make_shared<GameState>(j_phase["state"]);
 
       for (auto &it : j_phase["orders"].items()) {
         Power power = power_from_str(it.key());
@@ -227,7 +229,7 @@ Game::Game(const string &json_str) {
     string phase_str;
     for (auto &j_state : j["state_history"].items()) {
       phase_str = j_state.key();
-      state_history_[phase_str] = GameState(j_state.value());
+      state_history_[phase_str] = std::make_shared<GameState>(j_state.value());
 
       if (j["order_history"].find(phase_str) != j["order_history"].end()) {
         for (auto &it : j["order_history"][phase_str].items()) {
@@ -262,7 +264,7 @@ void Game::crash_dump() {
 
 void Game::rollback_to_phase(const std::string &phase_s) {
   Phase phase(phase_s);
-  if (state_.get_phase() == phase) {
+  if (state_->get_phase() == phase) {
     return;
   }
   auto it = state_history_.find(phase);
@@ -286,7 +288,7 @@ void Game::rollback_to_phase(const std::string &phase_s) {
 GameState *Game::get_last_movement_phase() {
   for (auto it = state_history_.rbegin(); it != state_history_.rend(); ++it) {
     if (it->first.phase_type == 'M') {
-      return &state_history_[it->first];
+      return state_history_[it->first].get();
     }
   }
 
@@ -296,12 +298,12 @@ GameState *Game::get_last_movement_phase() {
 
 void Game::clear_old_all_possible_orders() {
   for (auto &p : state_history_) {
-    p.second.clear_all_possible_orders();
+    p.second->clear_all_possible_orders();
   }
 }
 
 void Game::maybe_early_exit() {
-  Phase phase = state_.get_phase();
+  Phase phase = state_->get_phase();
 
   if (draw_on_stalemate_years_ < 1 ||
       phase.year - 1901 < draw_on_stalemate_years_ || phase.season != 'S' ||
@@ -310,8 +312,8 @@ void Game::maybe_early_exit() {
   }
 
   for (int i = 1; i <= draw_on_stalemate_years_; ++i) {
-    if (state_.get_centers() !=
-        state_history_.at(Phase('S', phase.year - i, 'M')).get_centers()) {
+    if (state_->get_centers() !=
+        state_history_.at(Phase('S', phase.year - i, 'M'))->get_centers()) {
       // no stalemate
       return;
     }
@@ -321,7 +323,7 @@ void Game::maybe_early_exit() {
   DLOG(INFO) << "Game over! Stalemate after " << draw_on_stalemate_years_
              << " years";
 
-  state_.set_phase(phase.completed());
+  state_->set_phase(phase.completed());
 }
 
 } // namespace dipcc
