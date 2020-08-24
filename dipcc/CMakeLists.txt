@@ -34,9 +34,11 @@ target_link_libraries(pydipcc PRIVATE glog pthread)
 
 # Compile profiling
 IF(CMAKE_BUILD_TYPE MATCHES RELEASE)
-    file(GLOB PROFILE_SRC "dipcc/profiling/*.cc")
-    add_executable(profile_dipcc ${PROFILE_SRC} ${SOURCES})
+    add_executable(profile_dipcc dipcc/profiling/profile.cc ${SOURCES})
     target_link_libraries(profile_dipcc dipcc glog pthread)
+
+    add_executable(profile_dipcc_late dipcc/profiling/profile_late.cc ${SOURCES})
+    target_link_libraries(profile_dipcc_late dipcc glog pthread)
 ENDIF(CMAKE_BUILD_TYPE MATCHES RELEASE)
 
 # Compile tests
