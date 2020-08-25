@@ -179,9 +179,7 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
     return counts
 
 
-def validate(
-    net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float,
-):
+def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float):
     net_device = next(net.parameters()).device
 
     with torch.no_grad():
@@ -474,7 +472,7 @@ def run_with_cfg(args):
         assert args.metadata_path is not None
         assert dataset_params.data_dir is not None
         game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
-            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct,
+            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct
         )
         dataset_params_dict = MessageToDict(dataset_params, preserving_proto_field_name=True)
 
@@ -509,7 +507,10 @@ def run_with_cfg(args):
 
     extra_val_datasets = {}
     for name, path in args.extra_val_data_caches.items():
-        extra_val_datasets[name] = cached_torch_load(path)[1]
+        train, val = cached_torch_load(path)
+        extra_val_datasets[name] = (
+            train if (val is None and args.extra_val_data_use_train_if_none) else val
+        )
         logger.info(f"Extra val dataset ({name}): {extra_val_datasets[name].stats_str()}")
 
     # Clear the cache.

@@ -222,6 +222,11 @@ message TrainTask {
   // main dataset.
   repeated string extra_train_data_caches = 44;
 
+  // Optional. If any extra_val_data_cache is listed and the validation part of
+  // the tuple is None, use the train part instead. Useful for adding
+  // single-game data caches to the val set.
+  optional bool extra_val_data_use_train_if_none = 48 [ default = false ];
+
   // Optional. If true, will use softmax on top of value head. Otherwise, will
   // take squares and normalize.
   optional bool value_softmax = 50 [ default = false ];
