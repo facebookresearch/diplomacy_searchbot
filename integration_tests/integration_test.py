@@ -99,6 +99,24 @@ def test_situation_check_configs():
     )
 
 
+def test_situation_check_configs_length0():
+    sup_model_path = TMP_DIR / "sup_model_for_test_sit.pth"
+    _create_supervised_model(sup_model_path)
+
+    situation_json = heyhi.PROJ_ROOT / "integration_tests/data/test_situations.json"
+    integration_tests.heyhi_utils.run_config(
+        cfg=heyhi.CONF_ROOT / "c06_situation_check" / "cmp.prototxt",
+        overrides=[
+            f"situation_json={situation_json}",
+            "I.agent=agents/cfr1p",
+            f"agent.cfr1p.model_path={sup_model_path}",
+            "agent.cfr1p.n_rollouts=1",
+            "agent.cfr1p.max_rollout_length=0",
+            "agent.cfr1p.n_rollout_procs=1",
+        ],
+    )
+
+
 def test_build_cache():
     out_path = TMP_DIR / "test_build_cache" / "cache.out"
     overrides = [

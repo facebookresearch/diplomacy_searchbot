@@ -137,7 +137,10 @@ class ThreadedSearchAgent(BaseSearchAgent):
             )
             max_steps = 1000000
         else:
-            rollout_end_phase_id = 1000000
+            # Really far ahead.
+            rollout_end_phase_id = sort_phase_key(
+                n_move_phases_later(game_init.current_short_phase, 10)
+            )
             max_steps = 1
 
         # This loop steps the games until one of the conditions is true:
