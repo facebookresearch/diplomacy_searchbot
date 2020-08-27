@@ -5,6 +5,7 @@ from .util import (
     MODES,
     get_job_env,
     get_slurm_job_id,
+    get_slurm_master,
     is_aws,
     is_devfair,
     is_master,

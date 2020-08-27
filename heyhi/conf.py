@@ -98,7 +98,6 @@ def _apply_scalar_override(cfg: ProtoMessage, mount: str, value: str) -> None:
     # type.
     mount_parent, key = mount.rsplit(".", 1) if "." in mount else ("", mount)
     subcfg = _get_sub_config(cfg, mount_parent)
-    print(mount_parent, type(subcfg).__name__)
     if type(subcfg).__name__ == "ScalarMapContainer":
         # Shortcut for maps.
         subcfg[key] = value

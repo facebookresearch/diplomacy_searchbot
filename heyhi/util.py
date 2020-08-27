@@ -1,5 +1,5 @@
 from os.path import exists
-from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 import datetime
 import enum
 import hashlib
@@ -62,6 +62,13 @@ def is_devfair():
     return os.uname()[1].startswith("devfair")
 
 
+def get_slurm_master():
+    hostnames = subprocess.check_output(
+        ["scontrol", "show", "hostnames", os.environ["SLURM_JOB_NODELIST"]]
+    )
+    return hostnames.split()[0].decode("utf-8")
+
+
 def requeue_myself():
     job_id = get_slurm_job_id()
     logging.warning("Requeuing job %s", job_id)
@@ -109,8 +116,21 @@ def maybe_init_requeue_handler(master_callback: Optional[Callable] = None) -> No
     logging.warning("Signal handler installed.")
 
 
-def setup_logging():
-    """Enable pretty logging and sets the level to DEBUG."""
+def setup_logging(
+    *,
+    console_level=logging.INFO,
+    fpath: Optional[Union[str, pathlib.Path]] = None,
+    file_level=logging.DEBUG,
+) -> logging.Logger:
+    """Enable pretty logging and sets the level to DEBUG.
+
+    This function kills all previous handlers.
+
+    Args:
+        console_level: if not None, will print to console messages of this
+            level.
+        fpath: if not None, will dump all logs to this file.
+    """
     logging.addLevelName(logging.DEBUG, "D")
     logging.addLevelName(logging.INFO, "I")
     logging.addLevelName(logging.WARNING, "W")
@@ -122,17 +142,25 @@ def setup_logging():
         datefmt="%m%d %H:%M:%S",
     )
 
-    # create console handler and set level to info
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-
-    # create logger and set level to debug
     logger = logging.getLogger()
-    logger.handlers = []
+    for x in logger.handlers[:]:
+        logger.removeHandler(x)
+    for x in logger.filters[:]:
+        logger.removeFilter(x)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
-    logger.addHandler(console_handler)
+
+    if console_level is not None:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(console_level)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+    if fpath is not None:
+        file_handler = logging.FileHandler(fpath)
+        file_handler.setLevel(file_level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     return logger
 
