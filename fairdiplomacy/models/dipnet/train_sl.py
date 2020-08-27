@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import atexit
+import glob
 import json
 import logging
 import os
@@ -179,9 +180,7 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
     return counts
 
 
-def validate(
-    net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float,
-):
+def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss_weight: float):
     net_device = next(net.parameters()).device
 
     with torch.no_grad():
@@ -450,14 +449,8 @@ def mp_cleanup():
     torch.distributed.destroy_process_group()
 
 
-def run_with_cfg(args):
-    random.seed(0)
-
-    logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
-
-    n_gpus = torch.cuda.device_count()
-    logger.info("Using {} GPUs".format(n_gpus))
-
+def get_datasets_from_cfg(args):
+    """Returns a 3-tuple (train_set, val_set, extra_val_sets)"""
     cache = {}
 
     def cached_torch_load(fpath):
@@ -474,7 +467,7 @@ def run_with_cfg(args):
         assert args.metadata_path is not None
         assert dataset_params.data_dir is not None
         game_metadata, min_rating, train_game_ids, val_game_ids = get_sl_db_args(
-            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct,
+            args.metadata_path, args.min_rating_percentile, args.max_games, args.val_set_pct
         )
         dataset_params_dict = MessageToDict(dataset_params, preserving_proto_field_name=True)
 
@@ -500,13 +493,43 @@ def run_with_cfg(args):
     logger.info(f"Train dataset: {train_dataset.stats_str()}")
     logger.info(f"Val dataset: {val_dataset.stats_str()}")
 
+    # possibly append more data caches to train/val with various cfg args
+    train_dataset = [train_dataset]
+    val_dataset = [val_dataset]
+
+    # only t gets added
     if args.extra_train_data_caches:
-        train_dataset = [train_dataset]
         for path in args.extra_train_data_caches:
             train_dataset.append(cached_torch_load(path)[0])
-            logger.info(f"Extra train dataset: {train_dataset[-1].stats_str()}")
-        train_dataset = Dataset.from_merge(train_dataset)
+            logger.info(f"Append train dataset: {train_dataset[-1].stats_str()}")
 
+    # t, v get added to their respective data sets
+    if args.glob_append_data_cache:
+        for path in glob.glob(args.glob_append_data_cache):
+            t, v = cached_torch_load(path)
+            train_dataset.append(t)
+            logger.info(f"Append train dataset: {train_dataset[-1].stats_str()}")
+            if v is not None:
+                val_dataset.append(v)
+                logger.info(f"Append val dataset: {val_dataset[-1].stats_str()}")
+
+    # both t, v get added to val set
+    if args.glob_append_data_cache_as_val:
+        for path in glob.glob(args.glob_append_data_cache_as_val):
+            t, v = cached_torch_load(path)
+            for x in [t, v]:
+                if x is not None:
+                    val_dataset.append(x)
+                    logger.info(f"Append val dataset: {val_dataset[-1].stats_str()}")
+
+    # concat datasets
+    train_dataset = (
+        Dataset.from_merge(train_dataset) if len(train_dataset) > 1 else train_dataset[0]
+    )
+    val_dataset = Dataset.from_merge(val_dataset) if len(val_dataset) > 1 else val_dataset[0]
+    logger.info(f"Final dataset lens: train={len(train_dataset)} val={len(val_dataset)}")
+
+    # extra val data caches, returned separately
     extra_val_datasets = {}
     for name, path in args.extra_val_data_caches.items():
         extra_val_datasets[name] = cached_torch_load(path)[1]
@@ -514,6 +537,19 @@ def run_with_cfg(args):
 
     # Clear the cache.
     cache = {}
+
+    return train_dataset, val_dataset, extra_val_datasets
+
+
+def run_with_cfg(args):
+    random.seed(0)
+
+    logger.warning("Args: {}, file={}".format(args, os.path.abspath(__file__)))
+
+    n_gpus = torch.cuda.device_count()
+    logger.info("Using {} GPUs".format(n_gpus))
+
+    train_dataset, val_dataset, extra_val_datasets = get_datasets_from_cfg(args)
 
     # required when using multithreaded DataLoader
     try:

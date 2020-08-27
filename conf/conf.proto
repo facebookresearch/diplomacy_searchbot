@@ -222,6 +222,14 @@ message TrainTask {
   // main dataset.
   repeated string extra_train_data_caches = 44;
 
+  // Optional. Glob pattern matches will be concatenated to train and val
+  // datasets
+  optional string glob_append_data_cache = 48;
+
+  // Optional. Glob pattern. Both train and val components of data caches will
+  // be added to val set. Useful for single-game data caches.
+  optional string glob_append_data_cache_as_val = 49;
+
   // Optional. If true, will use softmax on top of value head. Otherwise, will
   // take squares and normalize.
   optional bool value_softmax = 50 [ default = false ];
