@@ -10,6 +10,7 @@ from parlai.core.teachers import ChunkTeacher
 from parlai.utils import logging
 
 import parlai_diplomacy.tasks.common_task_utils as utls
+from parlai_diplomacy.metrics.order_predictions import OrderPredMetricMixin
 import parlai_diplomacy.utils.datapath_constants as constants
 import parlai_diplomacy.utils.game_to_sequence_formatting as game_formatting
 import parlai_diplomacy.utils.game_loading as game_loading
@@ -26,7 +27,7 @@ TRAIN_VAL_SPLIT = 990  # 99% of 1000 to mimic fairdip NOTE: this changed recentl
 
 
 @register_teacher("base_order_chunk")
-class BaseOrderChunkTeacher(ChunkTeacher, ABC):
+class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
     """
     Streaming data base teacher for messages/orders.
 
@@ -39,6 +40,7 @@ class BaseOrderChunkTeacher(ChunkTeacher, ABC):
         return argparser
 
     def __init__(self, opt, shared=None):
+        self.id = "Base Order Chunk"
         if shared is None:
             # set map
             self.opt = opt
