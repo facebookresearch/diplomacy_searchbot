@@ -18,7 +18,7 @@ from parlai.utils import logging
 
 import parlai_diplomacy.tasks.common_task_utils as utls
 import parlai_diplomacy.utils.datapath_constants as constants
-from parlai_diplomacy.tasks.no_press.stream.agents import BaseOrderChunkTeacher
+from parlai_diplomacy.tasks.no_press.single_order.stream.agents import BaseOrderChunkTeacher
 
 """
 File for all dialogue teachers

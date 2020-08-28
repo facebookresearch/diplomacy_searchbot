@@ -19,9 +19,10 @@ from abc import ABC
 from glob import glob
 import os
 from typing import List, Tuple
+import json
 
 """
-File that takes board state data to predict orders. (streaming)
+File that takes board state data to predict orders for one single player. (streaming)
 """
 TRAIN_VAL_SPLIT = 990  # 99% of 1000 to mimic fairdip NOTE: this changed recently!
 
@@ -62,15 +63,34 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         """
         Return the number of samples given the datatype.
         """
-        # TODO: get actual counts here
-        # TODO: get actual counts for n_chunks only
         datatype = opt["datatype"]
-        # TODO: Emily update me
-        if "train" in datatype:
-            return 14211400, 14211400
+        n_chunks = opt.get("n_chunks")
+        if n_chunks == -1:
+            if "train" in datatype:
+                return 14211400, 14211400
 
-        if "valid" in datatype:
-            return 141624, 141624
+            if "valid" in datatype:
+                return 141624, 141624
+        else:
+            all_chunk_idxs = list(self.chunk_idx_to_file.keys())
+
+            if "train" in datatype:
+                chunk_idxs_to_load = all_chunk_idxs[:TRAIN_VAL_SPLIT]
+            elif "valid" in datatype:
+                chunk_idxs_to_load = all_chunk_idxs[TRAIN_VAL_SPLIT:]
+
+            logging.warn(
+                f"Loading only {n_chunks} chunks out of {len(chunk_idxs_to_load)} chunks in datatype {datatype}!"
+            )
+            chunk_idxs_to_load = chunk_idxs_to_load[:n_chunks]
+            with open(constants.CHUNK_EXAMPLE_COUNT_PATH, "r") as fh:
+                chunk_idx_to_count = json.load(fh)
+
+            total_counts = sum(
+                [chunk_idx_to_count[str(chunk_idx)] for chunk_idx in chunk_idxs_to_load]
+            )
+
+            return total_counts, total_counts
 
     def _set_chunk_idx_to_file(self):
         folder = self._get_data_folder()
@@ -97,7 +117,9 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             chunk_idxs_to_load = all_chunk_idxs[TRAIN_VAL_SPLIT:]
 
         if n_chunks != -1:
-            logging.warn(f"Loading {n_chunks} chunks only!")
+            logging.warn(
+                f"Loading only {n_chunks} chunks out of {len(chunk_idxs_to_load)} chunks in datatype {datatype}!"
+            )
             chunk_idxs_to_load = chunk_idxs_to_load[:n_chunks]
 
         return chunk_idxs_to_load
@@ -142,13 +164,21 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         # format orders
         data["order"] = self.format_order(data["order"])
         data["order_history"] = self.format_order_history(data["order_history"])
+        data["all_orders"] = self.format_all_orders(
+            data["all_orders"], player_id
+        )  # this line is different from BaseOrderChunkTeacher
 
         # format state
+        data["short_state"] = self.format_short_state(data["state"])
+        data["short_state_history"] = self.format_short_state_history(data["state_history"])
         data["state"] = self.format_state(data["state"])
+        data["state_history"] = self.format_state_history(data["state_history"])
 
         # format messages
-        data["message"] = self.format_msg(data)
-        data["message_history"] = self.format_msg_history(data)
+        data["message"] = self.format_msg(data["message"], phase_id)
+        data["message_history"] = self.format_msg_history(data["message_history"])
+        del data["message_processed"]
+        del data["message_history_processed"]
 
         yield data
 
@@ -166,14 +196,31 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
 
         Left easily overridable to change formatting
         """
-        flat_orders = []
-        for phase, data in order_history_dct.items():
-            for speaker, order in data.items():
-                flat_order = game_formatting.flatten_orders(order)
-                flat_order = f"{phase} {speaker.capitalize()}: {flat_order}"
-                flat_orders.append(flat_order)
+        return game_formatting.flatten_order_history(order_history_dct)
 
-        return "\n".join(flat_orders)
+    def format_all_orders(self, all_order_dct, player_id):
+        """
+        Format all orders
+
+        Left easily overridable to change formatting
+        """
+        return game_formatting.flatten_all_orders(all_order_dct, player_id)
+
+    def format_short_state(self, state_dct):
+        """
+        Format state
+
+        Left easily overridable to change formatting
+        """
+        return game_formatting.flatten_state(state_dct, short_version=True)
+
+    def format_short_state_history(self, state_history_dct):
+        """
+        Format state history
+
+        Left easily overridable to change formatting
+        """
+        return game_formatting.flatten_state_history(state_history_dct, short_version=True)
 
     def format_state(self, state_dct):
         """
@@ -183,25 +230,29 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         """
         return game_formatting.flatten_state(state_dct)
 
-    def format_msg(self, data):
+    def format_state_history(self, state_history_dct):
+        """
+        Format state history
+
+        Left easily overridable to change formatting
+        """
+        return game_formatting.flatten_state_history(state_history_dct)
+
+    def format_msg(self, message_lst, phase_id):
         """
         Format messages
 
         Left easily overridable to change formatting
         """
-        msg = data["message_processed"]
-        del data["message_processed"]
-        return msg
+        return game_formatting.flatten_one_phase_message(message_lst, phase_name=phase_id)
 
-    def format_msg_history(self, data):
+    def format_msg_history(self, message_history_lst):
         """
         Format message history
 
         Left easily overridable to change formatting
         """
-        msg_hist = data["message_history_processed"]
-        del data["message_history_processed"]
-        return msg_hist
+        return game_formatting.flatten_message_history(message_history_lst)
 
     def create_message(self, queue_output, entry_idx=0) -> "Message":
         """
@@ -249,8 +300,24 @@ class StateOrderChunkTeacher(BaseOrderChunkTeacher):
         return Message(msg)
 
 
+@register_teacher("shortstate_order_chunk")
+class ShortstateOrderChunkTeacher(BaseOrderChunkTeacher):
+    """
+    Text field (input) contains STATE information only
+
+    Label is the order given by the player
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        msg["text"] = f"{queue_output['short_state']} {curr_player}"
+
+        return Message(msg)
+
+
 @register_teacher("order_history_order_chunk")
-class OrderHistoryOrdeChunkTeacher(BaseOrderChunkTeacher):
+class OrderHistoryOrderChunkTeacher(BaseOrderChunkTeacher):
     """
     Text field (input) contains ORDER HISTORY information only
 

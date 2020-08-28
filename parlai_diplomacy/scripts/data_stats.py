@@ -10,9 +10,9 @@ Examples
 --------
 .. code-block:: shell
 For Bart:
-  python scripts/data_stats.py -t state_order_chunk -dt valid:stream -ne 50000 --dict_tokenizer gpt2 --dict_file /private/home/wyshi/ParlAI/data/models/bart/bart_large/model.dict
+  python scripts/data_stats.py -t state_order_chunk -dt valid:stream -ne 15000 --dict_tokenizer gpt2 --dict_file /private/home/wyshi/ParlAI/data/models/bart/bart_large/model.dict
 For Transformer:
-  python scripts/data_stats.py -t state_order_chunk -dt valid:stream -ne 50000 --dict-tokenizer bytelevelbpe --bpe-vocab /checkpoint/wyshi/diplomacy/context512_test_model/model.dict-vocab.json --bpe-merge /checkpoint/wyshi/diplomacy/context512_test_model/model.dict-merges.txt
+  python scripts/data_stats.py -t state_order_chunk -dt valid:stream -ne 15000 --dict-tokenizer bytelevelbpe --bpe-vocab /checkpoint/wyshi/diplomacy/context512_test_model/model.dict-vocab.json --bpe-merge /checkpoint/wyshi/diplomacy/context512_test_model/model.dict-merges.txt
 """
 
 from parlai.core.params import ParlaiParser

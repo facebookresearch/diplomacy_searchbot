@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from parlai.core.loader import register_teacher
-from parlai_diplomacy.tasks.no_press.regular.agents import BaseOrderTeacher
+from parlai_diplomacy.tasks.no_press.single_order.regular.agents import BaseOrderTeacher
 
 """
 File for message and board state data, NOT streaming.

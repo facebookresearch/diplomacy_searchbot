@@ -17,7 +17,6 @@ from copy import deepcopy
 import parlai.utils.logging as logging
 import parlai_diplomacy.utils.game_loading as game_loading
 import parlai_diplomacy.utils.datapath_constants as constants
-import parlai_diplomacy.scripts.processing.join_game_and_message as data_joining
 
 # TODO: this file needs some major cleanup
 
@@ -505,11 +504,7 @@ class MessageOrderDataIterator:
         # the saved joined json will contain "A" or "__A__"
         self.with_special_token = opt.get("with_special_token")
         # json path to load (if exists) or save the joined data (if not exists)
-        self.json_dir = (
-            json_dir
-            if json_dir is not None
-            else f"{data_joining.JOINED_JSON_PATH_PREFIX}/dumps_State_OrderHistory_MessageHistory-{self.include_message_from.replace('_', '-')}-SpecialToken-{self.with_special_token}_order/"
-        )
+        self.json_dir = json_dir
         # joined_json split information for backward compatibility
         self.TOTAL_GAMES = 54622
         self.DATA_SPLIT_INTO = 500
@@ -518,7 +513,7 @@ class MessageOrderDataIterator:
         self._load_special_tokens()
 
         # build/load json
-        self._build_or_load_joined_data(raw_order=raw_order, raw_msg=raw_msg)
+        self._load_joined_data(raw_order=raw_order, raw_msg=raw_msg)
 
         # key maps
         self.key_map = {i: key for i, key in enumerate(self.joined_data.keys())}
@@ -535,55 +530,20 @@ class MessageOrderDataIterator:
         else:
             self.special_tokens, self.special_tokens_map = None, None
 
-    def _build_or_load_joined_data(self, raw_order=None, raw_msg=None):
-        # we'll save the joined json
-        overwrite = False
-
-        if os.path.exists(self.json_dir) and self.overwrite_joined_json:
-            confirm_overwrite = input(
-                f"About to overwrite the joined_json in {self.json_dir}, do you want to do that? [Y/y] for YES, anything else for NO"
+    def _load_joined_data(self, raw_order=None, raw_msg=None):
+        if not os.path.exists(self.json_dir):
+            raise ValueError(
+                f"[json_dir {self.json_dir} doesn't exist, please build the datafirst! ...]"
             )
-            overwrite = confirm_overwrite in ["Y", "y"]
-        elif not os.path.exists(self.json_dir):
-            print(f"[{self.json_dir} doesn't exist, will build and save it ...]")
         else:
             print(f"[{self.json_dir} exists, will load it ...]")
 
-        if os.path.exists(self.json_dir) and (not overwrite):
-            logging.info(f"[ Loading {self.json_dir} ...]")
-            time1 = time.time()
-            self.joined_data = self._load_joined_json(self.json_dir)
-            time2 = time.time()
-            logging.info(f"[ Loading finished, took {(time2-time1)/60} mins ...]")
-        else:
-            if not os.path.exists(self.json_dir):
-                if self.opt.get("debug"):
-                    confirm_save_debug_data = input(
-                        f"It seems you are in debug mode, and trying to build and"
-                        f"save the data (you will only save {self.opt.get('debug_game_size')} games in {self.json_dir})? "
-                        f"Are you sure? [Y/y] for YES, anything else for NO"
-                    )
-                    confirm_save_debug_data = confirm_save_debug_data in ["Y", "y"]
-                    if not confirm_save_debug_data:
-                        print("Aborting... Please remove --debug in the next run")
-                        sys.exit(-1)
-                os.makedirs(self.json_dir)
-
-            if raw_order is None:
-                raw_order = game_loading.load_sql_format(debug=self.opt.get("debug"))
-                self.raw_order = game_loading.organize_game_dict_by_phase(raw_order)
-                self.raw_msg = select_by_game_and_phase(load_message_data())
-            else:
-                self.raw_order = raw_order
-                self.raw_msg = raw_msg
-
-            self.joined_data = data_joining.join_order_and_msg(
-                self.raw_order,
-                self.raw_msg,
-                self.include_message_from,
-                with_special_token=self.with_special_token,
-                special_tokens_map=self.special_tokens_map,
-            )
+        # loading the joined_json
+        logging.info(f"[ Loading {self.json_dir} ...]")
+        time1 = time.time()
+        self.joined_data = self._load_joined_json(self.json_dir)
+        time2 = time.time()
+        logging.info(f"[ Loading finished, took {(time2-time1)/60} mins ...]")
 
     def _load_joined_json(self, dump_path):
         each_dump_contains = self.TOTAL_GAMES // self.DATA_SPLIT_INTO

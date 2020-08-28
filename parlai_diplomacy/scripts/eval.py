@@ -9,13 +9,11 @@ on them.
 
 For more documentation, see parlai.scripts.eval_model.
 """
-from parlai.scripts.eval_model import setup_args, eval_model
+from parlai.scripts.eval_model import EvalModel
 import parlai_diplomacy.utils.loading as load
 
 load.register_all_agents()
 load.register_all_tasks()
 
 if __name__ == "__main__":
-    parser = setup_args()
-    opt = parser.parse_args(print_args=False)
-    eval_model(opt, print_parser=parser)
+    EvalModel.main()

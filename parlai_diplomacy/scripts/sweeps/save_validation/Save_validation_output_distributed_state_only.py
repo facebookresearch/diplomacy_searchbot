@@ -16,12 +16,12 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "eval_shortstate_allorder_chunk_BART"  # change this
+sweep_name = "eval_shortstate_order_chunk_BART_olddata_oldcode_parlai_prev0.8"  # change this
 NUM_HOURS = 72
 
 # save path
 DATE = str(date.today()).replace("-", "")
-TEACHER = "shortstate_allorder_chunk"  # change this
+TEACHER = "shortstate_order_chunk"  # change this
 (
     VALID_REPORT_SAVE_PATH,
     _,
@@ -29,26 +29,26 @@ TEACHER = "shortstate_allorder_chunk"  # change this
 ) = aggregate_valid_reports.get_valid_report_path(sweep_name, TEACHER, date_of_sweep=DATE)
 logging.info(f"mkdir {VALID_REPORT_SAVE_PATH}")
 bash("mkdir -p " + VALID_REPORT_SAVE_PATH)
-predict_all_order = "--predict_all_order"
+# predict_all_order = "--predict_all_order"
 
 # Define param grid
 grid = {
     # "--verbose": [True],
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "-mf": [
-        "/checkpoint/wyshi/diplomacy/all_orders_experiments/model_for_eval/tmp/model"
+        "/checkpoint/wyshi/20200825/shortstate_order_chunk_Bart_ParlaiPre0.8.0_33d07c1/de8/model"
     ],  # change this
     "-m": ["bart",],
     "-t": [f"{TEACHER}"],
     "-dt": ["valid:stream"],
     "--report-filename": [os.path.join(VALID_REPORT_SAVE_PATH, "valid_report")],
-    "--label-truncate": [512],
+    "--label-truncate": [256],
     "--text-truncate": [1024],
     "--save-world-logs": [True],
     "--skip-generation": [False],
     # "--dynamic-batching": ["full"],
     "--inference": ["greedy"],
-    "-bs": [64],
+    "-bs": [128],
     "--min-turns": [1,],
 }
 
@@ -57,12 +57,12 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="learnfair",
+        partition="dev",
         jobtime=f"{NUM_HOURS}:00:00",
         prefix="python -u parlai_diplomacy/scripts/distributed_eval.py",
         one_job_per_node=False,
         gpus=8,
-        nodes=8,
+        nodes=2,
         create_model_file=False,
         requeue=True,
         include_job_id=False,

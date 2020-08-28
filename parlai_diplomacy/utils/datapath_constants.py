@@ -33,9 +33,7 @@ GAME_JSONS_PATH_OLD_0801 = (
 # Joined order and message data, DIPCC format
 CHUNK_MESSAGE_ORDER_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/include_msg=all_msg-special_tokens=False-format=dipcc/all/data*.gz"  # 2020-08-13
 # joined json number of example counts
-CHUNK_EXAMPLE_COUNT_PATH = (
-    "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/example_counts.json"  # 2020-08-21
-)
+CHUNK_EXAMPLE_COUNT_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/include_msg=all_msg-special_tokens=False-format=dipcc/all/example_counts.json"  # 2020-08-21
 # TODO: deprecate/delete old paths
 # Joined order and message data, DIP format
 CHUNK_MESSAGE_ORDER_PATH_OLD_0812 = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/dumps_State_OrderHistory_MessageHistory-all-msg-SpecialToken-False_order/*.json"  # 2020-08-12

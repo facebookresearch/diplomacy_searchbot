@@ -25,6 +25,8 @@ from collections import defaultdict
 import multiprocessing
 import json
 from tqdm import tqdm
+import sys
+import os
 
 load.register_all_agents()
 load.register_all_tasks()
@@ -69,6 +71,16 @@ if __name__ == "__main__":
     opt = pp.parse_args()
     total_dct = defaultdict(int)
     chunk_idx_to_num_examples = defaultdict(int)
+
+    # safety check to avoid overwriting example_counts
+    if os.path.exists(constants.CHUNK_EXAMPLE_COUNT_PATH):
+        overwrite = input(
+            f"{constants.CHUNK_EXAMPLE_COUNT_PATH} exists!\nDo you want to overwrite it?[Y/y] "
+        )
+        if overwrite not in ["Y", "y"]:
+            print("Aborting...")
+            sys.exit(-1)
+
     for dt in ["train:stream", "valid:stream"]:
         opt["datatype"] = dt
         opt["no_auto_enqueues"] = True

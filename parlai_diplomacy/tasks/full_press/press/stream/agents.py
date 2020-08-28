@@ -11,7 +11,7 @@ from parlai.core.message import Message
 from parlai.utils import logging
 
 import parlai_diplomacy.tasks.common_task_utils as utls
-from parlai_diplomacy.tasks.no_press.stream.agents import BaseOrderChunkTeacher
+from parlai_diplomacy.tasks.no_press.single_order.stream.agents import BaseOrderChunkTeacher
 
 
 @register_teacher("press_chunk")

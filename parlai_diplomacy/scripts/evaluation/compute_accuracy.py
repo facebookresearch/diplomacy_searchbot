@@ -224,7 +224,7 @@ def compute_json_accuracy(args):
 
     game_ids = list(eval_dict.keys())
     print(f"Total number of games: {len(game_ids)}")
-    # json_split_accuracy("115984", eval_dict["115984"])
+    # json_split_accuracy(game_ids[0], eval_dict[game_ids[0]])
 
     def _combine(a, b):
         return tuple([a_ + b_ for a_, b_ in zip(a, b)])
@@ -235,7 +235,7 @@ def compute_json_accuracy(args):
             el
             for el in joblib.Parallel(n_jobs=args.num_jobs)(
                 joblib.delayed(json_split_accuracy)(game_id, eval_dict[game_id])
-                for game_id in game_ids
+                for game_id in tqdm(game_ids)
             )
             if el is not None
         ],
@@ -254,7 +254,7 @@ if __name__ == "__main__":
         "--json", action="store_true",
     )
     parser.add_argument(
-        "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons/",
+        "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons_new/",
     )
     parser.add_argument(
         "--eval_file",

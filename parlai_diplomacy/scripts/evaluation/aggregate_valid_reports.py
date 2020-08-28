@@ -30,7 +30,6 @@ import argparse
 
 import parlai.utils.logging as logging
 import parlai_diplomacy.utils.game_loading as game_loading
-import parlai_diplomacy.utils.data_joining as data_joining
 import parlai_diplomacy.tasks.common_task_utils as utls
 
 
@@ -51,7 +50,7 @@ def get_valid_report_path(sweep_name, data_type, teacher, date_of_sweep=None):
     )
     # jsonl paths
     VALID_REPORT_JSONL_PATH = os.path.join(
-        VALID_SAVE_ROOT, USER, DATE, sweep_name, teacher, "*_replies.jsonl"
+        VALID_SAVE_ROOT, USER, DATE, sweep_name, teacher, "valid_report", "*_replies.jsonl"
     )
     # combined json path
     VALID_REPORT_SAVE_JSON_PATH = os.path.join(
@@ -66,7 +65,7 @@ def get_valid_report_path(sweep_name, data_type, teacher, date_of_sweep=None):
     return VALID_REPORT_SAVE_PATH, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH
 
 
-def convert_test_results(sweep_name, teacher, date_of_sweep=None):
+def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_order=False):
     """
     gather valid reports --> output one json for evaluation and comparison
     """
@@ -99,7 +98,20 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None):
                 int(ground_truth["player_id"]),
                 ground_truth["eval_labels"][0],
             )
-            predicted_order = data["dialog"][0][-1]["text"]
+
+            if predict_all_order:
+                order = [
+                    s.replace(ground_truth["player"] + ": ", "")
+                    for s in order.split("\n")
+                    if s.startswith(ground_truth["player"])
+                ][0]
+                predicted_order = [
+                    s.replace(ground_truth["player"] + ": ", "")
+                    for s in data["dialog"][0][-1]["text"].split("\n")
+                    if s.startswith(ground_truth["player"])
+                ][0]
+            else:
+                predicted_order = data["dialog"][0][-1]["text"]
             order = order.replace("[EO_O]", "").strip()
             predicted_order = predicted_order.replace("[EO_O]", "").strip()
 
@@ -152,8 +164,8 @@ def load_jsonl(path):
     return results
 
 
-def main(sweep_name, teacher, date_of_sweep=None):
-    convert_test_results(sweep_name, teacher, date_of_sweep)
+def main(sweep_name, teacher, date_of_sweep=None, predict_all_order=False):
+    convert_test_results(sweep_name, teacher, date_of_sweep, predict_all_order)
 
 
 if __name__ == "__main__":
@@ -167,8 +179,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--date_of_sweep", type=str, help="date of the validation sweep",
     )
+    parser.add_argument(
+        "--predict_all_order", action="store_true", help="if the report is for all orders",
+    )
 
     args = parser.parse_args()
 
     # save to json
-    main(args.sweep_name, args.teacher, args.date_of_sweep)
+    main(args.sweep_name, args.teacher, args.date_of_sweep, args.predict_all_order)
