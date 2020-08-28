@@ -1,3 +1,5 @@
+# Don't change this anymore -- create a new protoxt for new default configs.
+# Keeping this for posterity.
 dipnet {
     model_path: "/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best"
     temperature: 0.1

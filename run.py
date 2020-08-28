@@ -85,6 +85,8 @@ def press_train(cfg):
 
 @_register
 def launch_bot(cfg):
+    if getattr(cfg, "requeue", False):
+        heyhi.maybe_init_requeue_handler()
     launch_bot_run_with_cfg(cfg)
 
 

@@ -291,6 +291,8 @@ message LaunchBotTask {
   // If specified, connect only as this power
   optional string power = 8;
 
+  // If specified, attempt to requeue on slurm signal
+  optional bool requeue = 900 [ default = false ];
   optional Launcher launcher = 1000;
 }
 
