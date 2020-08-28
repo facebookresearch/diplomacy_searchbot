@@ -6,7 +6,7 @@
 
 from parlai_diplomacy.utils.param_sweeps.param_sweep import run_grid
 import parlai_diplomacy.utils.loading as load
-import parlai_diplomacy.utils.valid_result_converting as valid_result_converting
+import parlai_diplomacy.scripts.aggregate_valid_reports as aggregate_valid_reports
 
 load.register_all_agents()
 load.register_all_tasks()
@@ -16,9 +16,12 @@ sweep_name = "save_diplomacy_validation_bart_with_msg"
 NUM_HOURS = 72
 
 # save path
-TEACHER = "state_order_chunk"
-VALID_REPORT_SAVE_PATH, _, _ = valid_result_converting.get_valid_report_path(sweep_name, TEACHER)
-bash("mkdir -p " + VALID_REPORT_SAVE_PATH)
+TEACHER = "message_history_state_order_chunk"
+DATA_TYPE = "valid:stream"
+REPORT_SAVE_PATH, _, _ = aggregate_valid_reports.get_valid_report_path(
+    sweep_name, DATA_TYPE, TEACHER
+)
+bash("mkdir -p " + REPORT_SAVE_PATH)
 
 # Define param grid
 grid = {
@@ -27,8 +30,8 @@ grid = {
     "-mf": ["/checkpoint/wyshi/diplomacy/Bart/Bart_diplomacy/37a/model"],
     "-m": ["bart",],
     "-t": ["message_history_state_order_chunk"],
-    "-dt": ["valid:stream"],
-    "--report-filename": [VALID_REPORT_SAVE_PATH],
+    "-dt": [DATA_TYPE],
+    "--report-filename": [REPORT_SAVE_PATH],
     "--label-truncate": [256],
     "--text-truncate": [1024],
     "--save-world-logs": [True],

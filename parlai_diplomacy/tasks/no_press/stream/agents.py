@@ -37,6 +37,12 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
     @staticmethod
     def add_cmdline_args(argparser):
         argparser = utls.add_common_args(argparser)
+        argparser.add_argument(
+            "--n_chunks",
+            type=int,
+            default=-1,
+            help="Number of chunks to load, default to -1 (loading all chunks for that data type)",
+        )
         return argparser
 
     def __init__(self, opt, shared=None):
@@ -56,6 +62,8 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         """
         Return the number of samples given the datatype.
         """
+        # TODO: get actual counts here
+        # TODO: get actual counts for n_chunks only
         datatype = opt["datatype"]
         # TODO: Emily update me
         if "train" in datatype:
@@ -77,15 +85,22 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         correspond to that split.
         """
         datatype = opt["datatype"]
+        n_chunks = opt.get("n_chunks")
         all_chunk_idxs = list(self.chunk_idx_to_file.keys())
         if "test" in datatype:
             logging.warn("Test set does not exist, switching to valid")
             datatype = datatype.replace("test", "valid")
 
         if "train" in datatype:
-            return all_chunk_idxs[:TRAIN_VAL_SPLIT]
+            chunk_idxs_to_load = all_chunk_idxs[:TRAIN_VAL_SPLIT]
         elif "valid" in datatype:
-            return all_chunk_idxs[TRAIN_VAL_SPLIT:]
+            chunk_idxs_to_load = all_chunk_idxs[TRAIN_VAL_SPLIT:]
+
+        if n_chunks != -1:
+            logging.warn(f"Loading {n_chunks} chunks only!")
+            chunk_idxs_to_load = chunk_idxs_to_load[:n_chunks]
+
+        return chunk_idxs_to_load
 
     def load_from_chunk(self, chunk_idx: int) -> List[Tuple[str, str]]:
         """
@@ -122,6 +137,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         data["phase_id"] = phase_id
         data["player_id"] = player_id
         data["player"] = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+        data["data_status"] = data["metadata"]["data_status"]
 
         # format orders
         data["order"] = self.format_order(data["order"])

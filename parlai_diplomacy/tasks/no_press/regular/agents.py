@@ -50,9 +50,6 @@ class BaseOrderTeacher(FixedDialogTeacher):
             "--overwrite-joined-json", action="store_true", help="Overwrite the joined json",
         )
         argparser.add_argument(
-            "--with-seq-len-stat", action="store_true", help="analyze the sequence length",
-        )
-        argparser.add_argument(
             "--load-splitted-valid",
             action="store_true",
             help="the validation set is splitted, do we want to load the splitted set or build the validation set from scratch",
@@ -87,12 +84,6 @@ class BaseOrderTeacher(FixedDialogTeacher):
         argparser.add_argument(
             "--debug-game-size", type=int, default=500, help="how many games to use in debug mode",
         )
-        argparser.add_argument(
-            "--which-tokenizer-for-seq-stat",
-            type=str,
-            choices={"bart", "transformer",},
-            help="which tokenizer to use for sequence statistics, this should be used together with --with-seq-len-stat",
-        )
         return argparser
 
     def __init__(self, opt, shared=None):
@@ -103,9 +94,7 @@ class BaseOrderTeacher(FixedDialogTeacher):
         self.overwrite_joined_json = opt["overwrite_joined_json"]
         self.with_special_token = opt["with_special_token"]
 
-        # calculate the sequence length stat
-        self._calculate_seq_len_stat(stage="init")
-
+        self.valid_json_dir = utls.VALID_JSON_PATH
         self.is_train = utls.is_training(opt["datatype"])
 
         if shared is None:
@@ -166,149 +155,6 @@ class BaseOrderTeacher(FixedDialogTeacher):
             )
 
         return TRAIN_SPLIT_NUM, VALID_SPLIT_NUM
-
-    def _calculate_seq_len_stat(
-        self,
-        stage,
-        pair=None,
-        tot_pairs=None,
-        tot_phases=None,
-        tot_games=None,
-        tot_unique_phases=None,
-    ):
-        # the stat calculation can only be done on valid set
-        if not (self.opt["with_seq_len_stat"] and "valid" in self.opt["datatype"]):
-            return
-
-        if stage == "init":
-            # safety check
-            if self.opt["with_seq_len_stat"]:
-                if "train" in self.opt["datatype"]:
-                    raise ValueError(
-                        "Looks like you want to check the sequence length statistics for the training set, "
-                        "which will take a long time, so please change to the validation set by setting `--datatype valid`"
-                    )
-                if self.opt["which_tokenizer_for_seq_stat"] is None:
-                    raise ValueError(
-                        "It seems you want to get the sequence length statistics "
-                        "Please set the tokenizer you want to use by --which-tokenizer-for-seq-stat. "
-                        "--help for more info."
-                    )
-                if not self.opt["debug"]:
-                    confirm_whole_set = input(
-                        f"Are you sure you want to get the whole dataset's sequence length statistics, instead of the top 500 games by --debug? [Y/y] for YES, anything else for NO"
-                    )
-                    confirm_whole_set = confirm_whole_set in ["Y", "y"]
-                    if not confirm_whole_set:
-                        print("Aborting... Please set --debug in the next run")
-                        sys.exit(-1)
-
-            # build tokenizer
-            if self.opt["which_tokenizer_for_seq_stat"] == "bart":
-                with open(utls.BART_OPT_PATH, "r") as fh:
-                    TOKENIZER_OPT = json.load(fh)
-            else:
-                with open(utls.TRANSFORMER_OPT_PATH, "r") as fh:
-                    TOKENIZER_OPT = json.load(fh)
-            self.tokenizer_for_stat = DictionaryAgent(TOKENIZER_OPT)
-
-            # replace special tokens
-            if self.with_special_token:
-                self.special_tokens, self.special_tokens_map = utls.load_special_tokens()
-                self.tokenizer_for_stat.add_additional_special_tokens(self.special_tokens)
-
-            # different truncate size
-            self.text_truncate = [256, 512, 1024, 2048]
-            self.label_truncate = [256, 512, 1024, 2048]
-
-            # book keeping
-            self.input_seq_state_lens = []
-            self.input_seq_msg_lens = []
-            self.output_seq_lens = []
-            self.truncated_at_state = [0] * len(self.text_truncate)
-            self.truncated_at_msg = [0] * len(self.text_truncate)
-            self.truncated_at_state_msg = [0] * len(self.text_truncate)
-            self.truncated_at_order = [0] * len(self.label_truncate)
-            self.no_msg = 0
-
-        elif stage == "calculate":
-            if "message_history" in self.opt["task"]:
-                msg_str = pair["message_history"]
-            else:
-                msg_str = pair["message"]
-            state_str, order = pair["state"], pair["order"]
-            if self.with_special_token:
-                state_str = utls.replace_with_special_token(state_str)
-                order = utls.replace_with_special_token(order)
-            # print the first order to see if the sequence is expected
-            if len(self.input_seq_state_lens) == 0:
-                print(f"example order: {order}")
-                print(f"tokenized order: {self.tokenizer_for_stat.tokenize(order)}")
-
-            # calculate sequence length
-            input_state_len = len(self.tokenizer_for_stat.tokenize(state_str))
-            input_msg_len = len(self.tokenizer_for_stat.tokenize(msg_str))
-            output_seq_len = len(self.tokenizer_for_stat.tokenize(order))
-            self.input_seq_state_lens.append(input_state_len)
-            self.input_seq_msg_lens.append(input_msg_len)
-            self.output_seq_lens.append(output_seq_len)
-
-            # calculate truncated sequences
-            if "NoMsg" in pair["data_status"]:
-                self.no_msg += 1
-            for idx in range(len(self.text_truncate)):
-                if (input_state_len) > self.text_truncate[idx]:
-                    self.truncated_at_state[idx] += 1
-                if (input_msg_len) > self.text_truncate[idx]:
-                    self.truncated_at_msg[idx] += 1
-                if (input_state_len + input_msg_len) > self.text_truncate[idx]:
-                    self.truncated_at_state_msg[idx] += 1
-                if (output_seq_len) > self.label_truncate[idx]:
-                    self.truncated_at_order[idx] += 1
-
-        elif stage == "summary":
-            print(f"Loaded {tot_phases} Diplomacy phases for datasplit {self.dt}")
-            print(f"Loaded {tot_games} Diplomacy games for datasplit {self.dt}")
-            print(f"Loaded {tot_unique_phases} unique Diplomacy phases for datasplit {self.dt}")
-            print(f"Loaded {tot_pairs} unique Diplomacy pairs for datasplit {self.dt}")
-
-            print(
-                f"mean_input_seq_state_len: {np.mean(self.input_seq_state_lens)} ({np.sum(self.input_seq_state_lens)}/{len(self.input_seq_state_lens)}) for datasplit {self.dt}"
-            )
-            print(
-                f"mean_input_seq_msg_len: {np.mean(self.input_seq_msg_lens)} ({np.sum(self.input_seq_msg_lens)}/{len(self.input_seq_msg_lens)}) for datasplit {self.dt}"
-            )
-            print(
-                f"mean_output_seq_len: {np.mean(self.output_seq_lens)} ({np.sum(self.output_seq_lens)}/{len(self.output_seq_lens)}) for datasplit {self.dt}"
-            )
-            print(
-                f"90%_input_seq_state_len: {np.quantile(self.input_seq_state_lens, 0.9)} ({np.sum(self.input_seq_state_lens)}/{len(self.input_seq_state_lens)}) for datasplit {self.dt}"
-            )
-            print(
-                f"90%_input_seq_msg_len: {np.quantile(self.input_seq_msg_lens, 0.9)} ({np.sum(self.input_seq_msg_lens)}/{len(self.input_seq_msg_lens)}) for datasplit {self.dt}"
-            )
-            print(
-                f"90%_output_seq_len: {np.quantile(self.output_seq_lens, 0.9)} ({np.sum(self.output_seq_lens)}/{len(self.output_seq_lens)}) for datasplit {self.dt}"
-            )
-            print()
-            print(
-                f"no message: {self.no_msg/tot_pairs} ({self.no_msg}/{tot_pairs}) for datasplit {self.dt} for {self.text_truncate}"
-            )
-            for i in range(len(self.text_truncate)):
-                print(f"for truncate size {self.text_truncate[i]}")
-                print(
-                    f"truncated at state: {self.truncated_at_state[i]/tot_pairs} ({self.truncated_at_state[i]}/{tot_pairs}) for datasplit {self.dt}"
-                )
-                print(
-                    f"truncated at msg: {self.truncated_at_msg[i]/tot_pairs} ({self.truncated_at_msg[i]}/{tot_pairs}) for datasplit {self.dt}"
-                )
-                print(
-                    f"truncated at state_msg: {self.truncated_at_state_msg[i]/tot_pairs} ({self.truncated_at_state_msg[i]}/{tot_pairs}) for datasplit {self.dt}"
-                )
-                print(
-                    f"truncated at order: {self.truncated_at_order[i]/tot_pairs} ({self.truncated_at_order[i]}/{tot_pairs}) for datasplit {self.dt}"
-                )
-                print()
 
     def _construct_common_msg_fields(self, msg):
         # speaker token
@@ -400,16 +246,6 @@ class BaseOrderTeacher(FixedDialogTeacher):
 
                 # book keeping
                 tot_pairs += 1
-                self._calculate_seq_len_stat(stage="calculate", pair=pair)
-
-        # get data stat
-        self._calculate_seq_len_stat(
-            stage="summary",
-            tot_pairs=tot_pairs,
-            tot_phases=tot_phases,
-            tot_games=len(set(game_ids)),
-            tot_unique_phases=len(set(game_phase_ids)),
-        )
 
         if self.is_train:
             random.shuffle(pairs)

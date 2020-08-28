@@ -38,9 +38,9 @@ import parlai_diplomacy.tasks.common_task_utils as utls
 VALID_SAVE_ROOT = "/checkpoint/fairdiplomacy/press_diplomacy/validation/validation_report/"
 
 
-def get_valid_report_path(sweep_name, teacher, date_of_sweep=None):
+def get_valid_report_path(sweep_name, data_type, teacher, date_of_sweep=None):
     """
-    return validation report related paths
+    return report related paths
     """
     # save path
     USER = os.environ["USER"]
