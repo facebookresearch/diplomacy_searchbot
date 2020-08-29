@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
   for (auto &batch : order_batches) {
     for (int i = 0; i < batch_size; ++i) {
       OrderSet orders;
-      for (const auto &[power, order_options] : kTopOrders) {
+      for (const auto & [ power, order_options ] : kTopOrders) {
         std::uniform_int_distribution<int> distribution(
             0, order_options.size() - 1);
         const std::vector<std::string> &order_strings =
@@ -192,6 +192,7 @@ int main(int argc, char *argv[]) {
                             std::istreambuf_iterator<char>());
   Game init_game(game_json_str);
   init_game.rollback_to_phase(kPhase);
+  init_game.get_all_possible_orders();
 
   ThreadPool pool(pool_size, get_order_vocab(), kOrderVocabIdxs);
 
@@ -208,8 +209,9 @@ int main(int argc, char *argv[]) {
 
   } timer;
 
-  double clone_time = 0, set_order_time = 0, process_time = 0;
+  double clone_time = 0, encode_time = 0, set_order_time = 0, process_time = 0;
   for (int i = 0; i < num_rounds; ++i) {
+    // Clone
     std::vector<std::shared_ptr<Game>> games;
     std::vector<Game *> game_ptrs; // That's what the pool expects.
     for (int game_id = 0; game_id < batch_size; ++game_id) {
@@ -218,19 +220,64 @@ int main(int argc, char *argv[]) {
     }
     clone_time += timer.tick();
 
+    // Encode
+
+    std::vector<float> x_board_state(batch_size * 81 * 35);
+    std::vector<float> x_prev_state(batch_size * 81 * 35);
+    std::vector<long> x_prev_orders(batch_size * 2 * 100);
+    std::vector<float> x_season(batch_size * 3);
+    std::vector<float> x_in_adj_phase(batch_size * 1);
+    std::vector<float> x_build_numbers(batch_size * 7);
+    std::vector<int8_t> x_loc_idxs(batch_size * 7 * 81);
+    std::vector<int32_t> x_possible_actions(batch_size * 7 * 17 *
+                                            kOrderVocabIdxs);
+    std::vector<int32_t> x_max_seq_len(batch_size * 1);
+
+    std::vector<float *> p_board_state(batch_size);
+    std::vector<float *> p_prev_state(batch_size);
+    std::vector<long *> p_prev_orders(batch_size);
+    std::vector<float *> p_season(batch_size);
+    std::vector<float *> p_in_adj_phase(batch_size);
+    std::vector<float *> p_build_numbers(batch_size);
+    std::vector<int8_t *> p_loc_idxs(batch_size);
+    std::vector<int32_t *> p_possible_actions(batch_size);
+    std::vector<int32_t *> p_max_seq_len(batch_size);
+
+    for (int i = 0; i < batch_size; ++i) {
+      p_board_state[i] = &x_board_state[i * 81 * 35];
+      p_prev_state[i] = &x_prev_state[i * 81 * 35];
+      p_prev_orders[i] = &x_prev_orders[i * 2 * 100];
+      p_season[i] = &x_season[i * 3];
+      p_in_adj_phase[i] = &x_in_adj_phase[i];
+      p_build_numbers[i] = &x_build_numbers[i * 7];
+      p_loc_idxs[i] = &x_loc_idxs[i * 7 * 81];
+      p_possible_actions[i] = &x_possible_actions[i * 7 * 17 * kOrderVocabIdxs];
+      p_max_seq_len[i] = &x_max_seq_len[i];
+    }
+    pool.encode_inputs_multi(game_ptrs, p_board_state, p_prev_state,
+                             p_prev_orders, p_season, p_in_adj_phase,
+                             p_build_numbers, p_loc_idxs, p_possible_actions,
+                             p_max_seq_len);
+    encode_time += timer.tick();
+
+    // Set Orders
     for (int game_id = 0; game_id < batch_size; ++game_id) {
-      for (const auto &[power, orders] : order_batches[i][game_id]) {
+      for (const auto & [ power, orders ] : order_batches[i][game_id]) {
         games[game_id]->set_orders(power, orders);
       }
     }
     set_order_time += timer.tick();
 
+    // Process
     pool.process_multi(game_ptrs);
     process_time += timer.tick();
   }
 
   LOG(ERROR) << "clone_time: " << clone_time << " / " << num_rounds << " = "
              << clone_time / num_rounds << " s";
+
+  LOG(ERROR) << "encode_time: " << encode_time << " / " << num_rounds << " = "
+             << encode_time / num_rounds << " s";
 
   LOG(ERROR) << "set_order_time: " << set_order_time << " / " << num_rounds
              << " = " << set_order_time / num_rounds << " s";
