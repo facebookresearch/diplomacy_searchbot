@@ -16,6 +16,9 @@ import torch
 
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.utils.game_scoring import average_game_scores, compute_game_scores, GameScores
+from fairdiplomacy.game import Game
+from fairdiplomacy.agents.dipnet_agent import DipnetAgent
+import torch.multiprocessing as mp
 
 
 def make_safe(fn):
@@ -46,14 +49,15 @@ def print_rl_stats(results, args):
     print(tabulate.tabulate(table, headers="firstrow"))
 
 
-def compute_xpower_supports(path, max_year=None):
+def compute_xpower_supports(path, max_year=None, cf_agent=None):
+    # print(path)
     with open(path) as f:
         try:
             j = json.load(f)
         except json.JSONDecodeError as e:
             raise type(e)(f"Error loading {path}: \n {e.message}")
 
-    game = fairdiplomacy.game.Game.from_saved_game_format(j)
+    game = Game.from_saved_game_format(j)
     # game = pydipcc.Game.from_json(game.to_dict())
 
     num_supports, num_xpower, num_eff = 0, 0, 0
@@ -64,7 +68,15 @@ def compute_xpower_supports(path, max_year=None):
         loc_power = {
             unit.split()[1]: power for power, units in state["units"].items() for unit in units
         }
+        if cf_agent is not None:
+            cf_orders = cf_agent.get_orders_all_powers(
+                Game.clone_from(game, up_to_phase=state["name"])
+            )
+
         for power, power_orders in phase.orders.items():
+            if cf_agent is not None:
+                power_orders = cf_orders[power]
+
             for order in power_orders:
                 order_tokens = order.split()
                 is_support = (
@@ -85,7 +97,7 @@ def compute_xpower_supports(path, max_year=None):
 
                 cf_states = []
                 for do_support in (False, True):
-                    g_cf = fairdiplomacy.game.Game.clone_from(game, up_to_phase=state["name"])
+                    g_cf = Game.clone_from(game, up_to_phase=state["name"])
                     # g_cf.clear_orders()
                     # print(g_cf.orders, power, order)
                     assert g_cf.get_state()["name"] == state["name"]
@@ -115,11 +127,20 @@ def compute_xpower_supports(path, max_year=None):
     return {"name": os.path.basename(path), "s": num_supports, "x": num_xpower, "e": num_eff}
 
 
-def compute_xpower_statistics(paths, max_year=None, num_jobs=40):
+def compute_xpower_statistics(paths, max_year=None, num_jobs=40, cf_agent=None):
 
-    stats = joblib.Parallel(num_jobs)(
-        joblib.delayed(compute_xpower_supports)(path, max_year=max_year) for path in paths
-    )
+    # pool = mp.Pool(num_jobs)
+    # stats = pool.starmap(compute_xpower_supports, [(path, max_year, cf_agent) for path in paths])
+    if cf_agent is not None:
+        # if running with CF-agent, can't use multiple cores (bc of model)
+        stats = [
+            compute_xpower_supports(path, max_year=max_year, cf_agent=cf_agent) for path in paths
+        ]
+    else:
+        stats = joblib.Parallel(num_jobs)(
+            joblib.delayed(compute_xpower_supports)(path, max_year=max_year, cf_agent=cf_agent)
+            for path in paths
+        )
 
     print(
         tabulate.tabulate(
@@ -156,7 +177,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--metadata-filter", help="Lambda function to filter games based on metadata"
     )
-
+    parser.add_argument("--dataset-for-eval", help="Dataset cache to select eval game IDs")
+    parser.add_argument(
+        "--model-path",
+        help="If specified, looks at xpower supports from this agent in the situations from the dataset games.",
+    )
+    parser.add_argument("--temperature", default=0.1, help="Temperature for cf_agent")
     args = parser.parse_args()
 
     if args.metadata_path:
@@ -168,6 +194,14 @@ if __name__ == "__main__":
                 print(f"Selected {len(game_ids)} / {len(metadata)} games from metadata file.")
             else:
                 game_ids = metadata.keys()
+
+            if args.dataset_for_eval is not None:
+                train_cache, eval_cache = torch.load(args.dataset_for_eval)
+                del train_cache
+                game_ids = eval_cache.game_ids
+                print(
+                    f"Selected {len(game_ids)} / {len(metadata)} games from dataset cache eval set."
+                )
 
             metadata_paths = [f"{args.game_dir}/game_{game_id}.json" for game_id in game_ids]
             paths = [p for p in metadata_paths if os.path.exists(p)]
@@ -182,4 +216,9 @@ if __name__ == "__main__":
         print(f"Sampling {args.max_games} from dataset of size {len(paths)}")
         paths = [paths[i] for i in torch.randperm(len(paths))[: args.max_games]]
 
-    compute_xpower_statistics(paths, max_year=args.max_year)
+    if args.model_path:
+        cf_agent = DipnetAgent(args.model_path, args.temperature)
+    else:
+        cf_agent = None
+
+    compute_xpower_statistics(paths, max_year=args.max_year, cf_agent=cf_agent)
