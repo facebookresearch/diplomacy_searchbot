@@ -53,6 +53,17 @@ def order_seq_to_fairdip(order_sequence):
     return order_lst
 
 
+def order_is_empty(order_sequence):
+    """
+    Check if an order sequence is empty
+    """
+    order = order_sequence.replace("[EO_O]", "").strip()
+    if not order:
+        return True
+
+    return False
+
+
 def map_special_tokens(token, special_tokens_map):
     """
     Convert token to a special token if it exists
@@ -158,11 +169,11 @@ def flatten_one_phase_order(
 def flatten_order_history(order_history_dct, special_tokens_map=None, with_special_token=False):
     """
     return:
-        S1901M 
+        S1901M
         France: [order] [EO_O]
         Italy: [order] [EO_O]
         ...
-        [phase_name] 
+        [phase_name]
         [player1]: [order] [EO_O]
     """
     phase_orders = []
@@ -218,12 +229,12 @@ def flatten_state_history(
 ):
     """
     return:
-        S1901M 
-        [state1] [EO_STATE] 
-        F1901M 
-        [state2] [EO_STATE] 
+        S1901M
+        [state1] [EO_STATE]
+        F1901M
+        [state2] [EO_STATE]
         ...
-        [phase_name] 
+        [phase_name]
         [state] [EO_STATE]
     """
     state_list = []
@@ -254,12 +265,12 @@ def flatten_one_phase_message(
     """
     flatten messages in one phase
     return:
-        phase_name_1  
-        England -> Turkey: msg1 [EO_M] 
-        Turkey -> England: msg2 [EO_M] 
-        phase_name_2 
-        England -> Turkey: msg1 [EO_M] 
-        Turkey -> England: msg2 [EO_M] 
+        phase_name_1
+        England -> Turkey: msg1 [EO_M]
+        Turkey -> England: msg2 [EO_M]
+        phase_name_2
+        England -> Turkey: msg1 [EO_M]
+        Turkey -> England: msg2 [EO_M]
         current_phase_name England:
     """
     if len(msg_lst) == 0:
