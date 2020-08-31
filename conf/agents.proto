@@ -116,6 +116,9 @@ message CFR1PAgent {
   // First CFR iteration to start following loser_bp_value
   // (we need a few iterations to accurately estimate the action values)
   optional float loser_bp_iter = 29 [ default = 64 ];
+
+  // Optional. Enables optimization on clonning dipcc.Game objects.
+  optional bool clear_old_all_possible_orders = 30;
 }
 
 message BRSearchAgent {

@@ -3,15 +3,25 @@ import time
 
 
 class TimingCtx:
-    def __init__(self, init=None, init_ns=None):
+    def __init__(self, init=None, init_ns=None, first_tic=None):
         self.timings = init if init is not None else Counter()
         self.ns = init_ns if init_ns is not None else Counter()
         self.arg = None
         self.last_clear = time.time()
+        self.first_tic = first_tic
 
     def clear(self):
         self.timings.clear()
         self.last_clear = time.time()
+
+    def start(self, arg):
+        if self.arg is not None:
+            self.__exit__()
+        self.__call__(arg)
+        self.__enter__()
+
+    def stop(self):
+        self.start(None)
 
     def __call__(self, arg):
         self.arg = arg
@@ -19,10 +29,13 @@ class TimingCtx:
 
     def __enter__(self):
         self.tic = time.time()
+        if self.first_tic is None:
+            self.first_tic = self.tic
 
     def __exit__(self, *args):
         self.timings[self.arg] += time.time() - self.tic
         self.ns[self.arg] += 1
+        self.arg = None
 
     def __repr__(self):
         return dict(
@@ -30,20 +43,14 @@ class TimingCtx:
             **dict(sorted(self.timings.items(), key=lambda kv: kv[1], reverse=True)),
         ).__repr__()
 
-    def __add__(self, other):
-        if isinstance(other, TimingCtx):
-            return TimingCtx(init=self.timings + other.timings)
-        else:
-            raise ValueError(f"__add__ called with type {type(other)}")
-
     def __truediv__(self, other):
         return {k: v / other for k, v in self.timings.items()}
 
-    def __radd__(self, other):
-        if other == 0:
-            return self
-        else:
-            return self.__add__(other)
+    def __iadd__(self, other):
+        if other != 0:
+            self.timings += other.timings
+            self.ns += other.ns
+        return self
 
     def items(self):
         return self.timings.items()
@@ -90,7 +97,11 @@ class TimingCtx:
             )
         ind_log_fn("-" * (24 + 8 + 18 + 18))
 
+        elapsed = time.time() - self.first_tic
         sum_t_total = sum(t_total for t_total, _, _, _ in data)
+        ind_log_fn(
+            "{:^24}|{:^8}|{:^18.1f}|{:^18}".format("Lost", "", (elapsed - sum_t_total) * 1e3, "")
+        )
         ind_log_fn("{:^24}|{:^8}|{:^18.1f}|{:^18}".format("Total", "", sum_t_total * 1e3, ""))
 
 

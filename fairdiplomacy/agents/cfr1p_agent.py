@@ -10,8 +10,8 @@ import json
 import pydipcc
 from fairdiplomacy.agents.threaded_search_agent import ThreadedSearchAgent
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.selfplay.metrics import MultiStopWatchTimer
 from fairdiplomacy.utils.sampling import sample_p_dict
+from fairdiplomacy.utils.timing_ctx import TimingCtx
 
 
 Action = Tuple[str]  # a set of orders
@@ -92,10 +92,63 @@ class CFR1PAgent(ThreadedSearchAgent):
             return []
         return list(sample_p_dict(prob_distributions[power]))
 
+    def get_orders_many_powers(
+        self, game, powers, timings=None, single_cfr=False
+    ) -> Dict[Power, List[str]]:
+
+        if timings is None:
+            timings = TimingCtx()
+        with timings("get_plausible_orders"):
+            power_plausible_orders = self.get_plausible_orders_helper(game)
+        prob_distributions = {}
+        if single_cfr:
+            inner_timings = TimingCtx()
+            prob_distributions = self.get_all_power_prob_distributions(
+                game, power_plausible_orders=power_plausible_orders, timings=inner_timings
+            )
+            timings += inner_timings
+        else:
+            for power in powers:
+                inner_timings = TimingCtx()
+                prob_distributions[power] = self.get_all_power_prob_distributions(
+                    game,
+                    early_exit_for_power=power,
+                    power_plausible_orders=power_plausible_orders,
+                    timings=inner_timings,
+                )[power]
+                timings += inner_timings
+        all_orders: Dict[Power, List[str]] = {}
+        for power in powers:
+            logging.info(f"Final strategy ({power}): {prob_distributions[power]}")
+            if len(prob_distributions[power]) == 0:
+                all_orders[power] = []
+            else:
+                all_orders[power] = list(sample_p_dict(prob_distributions[power]))
+        timings.pprint(logging.getLogger("timings").info)
+        return all_orders
+
+    def get_plausible_orders_helper(self, game):
+        # Determine the set of plausible actions to consider for each power
+        game_state = game.get_state()
+        power_n_units = [num_orderable_units(game_state, p) for p in POWERS]
+        return self.get_plausible_orders(
+            game,
+            limit=[
+                min(self.n_plausible_orders, ceil(u * self.max_actions_units_ratio))
+                for u in power_n_units
+            ],
+            n=self.plausible_orders_req_size,
+            batch_size=self.plausible_orders_req_size,
+        )
+
     def get_all_power_prob_distributions(
-        self, game, early_exit_for_power=None
+        self, game, power_plausible_orders=None, early_exit_for_power=None, timings=None
     ) -> Dict[str, Dict[Tuple[str], float]]:
         """Return dict {power: {action: prob}}"""
+
+        if timings is None:
+            timings = TimingCtx()
+        timings.start("one-time")
 
         if type(game) != pydipcc.Game:
             game = pydipcc.Game.from_json(json.dumps(game.to_saved_game_format()))
@@ -108,17 +161,8 @@ class CFR1PAgent(ThreadedSearchAgent):
         if self.cache_rollout_results:
             rollout_results_cache = RolloutResultsCache()
 
-        # Determine the set of plausible actions to consider for each power
-        power_n_units = [num_orderable_units(game_state, p) for p in POWERS]
-        power_plausible_orders = self.get_plausible_orders(
-            game,
-            limit=[
-                min(self.n_plausible_orders, ceil(u * self.max_actions_units_ratio))
-                for u in power_n_units
-            ],
-            n=self.plausible_orders_req_size,
-            batch_size=self.plausible_orders_req_size,
-        )
+        if power_plausible_orders is None:
+            power_plausible_orders = self.get_plausible_orders_helper(game)
 
         for p, orders_to_logprob in power_plausible_orders.items():
             for o, prob in orders_to_logprob.items():
@@ -145,16 +189,13 @@ class CFR1PAgent(ThreadedSearchAgent):
                 }
             }
 
-        timing_logger = logging.getLogger("timing")
-        timings = MultiStopWatchTimer()
         iter_weight = 0.0
         for cfr_iter in range(self.n_rollouts):
+            timings.start("start")
             # do verbose logging on 2^x iters
             verbose_log_iter = (
                 cfr_iter & (cfr_iter + 1) == 0  # and cfr_iter > self.n_rollouts / 8
             ) or cfr_iter == self.n_rollouts - 1
-
-            timings.start("start")
 
             self.maybe_do_pruning(cfr_iter=cfr_iter, iter_weight=iter_weight, cfr_data=cfr_data)
 
@@ -204,20 +245,26 @@ class CFR1PAgent(ThreadedSearchAgent):
 
             # run rollouts or get from cache
             def on_miss():
-                return self.do_rollouts(
+                nonlocal timings
+                inner_timmings = TimingCtx()
+                ret = self.do_rollouts(
                     game,
                     set_orders_dicts,
                     average_n_rollouts=self.average_n_rollouts,
+                    timings=inner_timmings,
                     log_timings=verbose_log_iter,
                 )
+                timings += inner_timmings
+                return ret
 
-            timings.start("rollouts")
+            timings.stop()
             all_rollout_results = (
                 rollout_results_cache.get(set_orders_dicts, on_miss)
                 if self.cache_rollout_results
                 else on_miss()
             )
 
+            timings.start("cfr")
             for pwr, actions in cfr_data.power_plausible_orders.items():
                 if len(actions) == 0:
                     continue
@@ -266,9 +313,7 @@ class CFR1PAgent(ThreadedSearchAgent):
             if self.cache_rollout_results and (cfr_iter + 1) % 10 == 0:
                 logging.info(f"{rollout_results_cache}")
 
-        timing_logger.debug(
-            f"Timing[cfr_iter {cfr_iter+1}/{self.n_rollouts}]: {str(timings)}, len(set_orders_dicts)={len(set_orders_dicts)}"
-        )
+        timings.start("to_dict")
 
         # return prob. distributions for each power
         ret = {}
@@ -289,6 +334,7 @@ class CFR1PAgent(ThreadedSearchAgent):
                 )
                 logging.info(f"Final avg strategy: {avg_ps_dict}")
 
+        timings.pprint(logging.getLogger("timings").info)
         return ret
 
     @classmethod

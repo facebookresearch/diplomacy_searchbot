@@ -39,6 +39,7 @@ class ThreadedSearchAgent(BaseSearchAgent):
         self,
         *,
         model_path,
+        value_model_path=None,
         max_batch_size,
         max_rollout_length=3,
         rollout_temperature,
@@ -46,6 +47,7 @@ class ThreadedSearchAgent(BaseSearchAgent):
         n_rollout_procs=70,
         device=0,
         mix_square_ratio_scoring=0,
+        clear_old_all_possible_orders=False,
     ):
         super().__init__()
         self.n_rollout_procs = n_rollout_procs
@@ -54,9 +56,19 @@ class ThreadedSearchAgent(BaseSearchAgent):
         self.max_batch_size = max_batch_size
         self.max_rollout_length = max_rollout_length
         self.mix_square_ratio_scoring = mix_square_ratio_scoring
+        self.clear_old_all_possible_orders = clear_old_all_possible_orders
         self.device = parse_device(device) if torch.cuda.is_available() else "cpu"
 
-        self.model = load_dipnet_model(model_path, map_location=self.device, eval=True)
+        self.model = load_dipnet_model(model_path, eval=True)
+        # Loading model to gpu right away will load optimizer state we don't care about.
+        self.model.to(self.device)
+        if value_model_path is not None:
+            self.value_model = load_dipnet_model(value_model_path, eval=True)
+            # Loading model to gpu right away will load optimizer state we don't care about.
+            self.value_model.to(self.device)
+        else:
+            self.value_model = self.model
+
         self.thread_pool = pydipcc.ThreadPool(
             n_rollout_procs, ORDER_VOCABULARY_TO_IDX, get_order_vocabulary_idxs_len()
         )
@@ -79,40 +91,45 @@ class ThreadedSearchAgent(BaseSearchAgent):
             with timings("to_cuda"):
                 x = {k: v.to(self.device) for k, v in x.items()}
             with timings("model"):
-                y = self.model(**x, values_only=values_only)
+                if values_only:
+                    y = self.value_model(**x, values_only=values_only)
+                else:
+                    y = self.model(**x, values_only=values_only)
             if values_only:
                 with timings("to_cpu"):
-                    return y.cpu()
+                    return y.cpu().numpy()
             with timings("transform"):
                 y = model_output_transform(x, y)
             with timings("to_cpu"):
                 y = tuple(x.to("cpu") for x in y)
 
-        with timings("model.numpy"):
-            order_idxs, order_logprobs, final_scores = y
-            assert x["x_board_state"].shape[0] == final_scores.shape[0], (
-                x["x_board_state"].shape[0],
-                final_scores.shape[0],
-            )
-            if hasattr(final_scores, "numpy"):
-                final_scores = final_scores.numpy()
+        order_idxs, order_logprobs, final_scores = y
 
         with timings("model.decode"):
             decoded = self.thread_pool.decode_order_idxs(order_idxs)
         with timings("model.decode.tuple"):
             decoded = [[tuple(orders) for orders in powers_orders] for powers_orders in decoded]
 
-        return (decoded, order_logprobs, final_scores)
+        # Returning None for values. Must call with values_only to get values.
+        return (decoded, order_logprobs, None)
 
-    def do_rollouts(self, game_init, set_orders_dicts, average_n_rollouts=1, log_timings=False):
-        timings = TimingCtx()
+    def do_rollouts(
+        self, game_init, set_orders_dicts, average_n_rollouts=1, timings=None, log_timings=False
+    ):
+        if timings is None:
+            timings = TimingCtx()
 
-        with timings("setup"):
+        if self.clear_old_all_possible_orders:
+            with timings("clear_old_orders"):
+                game_init = pydipcc.Game(game_init)
+                game_init.clear_old_all_possible_orders()
+        with timings("clone"):
             games = [
                 pydipcc.Game(game_init)  # clones
                 for _ in set_orders_dicts
                 for _ in range(average_n_rollouts)
             ]
+        with timings("setup"):
             for i in range(len(games)):
                 games[i].game_id += f"_{i}"
             est_final_scores = {}  # game id -> np.array len=7

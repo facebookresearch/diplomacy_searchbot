@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Sequence
 
 
 class BaseAgent:
@@ -14,3 +14,14 @@ class BaseAgent:
             ["A TYR - TRI", "F ION - TUN", "A VEN S A TYR - TRI"]
         """
         raise NotImplementedError("Subclasses must implement")
+
+    def get_orders_many_powers(self, game, powers: Sequence[str]) -> Dict[str, List[str]]:
+        """Return a set of orders that should be taken based on the game state per power
+
+        Arguments:
+        - game: a fairdiplomacy.Game object
+        - powers: a set of powers that need orders
+
+        Returns a dict of orders for each power.
+        """
+        return {p: self.get_orders(game, p) for p in powers}
