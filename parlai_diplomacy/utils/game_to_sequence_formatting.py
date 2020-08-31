@@ -31,7 +31,7 @@ class SequenceFormatHelper:
         for phase in json:
             seqs[phase] = {}
             # TODO: make this work with special tokens
-            state = task_utils.flatten_state(json[phase]["state"], None, None)
+            state = flatten_state(json[phase]["state"], None, None)
             for _, speaker in task_utils.COUNTRY_ID_TO_POWER.items():
                 # set up speaker
                 player_prompt_token = f"{phase} {speaker.capitalize()}:"
@@ -62,6 +62,23 @@ def order_is_empty(order_sequence):
         return True
 
     return False
+
+
+def all_orders_seq_to_dct(all_orders_sequence):
+    """
+    Convert a sequence of a prediction for all orders to a dict containing
+    the orders for all dict.
+    """
+    order_dct = {}
+    if not all_orders_sequence:
+        return order_dct
+
+    order_split = all_orders_sequence.split("\n")
+    for order in order_split:
+        power, order_seq = order.split(": ")
+        order_dct[power] = set(order_seq_to_fairdip(order_seq))
+
+    return order_dct
 
 
 def map_special_tokens(token, special_tokens_map):

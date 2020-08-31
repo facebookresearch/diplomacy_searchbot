@@ -14,6 +14,7 @@ import parlai_diplomacy.utils.datapath_constants as constants
 import parlai_diplomacy.utils.game_to_sequence_formatting as game_formatting
 import parlai_diplomacy.utils.game_loading as game_loading
 from parlai_diplomacy.tasks.no_press.single_order.stream.agents import BaseOrderChunkTeacher
+from parlai_diplomacy.metrics.order_predictions import AllOrderPredMetricMixin
 
 from abc import ABC
 from glob import glob
@@ -26,7 +27,7 @@ File that takes board state data to predict orders for ALL players. (streaming)
 
 
 @register_teacher("base_allorder_chunk")
-class BaseAllorderChunkTeacher(BaseOrderChunkTeacher):
+class BaseAllorderChunkTeacher(AllOrderPredMetricMixin, BaseOrderChunkTeacher):
     """
     Streaming data base teacher for messages/orders.
 
