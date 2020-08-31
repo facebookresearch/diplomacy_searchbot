@@ -19,6 +19,8 @@ message DipnetAgent {
 
   // Optional. Share of probability mass to keep for sampling.
   optional float top_p = 3 [ default = 1.0 ];
+
+  optional bool has_press = 4;
 }
 
 message CFR1PAgent {

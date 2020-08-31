@@ -27,7 +27,9 @@ _DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class DipnetAgent(BaseAgent):
-    def __init__(self, model_path, temperature, top_p=1.0, device=_DEFAULT_DEVICE):
+    def __init__(
+        self, model_path, temperature, top_p=1.0, has_press=False, device=_DEFAULT_DEVICE
+    ):
         self.model = load_dipnet_model(model_path, map_location=device, eval=True)
         self.temperature = temperature
         self.device = device
@@ -35,6 +37,7 @@ class DipnetAgent(BaseAgent):
         self.thread_pool = pydipcc.ThreadPool(
             1, ORDER_VOCABULARY_TO_IDX, get_order_vocabulary_idxs_len()
         )
+        self.has_press = has_press
 
     def get_orders(self, game, power, *, temperature=None, top_p=None):
         if len(game.get_orderable_locations().get(power, [])) == 0:
@@ -43,8 +46,9 @@ class DipnetAgent(BaseAgent):
         temperature = temperature if temperature is not None else self.temperature
         top_p = top_p if top_p is not None else self.top_p
         inputs = encode_inputs(game)
+        if self.has_press:
+            inputs["x_has_press"] = torch.ones((1, 1))
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
         with torch.no_grad():
             order_idxs, cand_idxs, logits, final_scores = self.model(
                 **inputs, temperature=temperature, top_p=top_p
@@ -53,8 +57,28 @@ class DipnetAgent(BaseAgent):
         resample_duplicate_disbands_inplace(
             order_idxs, cand_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
         )
-
+        print(order_idxs)
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
+
+    def get_orders_all_powers(self, game, *, temperature=None, top_p=None):
+
+        temperature = temperature if temperature is not None else self.temperature
+        top_p = top_p if top_p is not None else self.top_p
+        inputs = encode_inputs(game)
+        if self.has_press:
+            inputs["x_has_press"] = torch.ones((1, 1))
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            order_idxs, cand_idxs, logits, final_scores = self.model(
+                **inputs, temperature=temperature, top_p=top_p
+            )
+
+        resample_duplicate_disbands_inplace(
+            order_idxs, cand_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
+        )
+        return {
+            power: decode_order_idxs(order_idxs[0, POWERS.index(power), :]) for power in POWERS
+        }
 
 
 def decode_order_idxs(order_idxs) -> List[str]:
