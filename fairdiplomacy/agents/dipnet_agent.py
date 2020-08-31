@@ -57,7 +57,6 @@ class DipnetAgent(BaseAgent):
         resample_duplicate_disbands_inplace(
             order_idxs, cand_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
         )
-        print(order_idxs)
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
 
     def get_orders_all_powers(self, game, *, temperature=None, top_p=None):
