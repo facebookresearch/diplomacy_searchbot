@@ -59,7 +59,7 @@ class DipnetAgent(BaseAgent):
         )
         return decode_order_idxs(order_idxs[0, POWERS.index(power), :])
 
-    def get_orders_all_powers(self, game, *, temperature=None, top_p=None):
+    def get_orders_many_powers(self, game, powers, *, temperature=None, top_p=None):
 
         temperature = temperature if temperature is not None else self.temperature
         top_p = top_p if top_p is not None else self.top_p
@@ -76,7 +76,7 @@ class DipnetAgent(BaseAgent):
             order_idxs, cand_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
         )
         return {
-            power: decode_order_idxs(order_idxs[0, POWERS.index(power), :]) for power in POWERS
+            power: decode_order_idxs(order_idxs[0, POWERS.index(power), :]) for power in powers
         }
 
 
