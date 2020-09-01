@@ -18,7 +18,7 @@ test: | test_fast test_integration
 
 test_fast: | compile
 	@echo "Running fast (unit) tests"
-	nosetests heyhi/ fairdiplomacy/ parlai_diplomacy/
+	nosetests heyhi/ fairdiplomacy/ parlai_diplomacy/ unit_tests/
 
 test_integration: | compile
 	@echo "Running slow (intergration) tests"

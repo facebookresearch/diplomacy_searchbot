@@ -38,3 +38,4 @@ COASTAL_HOME_SCS = [
     "CON",
     "SMY",
 ]
+LOGIT_MASK_VAL = -1e8
