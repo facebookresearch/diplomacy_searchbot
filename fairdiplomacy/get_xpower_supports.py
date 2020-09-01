@@ -98,6 +98,7 @@ def compute_xpower_supports(path, max_year=None, cf_agent=None):
                 cf_states = []
                 for do_support in (False, True):
                     g_cf = Game.clone_from(game, up_to_phase=state["name"])
+                    g_cf.set_orders(power, power_orders)
                     # g_cf.clear_orders()
                     # print(g_cf.orders, power, order)
                     assert g_cf.get_state()["name"] == state["name"]
@@ -129,8 +130,6 @@ def compute_xpower_supports(path, max_year=None, cf_agent=None):
 
 def compute_xpower_statistics(paths, max_year=None, num_jobs=40, cf_agent=None):
 
-    # pool = mp.Pool(num_jobs)
-    # stats = pool.starmap(compute_xpower_supports, [(path, max_year, cf_agent) for path in paths])
     if cf_agent is not None:
         # if running with CF-agent, can't use multiple cores (bc of model)
         stats = [
@@ -162,6 +161,43 @@ def compute_xpower_statistics(paths, max_year=None, num_jobs=40, cf_agent=None):
     )
 
 
+def get_game_paths(
+    game_dir, metadata_path=None, metadata_filter=None, dataset_for_eval=None, max_games=None
+):
+    if metadata_path:
+        with open(metadata_path) as mf:
+            metadata = json.load(mf)
+            if metadata_filter is not None:
+                filter_lambda = eval(metadata_filter)
+                game_ids = [k for k, g in metadata.items() if filter_lambda(g)]
+                print(f"Selected {len(game_ids)} / {len(metadata)} games from metadata file.")
+            else:
+                game_ids = metadata.keys()
+
+            if dataset_for_eval:
+                train_cache, eval_cache = torch.load(dataset_for_eval)
+                del train_cache
+                game_ids = eval_cache.game_ids
+                print(
+                    f"Selected {len(game_ids)} / {len(metadata)} games from dataset cache eval set."
+                )
+
+            metadata_paths = [f"{game_dir}/game_{game_id}.json" for game_id in game_ids]
+            paths = [p for p in metadata_paths if os.path.exists(p)]
+            print(f"{len(paths)} / {len(metadata_paths)} from metadata exist.")
+    else:
+        # just use all the paths
+        paths = glob.glob(f"{game_dir}/game*.json")
+        assert len(paths) > 0
+
+    # reduce the number of games if necessary
+    if len(paths) > max_games:
+        print(f"Sampling {max_games} from dataset of size {len(paths)}")
+        paths = [paths[i] for i in torch.randperm(len(paths))[:max_games]]
+
+    return paths
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("game_dir", help="Directory containing game.json files")
@@ -178,47 +214,14 @@ if __name__ == "__main__":
         "--metadata-filter", help="Lambda function to filter games based on metadata"
     )
     parser.add_argument("--dataset-for-eval", help="Dataset cache to select eval game IDs")
-    parser.add_argument(
-        "--model-path",
-        help="If specified, looks at xpower supports from this agent in the situations from the dataset games.",
-    )
-    parser.add_argument("--temperature", default=0.1, help="Temperature for cf_agent")
     args = parser.parse_args()
 
-    if args.metadata_path:
-        with open(args.metadata_path) as mf:
-            metadata = json.load(mf)
-            if args.metadata_filter is not None:
-                filter_lambda = eval(args.metadata_filter)
-                game_ids = [k for k, g in metadata.items() if filter_lambda(g)]
-                print(f"Selected {len(game_ids)} / {len(metadata)} games from metadata file.")
-            else:
-                game_ids = metadata.keys()
+    paths = get_game_paths(
+        args.game_dir,
+        metadata_path=args.metadata_path,
+        metadata_filter=args.metadata_filter,
+        dataset_for_eval=args.dataset_for_eval,
+        max_games=args.max_games,
+    )
 
-            if args.dataset_for_eval is not None:
-                train_cache, eval_cache = torch.load(args.dataset_for_eval)
-                del train_cache
-                game_ids = eval_cache.game_ids
-                print(
-                    f"Selected {len(game_ids)} / {len(metadata)} games from dataset cache eval set."
-                )
-
-            metadata_paths = [f"{args.game_dir}/game_{game_id}.json" for game_id in game_ids]
-            paths = [p for p in metadata_paths if os.path.exists(p)]
-            print(f"{len(paths)} / {len(metadata_paths)} from metadata exist.")
-    else:
-        # just use all the paths
-        paths = glob.glob(f"{args.game_dir}/game*.json")
-        assert len(paths) > 0
-
-    # reduce the number of games if necessary
-    if len(paths) > args.max_games:
-        print(f"Sampling {args.max_games} from dataset of size {len(paths)}")
-        paths = [paths[i] for i in torch.randperm(len(paths))[: args.max_games]]
-
-    if args.model_path:
-        cf_agent = DipnetAgent(args.model_path, args.temperature)
-    else:
-        cf_agent = None
-
-    compute_xpower_statistics(paths, max_year=args.max_year, cf_agent=cf_agent)
+    compute_xpower_statistics(paths, max_year=args.max_year)

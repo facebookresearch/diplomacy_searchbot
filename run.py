@@ -160,6 +160,26 @@ def play_webdip(cfg):
 
 
 @_register
+def compute_xpower_statistics(cfg):
+    from fairdiplomacy.get_xpower_supports import compute_xpower_statistics, get_game_paths
+
+    paths = get_game_paths(
+        cfg.game_dir,
+        metadata_path=cfg.metadata_path,
+        metadata_filter=cfg.metadata_filter,
+        dataset_for_eval=cfg.dataset_for_eval,
+        max_games=cfg.max_games,
+    )
+
+    if cfg.cf_agent.WhichOneof("agent") is not None:
+        cf_agent = build_agent_from_cfg(cfg.cf_agent)
+    else:
+        cf_agent = None
+
+    compute_xpower_statistics(paths, max_year=cfg.max_year, cf_agent=cf_agent)
+
+
+@_register
 def profile_model(cfg):
     from fairdiplomacy.profile_model import profile_model
 

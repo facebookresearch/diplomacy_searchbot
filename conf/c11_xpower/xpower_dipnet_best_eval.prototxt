@@ -1,0 +1,13 @@
+includes {path: "agents/dipnet"; mount: "cf_agent";}
+compute_xpower_statistics {
+  game_dir: "/checkpoint/alerer/fairdiplomacy/facebook_notext/games"
+  max_games: 1000
+  metadata_path: "/checkpoint/alerer/fairdiplomacy/facebook_notext/metadata.json"
+  dataset_for_eval: "/checkpoint/alerer/fairdiplomacy/facebook_notext/data_cache_fb_minrating0.5_value1.0.pt"
+  cf_agent: {
+    dipnet {
+      model_path: "/checkpoint/alerer/fairdiplomacy/sl_fbdata_20200717_solo_vd0.5/checkpoint.pth.best"
+      temperature: 0.1
+    }
+  }
+}

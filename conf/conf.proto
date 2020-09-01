@@ -541,6 +541,32 @@ message PlayWebdipTask {
   optional string webdip_url = 8 [ default = "http://webdiplomacy.net" ];
 }
 
+message ComputeXPowerStatisticsTask {
+    // Directory containing game.json files to evaluate
+    required string game_dir = 1;
+    // Max # of games to evaluate
+    optional int32 max_games = 2;
+    // Stop computing at this year (to avoid endless supports for draw
+    optional string max_year = 3 [ default = "1920" ];
+
+    // --- filtering ---
+    // Path to metadata file for games, allowing for filtering
+    optional string metadata_path = 4;
+    // Lambda function to filter games based on metadata, e.g. `lambda g: g["press_type"]=="Regular"`
+    optional string metadata_filter = 5;
+    // Dataset cache to select eval game IDs
+    optional string dataset_for_eval = 6;
+
+    // --- counterfactual agent ---
+    // If specified, looks at xpower supports from this agent in the situations from the dataset games.
+    // e.g. you can ask "what % of Dipnet's supports would be effective when playing in observed games.
+    // n.b. be careful about testing on Dipnet's training set!
+    optional Agent cf_agent = 7;
+
+    // -- perf --
+    optional int32 num_jobs = 8 [ default = 40 ];
+}
+
 // Compute throughput and latency numbers for the no-press model
 message ProfileModelTask {
   optional string model_path = 1;
@@ -579,6 +605,8 @@ message MetaCfg {
     BuildPressDbCacheTask build_press_db_cache = 109;
     PressTrainTask press_train = 110;
     ProfileModelTask profile_model = 111;
+    ComputeXPowerStatisticsTask compute_xpower_statistics = 112;
+
     // Dummy task to test heyhi.
     TestTask test = 999;
   }
