@@ -56,6 +56,7 @@ message CompareAgentsTask {
   }
 
   optional Agent agent_one = 2;
+  // Ignored if use_shared_agent.
   optional Agent agent_six = 3;
   optional Agent cf_agent = 4;
 
@@ -68,6 +69,10 @@ message CompareAgentsTask {
   optional int32 max_turns = 8;
 
   optional int32 max_year = 9 [ default = 1935 ];
+
+  // Optional. If set, agent_six is ignored, and agent_one is used to get all
+  // strategies. Enable share_strategy on CFR to get speed up.
+  optional bool use_shared_agent = 10;
 
   optional int32 num_processes = 90
       [ default = 0 ];                            // for data collection only!

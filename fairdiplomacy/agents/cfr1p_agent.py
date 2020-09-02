@@ -52,6 +52,7 @@ class CFR1PAgent(ThreadedSearchAgent):
         reset_seed_on_rollout=False,
         loser_bp_value=0.0,
         loser_bp_iter=64,
+        share_strategy=False,
         n_gpu=None,  # deprecated
         n_server_procs=None,  # deprecated
         postman_sync_batches=None,  # deprecated
@@ -78,6 +79,7 @@ class CFR1PAgent(ThreadedSearchAgent):
         self.bp_prob = bp_prob
         self.loser_bp_iter = loser_bp_iter
         self.loser_bp_value = loser_bp_value
+        self.share_strategy = share_strategy
 
         self.reset_seed_on_rollout = reset_seed_on_rollout
 
@@ -93,28 +95,26 @@ class CFR1PAgent(ThreadedSearchAgent):
         return list(sample_p_dict(prob_distributions[power]))
 
     def get_orders_many_powers(
-        self, game, powers, timings=None, single_cfr=False
+        self, game, powers, timings=None, single_cfr=None
     ) -> Dict[Power, List[str]]:
 
         if timings is None:
             timings = TimingCtx()
-        with timings("get_plausible_orders"):
-            power_plausible_orders = self.get_plausible_orders_helper(game)
+        if single_cfr is None:
+            single_cfr = self.share_strategy
+        with timings("get_orders_many_powers"):
+            # Noop to differentiate from single power call.
+            pass
         prob_distributions = {}
         if single_cfr:
             inner_timings = TimingCtx()
-            prob_distributions = self.get_all_power_prob_distributions(
-                game, power_plausible_orders=power_plausible_orders, timings=inner_timings
-            )
+            prob_distributions = self.get_all_power_prob_distributions(game, timings=inner_timings)
             timings += inner_timings
         else:
             for power in powers:
                 inner_timings = TimingCtx()
                 prob_distributions[power] = self.get_all_power_prob_distributions(
-                    game,
-                    early_exit_for_power=power,
-                    power_plausible_orders=power_plausible_orders,
-                    timings=inner_timings,
+                    game, early_exit_for_power=power, timings=inner_timings
                 )[power]
                 timings += inner_timings
         all_orders: Dict[Power, List[str]] = {}

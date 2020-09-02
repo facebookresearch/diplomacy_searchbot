@@ -121,6 +121,10 @@ message CFR1PAgent {
 
   // Optional. Enables optimization on clonning dipcc.Game objects.
   optional bool clear_old_all_possible_orders = 30;
+
+  // Optional. If set and a call to compute strategy for several agents is done
+  // (e.g., in compare agents), then CFR is run only once.
+  optional bool share_strategy = 31;
 }
 
 message BRSearchAgent {

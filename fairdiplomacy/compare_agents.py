@@ -1,9 +1,11 @@
 import logging
 import multiprocessing as mp
-import torch
 import os
 
-from fairdiplomacy.env import Env
+import numpy as np
+import torch
+
+from fairdiplomacy.env import Env, OneSixPolicyProfile, SharedPolicyProfile
 from fairdiplomacy.models.consts import POWERS
 
 
@@ -15,6 +17,7 @@ def run_1v6_trial(
     seed=0,
     cf_agent=None,
     *,
+    use_shared_agent=False,
     max_turns=None,
     max_year=1935,
 ):
@@ -28,16 +31,21 @@ def run_1v6_trial(
     - cf_agent: print out the orders for each power assuming that this agent was in charge
     - max_turns: finish game early; flag to speed up testing.
     - max_year: finish game early; flag to speed up testing.
+    - use_shared_agent: ingore agent_six and use agent_one for all
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
     torch.set_num_threads(1)
-    env = Env(
-        {power: agent_one if power == agent_one_power else agent_six for power in POWERS},
-        seed=seed,
-        cf_agent=cf_agent,
-        max_year=max_year,
-    )
+
+    if use_shared_agent:
+        del agent_six  # Unused.
+        policy_profile = SharedPolicyProfile(agent_one)
+    else:
+        policy_profile = OneSixPolicyProfile(
+            agent_one=agent_one, agent_six=agent_six, agent_one_power=agent_one_power, seed=seed
+        )
+
+    env = Env(policy_profile=policy_profile, seed=seed, cf_agent=cf_agent, max_year=max_year)
 
     scores = env.process_all_turns(max_turns=max_turns)
 

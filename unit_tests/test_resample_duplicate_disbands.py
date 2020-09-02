@@ -10,7 +10,8 @@ UNIT_TEST_DIR = os.path.dirname(__file__)
 class TestResampleDuplicateDisbands(unittest.TestCase):
     def test_2020_09_01(self):
         X = torch.load(
-            UNIT_TEST_DIR + "/data/resample_duplicate_disbands_inplace.debug.2020.09.01.pt"
+            UNIT_TEST_DIR + "/data/resample_duplicate_disbands_inplace.debug.2020.09.01.pt",
+            map_location="cpu",
         )
         resample_duplicate_disbands_inplace(
             X["order_idxs"],
