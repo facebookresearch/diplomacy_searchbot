@@ -31,7 +31,7 @@ import os
 load.register_all_agents()
 load.register_all_tasks()
 
-NUM_PROCESSES = 20  # change this depending on your CPU/mem needs
+NUM_PROCESSES = 10  # change this depending on your CPU/mem needs
 
 
 def chunks(lst, n):

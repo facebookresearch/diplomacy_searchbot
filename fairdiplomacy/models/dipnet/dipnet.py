@@ -8,12 +8,11 @@ import torch.nn.functional as F
 from torch import nn
 from torch.distributions.categorical import Categorical
 
-from fairdiplomacy.models.consts import POWERS, N_SCS
+from fairdiplomacy.models.consts import POWERS, N_SCS, LOCS, LOGIT_MASK_VAL
 from fairdiplomacy.models.dipnet.order_vocabulary import EOS_IDX
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
 from fairdiplomacy.utils.padded_embedding import PaddedEmbedding
 from fairdiplomacy.utils.timing_ctx import TimingCtx
-from fairdiplomacy.models.consts import LOCS
 from fairdiplomacy.models.dipnet.order_vocabulary import get_order_vocabulary, EOS_IDX
 
 EOS_TOKEN = get_order_vocabulary()[EOS_IDX]
@@ -639,7 +638,7 @@ class LSTMDipNetDecoder(nn.Module):
 
             with timings("dec.logits_mask"):
                 # make logits for invalid actions a large negative
-                logits = torch.min(logits, cand_mask.float() * 1e9 - 1e8)
+                logits = torch.min(logits, cand_mask.float() * 1e9 + LOGIT_MASK_VAL)
                 all_logits.append(logits)
 
             with timings("dec.logits_temp_top_p"):
@@ -678,7 +677,10 @@ class LSTMDipNetDecoder(nn.Module):
             stacked_order_idxs = torch.stack(all_order_idxs, dim=1)
             stacked_sampled_idxs = torch.stack(all_sampled_idxs, dim=1)
             stacked_logits = cat_pad_sequences(
-                [x.unsqueeze(1) for x in all_logits], seq_dim=2, cat_dim=1, pad_value=-1e8
+                [x.unsqueeze(1) for x in all_logits],
+                seq_dim=2,
+                cat_dim=1,
+                pad_value=LOGIT_MASK_VAL,
             )
             r = stacked_order_idxs, stacked_sampled_idxs, stacked_logits
 

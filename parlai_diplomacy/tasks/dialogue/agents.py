@@ -42,7 +42,7 @@ class DialogueTeacher(FixedDialogTeacher):
 
     @staticmethod
     def add_cmdline_args(argparser):
-        argparser = utls.add_common_args(argparser)
+        argparser = utls.add_common_dialogue_args(argparser)
         return argparser
 
     def __init__(self, opt, shared=None):
@@ -135,7 +135,7 @@ class DialogueChunkTeacher(ChunkTeacher):
 
     @staticmethod
     def add_cmdline_args(argparser):
-        argparser = utls.add_common_args(argparser)
+        argparser = utls.add_common_dialogue_args(argparser)
         return argparser
 
     def __init__(self, opt, shared=None):
@@ -291,7 +291,6 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         """
         Return the number of samples given the datatype.
         """
-        # TODO: get actual counts here
         datatype = opt["datatype"]
         if "train" in datatype:
             return 10343021, 10343021

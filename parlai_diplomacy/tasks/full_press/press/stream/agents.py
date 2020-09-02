@@ -56,8 +56,8 @@ class PressChunkTeacher(BaseOrderChunkTeacher):
         data["state"] = self.format_state(data["state"])
 
         # format messages
-        data["message"] = self.format_msg(data)
-        data["message_history"] = self.format_msg_history(data)
+        data["message"] = self.format_msg(data["message"], phase_id)
+        data["message_history"] = self.format_msg_history(data["message_history"])
 
         # We convert a single data example into several different ones by splitting each "message" into
         # a different example and adapting message_history accordingly at each phase

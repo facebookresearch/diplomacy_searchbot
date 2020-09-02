@@ -16,6 +16,7 @@ from glob import glob
 import gzip
 import json
 import re
+import time
 from tqdm import tqdm
 
 
@@ -30,8 +31,11 @@ def load_json(path):
 
 
 def load_from_gz(fle):
+    start_time = time.time()
     with gzip.open(fle, "rb") as f:
         dct = json.load(f)
+    tot_time = time.time() - start_time
+    logging.log(f"Time to load file: {round(tot_time), 2} seconds", level=logging.SPAM)
 
     return dct
 

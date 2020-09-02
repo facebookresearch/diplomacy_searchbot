@@ -50,6 +50,35 @@ COUNTRY_ID_TO_POWER = {
 ###########################################
 
 
+def add_common_task_args(argparser):
+    """
+    Add arguments that are common to ALL diplomacy teachers
+    """
+    argparser.add_argument(
+        "--loading-chunks",
+        type=int,
+        choices={250, 1000},
+        default=1000,
+        help="The data exists in two formats: 250 chunks and 1000; 1000 is quicker to load a single chunk but slower to load all; choose which is best for your use case",
+    )
+
+    return argparser
+
+
+def add_common_dialogue_args(argparser):
+    """
+    Add common commandline args to the dialogue teachers
+    """
+    argparser.add_argument(
+        "--min-turns",
+        type=int,
+        default=1,
+        choices={1, 2, 3, 4},
+        help="Minimum number of dialogue turns per conversation",
+    )
+    return argparser
+
+
 def is_training(datatype):
     return "train" in datatype and "evalmode" not in datatype
 
@@ -177,20 +206,6 @@ def phase_abbrev_to_phase(phase):
     phase_converted = f"{season_year} {phase_type}"
 
     return phase_converted
-
-
-def add_common_args(argparser):
-    """
-    Add common commandline args to the different teachers
-    """
-    argparser.add_argument(
-        "--min-turns",
-        type=int,
-        default=1,
-        choices={1, 2, 3, 4},
-        help="Minimum number of dialogue turns per conversation",
-    )
-    return argparser
 
 
 def load_message_data():
