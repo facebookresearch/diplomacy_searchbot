@@ -1,9 +1,10 @@
 """
 Check that all of the data loads without crashing
 """
-from parlai.utils.testing import capture_output
 import parlai.utils.logging as logging
 import parlai_diplomacy.utils.loading as load
+import contextlib
+import io
 
 
 load.register_all_agents()
@@ -26,6 +27,21 @@ STREAM_TEACHER_LST = [
     "message_history_order_history_dialogue_chunk",
     "message_history_order_history_state_dialogue_chunk",
 ]
+
+
+@contextlib.contextmanager
+def capture_output():
+    """
+    Suppress all logging output into a single buffer.
+    Use as a context manager.
+    >>> with capture_output() as output:
+    ...     print('hello')
+    >>> output.getvalue()
+    'hello'
+    """
+    sio = io.StringIO()
+    with contextlib.redirect_stdout(sio), contextlib.redirect_stderr(sio):
+        yield sio
 
 
 def display_data(opt):

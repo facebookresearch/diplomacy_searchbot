@@ -151,7 +151,9 @@ def join_order_and_msg(
                         with_special_token,
                         special_tokens_map,
                     )
-                    speaker_msg = get_msgs_raw_for_speaker(raw_msg[game_id][phase], speaker_id)
+                    speaker_msg = get_msgs_raw_for_speaker(
+                        raw_msg[game_id][phase], speaker_id, phase
+                    )
                     if no_msg_selected:
                         data_status = "Game_Phase_NoMsg"  # Game in msg.table, phase in msg.table, but no msg in this phase
                     else:
@@ -335,7 +337,7 @@ def get_msg_from_speaker(
     return speaker_msgs, no_msgs_selected
 
 
-def get_msgs_raw_for_speaker(conv, speaker_id):
+def get_msgs_raw_for_speaker(conv, speaker_id, phase):
     """
     Get all messages for a spaker without doing any formatting
     """
@@ -358,6 +360,7 @@ def get_msgs_raw_for_speaker(conv, speaker_id):
                     "listener": listener,
                     "message": entry["message"],
                     "time_sent": entry["timeSent"],
+                    "phase": phase,
                 }
                 messages.append(message)
 

@@ -8,7 +8,7 @@
 Utils for converting game JSONs into string sequences for model input
 """
 import parlai_diplomacy.tasks.common_task_utils as task_utils
-from collections import defaultdict
+import parlai_diplomacy.utils.game_to_sequence_formatting as fmt
 
 
 class SequenceFormatHelper:
@@ -31,7 +31,7 @@ class SequenceFormatHelper:
         for phase in json:
             seqs[phase] = {}
             # TODO: make this work with special tokens
-            state = flatten_state(json[phase]["state"], None, None)
+            state = fmt.flatten_state(json[phase]["state"], None, None)
             for _, speaker in task_utils.COUNTRY_ID_TO_POWER.items():
                 # set up speaker
                 player_prompt_token = f"{phase} {speaker.capitalize()}:"

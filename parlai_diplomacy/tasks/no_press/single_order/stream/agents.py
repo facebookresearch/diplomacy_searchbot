@@ -25,6 +25,7 @@ import json
 File that takes board state data to predict orders for one single player. (streaming)
 """
 TRAIN_VAL_SPLIT = 990  # 99% of 1000 to mimic fairdip NOTE: this changed recently!
+TRAIN_VAL_SPLIT_250 = 248
 
 
 @register_teacher("base_order_chunk")
@@ -37,7 +38,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
 
     @staticmethod
     def add_cmdline_args(argparser):
-        argparser = utls.add_common_args(argparser)
+        argparser = utls.add_common_task_args(argparser)
         argparser.add_argument(
             "--n_chunks",
             type=int,
@@ -51,13 +52,20 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         if shared is None:
             # set map
             self.opt = opt
+            if self.opt["n_chunks"] > 0 and self.opt["loading_chunks"] != 1000:
+                raise RuntimeError(
+                    "To load a specific number of chunks, must specify --loading-chunks 1000"
+                )
             self._set_chunk_idx_to_file()
         else:
             self.chunk_idx_to_file = shared["chunk_idx_to_file"]
         super().__init__(opt, shared)
 
     def _get_data_folder(self):
-        return constants.CHUNK_MESSAGE_ORDER_PATH
+        if self.opt.get("loading_chunks", 1000) == 1000:
+            return constants.CHUNK_MESSAGE_ORDER_PATH
+        else:
+            return constants.CHUNK_MESSAGE_ORDER_250_PATH
 
     def get_num_samples(self, opt) -> Tuple[int, int]:
         """
@@ -65,7 +73,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         """
         datatype = opt["datatype"]
         n_chunks = opt.get("n_chunks")
-        if n_chunks == -1:
+        if n_chunks < 0:
             if "train" in datatype:
                 return 14211400, 14211400
 
@@ -111,10 +119,16 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             logging.warn("Test set does not exist, switching to valid")
             datatype = datatype.replace("test", "valid")
 
+        to_split = (
+            TRAIN_VAL_SPLIT
+            if self.opt.get("loading_chunks", 1000) == 1000
+            else TRAIN_VAL_SPLIT_250
+        )
+
         if "train" in datatype:
-            chunk_idxs_to_load = all_chunk_idxs[:TRAIN_VAL_SPLIT]
+            chunk_idxs_to_load = all_chunk_idxs[:to_split]
         elif "valid" in datatype:
-            chunk_idxs_to_load = all_chunk_idxs[TRAIN_VAL_SPLIT:]
+            chunk_idxs_to_load = all_chunk_idxs[to_split:]
 
         if n_chunks != -1:
             logging.warn(
