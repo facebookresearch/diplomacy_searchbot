@@ -1,20 +1,17 @@
 """
-File to wrap ParlAI agent
-
-
-Test files:
-all order pred: /checkpoint/wyshi/20200827/resume_allorder_shortstate_bart_diplomacy/18e/model
-single order pred: /checkpoint/wyshi/20200827/resume_newdata_state_order_chunk_bart_diplomacy/18e/model
+Module to wrap ParlAI agent to produce orders given a game JSON.
 """
 from abc import ABC, abstractmethod
-from copy import deepcopy
 import json
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from parlai.core.agents import create_agent_from_model_file
 import parlai_diplomacy.utils.game_loading as game_load
 import parlai_diplomacy.utils.game_to_sequence_formatting as formatter
+
+
+TESTCASE_PATH = str(pathlib.Path(__file__).parent.parent.parent.parent / "test_situations.json")
 
 
 class BaseWrapper(ABC):
@@ -74,11 +71,31 @@ class BaseWrapper(ABC):
         return output_dct
 
     @abstractmethod
-    def format_input_seq(self, game_json):
+    def format_input_seq(self, game_json: Dict) -> Dict[str, str]:
+        """
+        Given a game json, return a dictionary of formatted input sequences for each
+        power to feed directly to the model
+
+        Args:
+        game_json: game json file as returned by Game.to_saved_format().
+
+        Returns:
+        A dict of `power` -> `input sequence for model`
+        """
         pass
 
     @abstractmethod
-    def format_output_seq(self, output_seq):
+    def format_output_seq(self, output_seq: str, power: str) -> Set[str]:
+        """
+        Given a text sequence returned by a model and a power, return the set
+        of orders predicted for a given model
+
+        Args:
+        output_seq: output sequence of text returned by the model
+
+        Returns:
+        A set of orders
+        """
         pass
 
 
@@ -94,18 +111,21 @@ class ParlAISingleOrderWrapper(BaseWrapper):
 
 class ParlAIAllOrderWrapper(BaseWrapper):
     def format_input_seq(self, game_json):
-        # TODO
-        pass
+        format_sequences = formatter.SequenceFormatHelper.change_format(
+            game_json, "shortstate_order"
+        )
+        return format_sequences
 
     def format_output_seq(self, output_seq, power):
-        # TODO
-        pass
+        orders_dct = formatter.all_orders_seq_to_dct(output_seq)
+        power_preds = orders_dct[power.capitalize()]
+        return power_preds
 
 
-def test_load():
-    TESTCASE_PATH = str(
-        pathlib.Path(__file__).parent.parent.parent.parent / "test_situations.json"
-    )
+def test_load_single():
+    """
+    Test load and predictions for a ParlAI transformer trained to produce a single order at a time
+    """
     with open(TESTCASE_PATH, "r") as f:
         data = json.load(f)
 
@@ -119,7 +139,29 @@ def test_load():
         game = game_load.organize_game_by_phase(game)
         orders = agent.produce_order(game_json=game, possible_orders=[], max_orders=None)
         print(orders)
+        break
+
+
+def test_load_all():
+    """
+    Test load and predictions for a ParlAI transformer trained to predict all orders at once
+    """
+    with open(TESTCASE_PATH, "r") as f:
+        data = json.load(f)
+
+    agent = ParlAIAllOrderWrapper(
+        model_path="/checkpoint/wyshi/20200827/resume_allorder_shortstate_bart_diplomacy/18e/model"
+    )
+
+    for _, info in data.items():
+        game_json_path = info["game_path"]
+        game = game_load.load_viz_to_dipcc_format(game_json_path)
+        game = game_load.organize_game_by_phase(game)
+        orders = agent.produce_order(game_json=game, possible_orders=[], max_orders=None)
+        print(orders)
+        break
 
 
 if __name__ == "__main__":
-    test_load()
+    test_load_single()
+    test_load_all()
