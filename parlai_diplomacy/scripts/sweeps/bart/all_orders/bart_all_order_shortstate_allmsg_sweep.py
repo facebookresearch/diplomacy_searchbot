@@ -11,7 +11,7 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "all_order_shortstate_all_order_bart_diplomacy"
+sweep_name = "allmessage_shortstate_allorder_chunk_bart_diplomacy"
 NUM_HOURS = 72
 
 # Define param grid
@@ -21,7 +21,7 @@ grid = {
     "--dynamic-batching": ["full"],
     "-t": ["allmessage_shortstate_allorder_chunk"],
     "-dt": ["train:stream"],
-    "--num-epochs": [10],
+    "--num-epochs": [20],
     "--min-turns": [1,],
     "-veps": [0.1],
     "--attention-dropout": [0.00],
@@ -43,9 +43,9 @@ grid = {
     "--model-parallel": [False],
     "--save-after-valid": [True],
     "--text-truncate": [1024],
-    "--warmup-updates": [10000],
+    "--warmup-updates": [10_000],
     "--fp16-impl": ["mem_efficient"],
-    "--update-freq": [1],
+    "--update-freq": [4],
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
     "-vp": [100],
@@ -54,7 +54,7 @@ grid = {
     "-vmm": ["min"],
     "-stim": [360],
     "-vme": [10_000],
-    "-bs": [4],
+    "-bs": [2],
 }
 
 if __name__ == "__main__":

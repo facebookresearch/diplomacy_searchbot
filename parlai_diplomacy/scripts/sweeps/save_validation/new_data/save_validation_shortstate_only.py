@@ -16,7 +16,7 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "eval_shortstate_order_chunk_BART_olddata_oldcode_parlai_prev0.8"  # change this
+sweep_name = "eval_newdata_shortstate_order_chunk"  # change this
 NUM_HOURS = 72
 
 # save path
@@ -36,19 +36,18 @@ grid = {
     # "--verbose": [True],
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "-mf": [
-        "/checkpoint/wyshi/20200825/shortstate_order_chunk_Bart_ParlaiPre0.8.0_33d07c1/de8/model"
+        "/checkpoint/wyshi/20200827/resume_newdata_shortstate_order_chunk_bart_diplomacy/18e/model"
     ],  # change this
     "-m": ["bart",],
     "-t": [f"{TEACHER}"],
     "-dt": ["valid:stream"],
     "--report-filename": [os.path.join(VALID_REPORT_SAVE_PATH, "valid_report")],
     "--label-truncate": [256],
-    "--text-truncate": [1024],
+    "--text-truncate": [256],
     "--save-world-logs": [True],
     "--skip-generation": [False],
-    # "--dynamic-batching": ["full"],
     "--inference": ["greedy"],
-    "-bs": [128],
+    "-bs": [256],
     "--min-turns": [1,],
 }
 
@@ -71,10 +70,3 @@ if __name__ == "__main__":
         mem_gb=400,
         copy_env=True,
     )
-
-    # bash(
-    #     f"python scripts/evaluation/aggregate_valid_reports.py --sweep_name {sweep_name} --teacher {TEACHER} --date_of_sweep {DATE} {predict_all_order}"
-    # )
-    # bash(
-    #     f"python scripts/evaluation/compute_accuracy.py --eval_file {VALID_REPORT_SAVE_JSON_PATH} --json"
-    # )

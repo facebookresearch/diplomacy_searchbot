@@ -133,3 +133,19 @@ class MessageOrderChunkTeacher(BaseOrderChunkTeacher):
         msg["text"] = f"{queue_output['message']} {curr_player}"
 
         return Message(msg)
+
+
+@register_teacher("allmessage_order_chunk")
+class MessageOrderChunkTeacher(BaseOrderChunkTeacher):
+    """
+    Text field (input) contains MESSAGE information only
+    Label is the order given by the player
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        all_message = queue_output["message_history"] + "\n" + queue_output["message"]
+        msg["text"] = f"{all_message} {curr_player}"
+
+        return Message(msg)

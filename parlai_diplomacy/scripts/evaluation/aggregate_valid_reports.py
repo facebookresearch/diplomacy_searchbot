@@ -37,7 +37,7 @@ import parlai_diplomacy.tasks.common_task_utils as utls
 VALID_SAVE_ROOT = "/checkpoint/fairdiplomacy/press_diplomacy/validation/validation_report/"
 
 
-def get_valid_report_path(sweep_name, data_type, teacher, date_of_sweep=None):
+def get_valid_report_path(sweep_name, teacher, date_of_sweep=None):
     """
     return report related paths
     """
@@ -86,6 +86,7 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
     total = 0
     total_without_key_error = 0
     correct = 0
+    correct_non_empty = 0
     key_error = 0
     for data in raw_data:
         total += 1
@@ -118,6 +119,9 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
             if order == predicted_order:
                 correct += 1
 
+            if not order and order == predicted_order:
+                correct_non_empty += 1
+
             if game_id in final_data:
                 if phase_id in final_data[game_id]:
                     if speaker_id in final_data[game_id][phase_id]:
@@ -142,6 +146,9 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
 
     # just for reference, these metrics cannot be directly compared against fairdip
     print(f"order acc: {correct/total_without_key_error} ({correct}/{total_without_key_error})")
+    print(
+        f"non-empty order acc: {correct_non_empty/total_without_key_error} ({correct_non_empty}/{total_without_key_error})"
+    )
     print(f"key error: {key_error/total} ({key_error}/{total})")
 
     with open(VALID_REPORT_SAVE_JSON_PATH, "w") as fh:
