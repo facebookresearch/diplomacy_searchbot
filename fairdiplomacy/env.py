@@ -1,61 +1,73 @@
 import logging
-import numpy as np
 import random
 import time
+
+import numpy as np
 import torch
-from concurrent.futures import ThreadPoolExecutor
 
-from fairdiplomacy.game import Game
+from fairdiplomacy.agents.cfr1p_agent import CFR1PAgent
 
-logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s")
-logging.getLogger().setLevel(logging.INFO)
+from pydipcc import Game
+from fairdiplomacy.models.consts import POWERS
+
+
+PYDIPCC_MAX_YEAR = 1935
+
+
+class OneSixPolicyProfile:
+    """A combination of independent agents to predict all power moves."""
+
+    def __init__(self, agent_one, agent_six, agent_one_power, seed=0):
+        self._agent_one_power = agent_one_power
+        self._six_powers = [p for p in POWERS if p != agent_one_power]
+        self._agent_one = agent_one
+        self._agent_six = agent_six
+
+    def get_all_power_orders(self, game):
+        logging.debug("Starting turn {}".format(game.phase))
+        orders = {}
+        orders.update(self._agent_one.get_orders_many_powers(game, [self._agent_one_power]))
+        orders.update(self._agent_six.get_orders_many_powers(game, self._six_powers))
+        return orders
+
+
+class SharedPolicyProfile:
+    """Single agent that predicts orders for all powers."""
+
+    def __init__(self, agent):
+        self.agent = agent
+
+    def get_all_power_orders(self, game):
+        return self.agent.get_orders_many_powers(game, POWERS)
 
 
 class Env:
-    def __init__(self, agents, seed=0, cf_agent=None, max_year=1935):
-        """
-        agents must be one of:
-            1. a list of 7 Agent objects, which will be randomly assigned to powers
-            2. a dict of power name -> Agent object,
-                e.g.  {"AUSTRIA": <Agent>, "FRANCE": <Agent>, ...}
-        """
-        self.game = Game(max_year=max_year)
-        self.thread_pool = ThreadPoolExecutor(max_workers=len(self.game.powers))
+    def __init__(self, policy_profile, seed=0, cf_agent=None, max_year=PYDIPCC_MAX_YEAR):
+        self.game = Game()
 
         # set random seeds
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-        # Save self.agents as a map of power name -> Agent
-        if all(power in agents for power in self.game.powers.keys()):
-            self.agents = agents
-        else:
-            expected_len_powers = len(self.game.powers.keys())
-            if len(agents) != expected_len_powers:
-                raise ValueError(
-                    "Bad value for arg: agents, must be list or dict of {} Agents".format(
-                        expected_len_powers
-                    )
-                )
-            random.shuffle(agents)
-            self.agents = dict(zip(self.game.powers.keys(), agents))
-
+        self.policy_profile = policy_profile
         self.cf_agent = cf_agent
+        assert (
+            max_year <= PYDIPCC_MAX_YEAR
+        ), f"pydipcc doesn't allow to go beyond {PYDIPCC_MAX_YEAR}"
+        self.max_year = max_year
 
     def process_turn(self, timeout=10):
         logging.debug("Starting turn {}".format(self.game.phase))
 
-        for power, agent in self.agents.items():
+        power_orders = self.policy_profile.get_all_power_orders(self.game)
+
+        for power, orders in power_orders.items():
             if not self.game.get_orderable_locations().get(power):
                 logging.debug(f"Skipping orders for {power}")
                 continue
-            t = time.time()
-            orders = agent.get_orders(self.game, power)
             logging.info(
-                "Set orders {} {} {} in {}s".format(
-                    self.game.current_short_phase, power, orders, time.time() - t
-                )
+                "Set orders {} {} {}".format(self.game.current_short_phase, power, orders)
             )
             if self.cf_agent:
                 cf_orders = self.cf_agent.get_orders(self.game, power)
@@ -75,6 +87,9 @@ class Env:
         while not self.game.is_game_done:
             if max_turns and turn_id >= max_turns:
                 break
+            _, year, _ = self.game.phase.split()
+            if int(year) > self.max_year:
+                break
             self.process_turn()
             turn_id += 1
 
@@ -82,4 +97,5 @@ class Env:
 
     def save(self, output_path):
         logging.info("Saving to {}".format(output_path))
-        self.game.to_saved_game_format(output_path)
+        with open(output_path, "w") as stream:
+            stream.write(self.game.to_json())

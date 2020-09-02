@@ -59,6 +59,7 @@ def compare_agents(cfg):
             num_trials=cfg.num_trials,
             max_turns=cfg.max_turns,
             max_year=cfg.max_year,
+            use_shared_agent=cfg.use_shared_agent,
         )
     else:
         result = run_1v6_trial(
@@ -68,7 +69,9 @@ def compare_agents(cfg):
             save_path=cfg.out if cfg.out else None,
             seed=cfg.seed,
             cf_agent=cf_agent,
+            max_turns=cfg.max_turns,
             max_year=cfg.max_year,
+            use_shared_agent=cfg.use_shared_agent,
         )
         logging.warning("Result: {}".format(result))
 

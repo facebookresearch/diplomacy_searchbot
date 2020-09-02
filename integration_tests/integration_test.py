@@ -141,3 +141,23 @@ def test_compare_agents():
             "max_turns=1",
         ],
     )
+
+
+def test_compare_agents_single_cfr():
+    out_path = TMP_DIR / "c01_ag_cmp" / "model.pth"
+    _create_supervised_model(out_path)
+    integration_tests.heyhi_utils.run_config(
+        cfg=heyhi.CONF_ROOT / "c01_ag_cmp" / "cmp.prototxt",
+        overrides=[
+            "I.agent_one=agents/cfr1p",
+            "I.agent_six=agents/dipnet",
+            f"agent_one.cfr1p.model_path={out_path}",
+            f"agent_six.dipnet.model_path={out_path}",
+            "agent_one.cfr1p.n_rollouts=1",
+            "agent_one.cfr1p.max_rollout_length=0",
+            "agent_one.cfr1p.n_rollout_procs=1",
+            "max_turns=1",
+            "use_shared_agent=1",
+            "agent_one.cfr1p.share_strategy=1",
+        ],
+    )
