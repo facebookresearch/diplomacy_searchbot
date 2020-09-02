@@ -6,6 +6,7 @@ import json
 import pathlib
 from typing import Dict, List, Optional, Set
 
+from fairdiplomacy.models.consts import POWERS
 from parlai.core.agents import create_agent_from_model_file
 import parlai_diplomacy.utils.game_loading as game_load
 import parlai_diplomacy.utils.game_to_sequence_formatting as formatter
@@ -40,36 +41,33 @@ class BaseWrapper(ABC):
     def produce_order(
         self,
         game_json: Dict,
-        possible_orders: List[List[str]],
         power: str,
+        possible_orders: List[List[str]],
         max_orders: Optional[int] = None,
     ) -> List[str]:
         """
         Queries an agent to select most probable orders from the possible ones.
 
         Args:
-            game_json: game json file as returned by Game.to_saved_format().
-            possible_orders: list of possibilities for each location. E.g.,
-              the first location may contain all orders that are possible for
-              “A MAR”.
-            power: name of the power for which orders are queried.
-            max_orders: only available for build stage, max number of orders
-              to produce.
+        game_json: game json file as returned by Game.to_saved_format().
+        power: name of the power for which orders are queried.
+        possible_orders: list of possibilities for each location. E.g., the first location may contain all orders that are possible for “A MAR”.
+        max_orders: only available for build stage, max number of orders to produce.
 
         Returns:
-            orders: list of orders for each position or list of build/disband orders for chosen positions.
+        orders: list of orders for each position or list of build/disband orders for chosen positions.
 
-            If `max_orders is None`, than `len(orders) == len(possible_orders)`
-            and `orders in product(*possible_orders)`.
+        If `max_orders is None`, than `len(orders) == len(possible_orders)`
+        and `orders in product(*possible_orders)`.
 
-            If `max_orders is not None`, then `len(orders) <= max_orders`
-            and `any(set(seq).issuperset(orders) for seq in product(*possible_orders))`.
+        If `max_orders is not None`, then `len(orders) <= max_orders`
+        and `any(set(seq).issuperset(orders) for seq in product(*possible_orders))`.
         """
         game_json = game_load.organize_game_by_phase(game_json)
         seqs = self.format_input_seq(game_json)
         seq = list(seqs.values())[-1][power]
         raw_pred = self.get_model_pred(seq)
-        return self.format_output_seq(raw_pred, power)
+        return list(self.format_output_seq(raw_pred, power))
 
     @abstractmethod
     def format_input_seq(self, game_json: Dict) -> Dict[str, str]:
@@ -137,8 +135,12 @@ def test_load_single():
     for _, info in data.items():
         game_json_path = info["game_path"]
         game = game_load.load_viz_to_dipcc_format(game_json_path)
-        orders = agent.produce_order(game_json=game, possible_orders=[], max_orders=None)
-        print(orders)
+        for power in POWERS:
+            orders = agent.produce_order(
+                game_json=game, power=power, possible_orders=[], max_orders=None
+            )
+            print("==", power)
+            print(orders)
         break
 
 
@@ -156,8 +158,12 @@ def test_load_all():
     for _, info in data.items():
         game_json_path = info["game_path"]
         game = game_load.load_viz_to_dipcc_format(game_json_path)
-        orders = agent.produce_order(game_json=game, possible_orders=[], max_orders=None)
-        print(orders)
+        for power in POWERS:
+            orders = agent.produce_order(
+                game_json=game, power=power, possible_orders=[], max_orders=None
+            )
+            print("==", power)
+            print(orders)
         break
 
 

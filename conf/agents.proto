@@ -288,6 +288,10 @@ message ReproAgent {
 message ParlAIAgent {
   // Required. Path to the model.
   optional string model_path = 1;
+
+  // Required. Whether to use wrapper that predicts orders per power or predict
+  // all powers at once. The model should match this.
+  optional bool predict_all_orders = 2;
 }
 
 message Agent {

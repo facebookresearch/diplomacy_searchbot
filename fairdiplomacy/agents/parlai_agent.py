@@ -4,12 +4,15 @@ import json
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, decode_order_idxs
 from fairdiplomacy.models.consts import POWERS
-from parlai_diplomacy.utils.wrapper.wrapper_agent import ParlAISingleOrderWrapper
+from parlai_diplomacy.utils.wrapper import wrapper_agent
 
 
 class ParlAISingleOrderAgent(BaseAgent):
-    def __init__(self, *, model_path):
-        self._model = ParlAISingleOrderWrapper(model_path)
+    def __init__(self, *, model_path, predict_all_orders):
+        if predict_all_orders:
+            self._model = wrapper_agent.ParlAIAllOrderWrapper(model_path)
+        else:
+            self._model = wrapper_agent.ParlAISingleOrderWrapper(model_path)
 
     def get_orders(self, game, power) -> List[str]:
         return self.get_orders_many_powers(game, [power])[power]
