@@ -7,7 +7,7 @@ from .ce1p_agent import CE1PAgent
 from .fp1p_agent import FP1PAgent
 from .random_agent import RandomAgent
 from .repro_agent import ReproAgent
-from .parlai_agent import ParlAISingleOrderAgent
+from .parlai_agent import ParlAIAgent
 
 
 def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.agents.BaseAgent":
@@ -24,7 +24,7 @@ def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.
         "ce1p": CE1PAgent,
         "fp1p": FP1PAgent,
         "repro": ReproAgent,
-        "parlai": ParlAISingleOrderAgent,
+        "parlai": ParlAIAgent,
         None: None,
     }[agent_name](**MessageToDict(agent_cfg, preserving_proto_field_name=True))
 

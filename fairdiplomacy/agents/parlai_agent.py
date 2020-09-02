@@ -7,7 +7,7 @@ from fairdiplomacy.models.consts import POWERS
 from parlai_diplomacy.utils.wrapper import wrapper_agent
 
 
-class ParlAISingleOrderAgent(BaseAgent):
+class ParlAIAgent(BaseAgent):
     def __init__(self, *, model_path, predict_all_orders):
         if predict_all_orders:
             self._model = wrapper_agent.ParlAIAllOrderWrapper(model_path)
