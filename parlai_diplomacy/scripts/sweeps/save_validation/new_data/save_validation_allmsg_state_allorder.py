@@ -16,12 +16,12 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "eval_shortstate_allorder_chunk_BART"  # change this
+sweep_name = "eval_newdata_allmessage_shortstate_allorder_chunk"  # change this
 NUM_HOURS = 72
 
 # save path
 DATE = str(date.today()).replace("-", "")
-TEACHER = "shortstate_allorder_chunk"  # change this
+TEACHER = "allmessage_shortstate_allorder_chunk"  # change this
 (
     VALID_REPORT_SAVE_PATH,
     _,
@@ -29,14 +29,14 @@ TEACHER = "shortstate_allorder_chunk"  # change this
 ) = aggregate_valid_reports.get_valid_report_path(sweep_name, TEACHER, date_of_sweep=DATE)
 logging.info(f"mkdir {VALID_REPORT_SAVE_PATH}")
 bash("mkdir -p " + VALID_REPORT_SAVE_PATH)
-predict_all_order = "--predict_all_order"
+# predict_all_order = "--predict_all_order"
 
 # Define param grid
 grid = {
     # "--verbose": [True],
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "-mf": [
-        "/checkpoint/wyshi/diplomacy/all_orders_experiments/model_for_eval/tmp/model"
+        "/checkpoint/wyshi/20200828/allmessage_shortstate_allorder_chunk_bart_diplomacy/18e/model"
     ],  # change this
     "-m": ["bart",],
     "-t": [f"{TEACHER}"],
@@ -46,7 +46,6 @@ grid = {
     "--text-truncate": [1024],
     "--save-world-logs": [True],
     "--skip-generation": [False],
-    # "--dynamic-batching": ["full"],
     "--inference": ["greedy"],
     "-bs": [64],
     "--min-turns": [1,],
@@ -57,12 +56,12 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="learnfair",
+        partition="dev",
         jobtime=f"{NUM_HOURS}:00:00",
         prefix="python -u parlai_diplomacy/scripts/distributed_eval.py",
         one_job_per_node=False,
         gpus=8,
-        nodes=8,
+        nodes=2,
         create_model_file=False,
         requeue=True,
         include_job_id=False,
@@ -71,10 +70,3 @@ if __name__ == "__main__":
         mem_gb=400,
         copy_env=True,
     )
-
-    # bash(
-    #     f"python scripts/evaluation/aggregate_valid_reports.py --sweep_name {sweep_name} --teacher {TEACHER} --date_of_sweep {DATE} {predict_all_order}"
-    # )
-    # bash(
-    #     f"python scripts/evaluation/compute_accuracy.py --eval_file {VALID_REPORT_SAVE_JSON_PATH} --json"
-    # )

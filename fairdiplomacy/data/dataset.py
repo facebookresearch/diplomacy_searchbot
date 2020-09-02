@@ -254,22 +254,35 @@ class Dataset(torch.utils.data.Dataset):
 
     @classmethod
     def from_merge(cls, datasets: Sequence["Dataset"]) -> torch.utils.data.Dataset:
-        return MyConcatDataset(datasets)
+        for d in datasets:
+            if d.n_cf_agent_samples != 1:
+                raise NotImplementedError()
+            if not d._preprocessed:
+                raise NotImplementedError()
 
+        merged = Dataset(
+            game_ids=[x for d in datasets for x in d.game_ids],
+            data_dir=None,
+            game_metadata=None,
+            only_with_min_final_score=None,
+            num_dataloader_workers=None,
+            value_decay_alpha=None,
+        )
 
-class MyConcatDataset(torch.utils.data.ConcatDataset):
-    """Concat dataset that support indexing by tensors."""
+        game_offsets = np.cumsum([0] + [d.num_games for d in datasets[:-1]])
+        phase_offsets = np.cumsum([0] + [d.num_phases for d in datasets[:-1]])
 
-    def __getitem__(self, index):
-        """This function returns elements from the index without order guarantees!."""
-        if isinstance(index, int):
-            return super().__getitem__(index)
-        chunks = []
-        for i, (start, end) in enumerate(zip([0] + self.cumulative_sizes, self.cumulative_sizes)):
-            subindices = index[(index >= start) & (index < end)]
-            if len(subindices):
-                chunks.append(self.datasets[i][subindices - start])
-        return DataFields.cat(chunks)
+        merged.game_idxs = torch.cat([d.game_idxs + off for d, off in zip(datasets, game_offsets)])
+        merged.phase_idxs = torch.cat([d.phase_idxs for d in datasets])
+        merged.power_idxs = torch.cat([d.power_idxs for d in datasets])
+        merged.x_idxs = torch.cat([d.x_idxs + off for d, off in zip(datasets, phase_offsets)])
+        merged.encoded_games = DataFields.cat([d.encoded_games for d in datasets])
+        merged.num_games = sum(d.num_games for d in datasets)
+        merged.num_phases = sum(d.num_phases for d in datasets)
+        merged.num_elements = sum(d.num_elements for d in datasets)
+        merged._preprocessed = True
+
+        return merged
 
 
 def encode_game(

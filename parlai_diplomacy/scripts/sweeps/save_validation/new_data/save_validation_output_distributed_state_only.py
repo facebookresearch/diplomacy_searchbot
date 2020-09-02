@@ -4,36 +4,51 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from parlai_diplomacy.utils.param_sweeps.param_sweep import run_grid
+from parlai_diplomacy.utils.param_sweeps.param_sweep import run_grid, bash
 import parlai_diplomacy.utils.loading as load
+import parlai_diplomacy.scripts.evaluation.aggregate_valid_reports as aggregate_valid_reports
+from parlai.utils import logging
+
+from datetime import date
+import os
 
 load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "debug_diplomacy_save_non_chunk_1nodes_dev"
+sweep_name = "eval_newdata_state_order_chunk"  # change this
 NUM_HOURS = 72
+
+# save path
+DATE = str(date.today()).replace("-", "")
+TEACHER = "state_order_chunk"  # change this
+(
+    VALID_REPORT_SAVE_PATH,
+    _,
+    VALID_REPORT_SAVE_JSON_PATH,
+) = aggregate_valid_reports.get_valid_report_path(sweep_name, TEACHER, date_of_sweep=DATE)
+logging.info(f"mkdir {VALID_REPORT_SAVE_PATH}")
+bash("mkdir -p " + VALID_REPORT_SAVE_PATH)
+# predict_all_order = "--predict_all_order"
 
 # Define param grid
 grid = {
-    "--verbose": [True],
+    # "--verbose": [True],
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
-    "-mf": ["/checkpoint/wyshi/diplomacy/Bart/Bart_diplomacy_lower_lr/18e/model"],
+    "-mf": [
+        "/checkpoint/wyshi/20200827/resume_newdata_state_order_chunk_bart_diplomacy/18e/model"
+    ],  # change this
     "-m": ["bart",],
-    "-t": ["state_order"],
-    "-dt": ["valid"],
-    "--report-filename": [
-        "/checkpoint/fairdiplomacy/press_diplomacy/validation/validation_report/debug/test_distributed_non_chunk_dev"
-    ],
+    "-t": [f"{TEACHER}"],
+    "-dt": ["valid:stream"],
+    "--report-filename": [os.path.join(VALID_REPORT_SAVE_PATH, "valid_report")],
     "--label-truncate": [256],
     "--text-truncate": [1024],
     "--save-world-logs": [True],
-    "--skip-generation": [True],
+    "--skip-generation": [False],
     "--inference": ["greedy"],
     "-bs": [128],
     "--min-turns": [1,],
-    "--train-val-split-pct": [0,],
-    "--debug": [""],
 }
 
 if __name__ == "__main__":
@@ -44,11 +59,9 @@ if __name__ == "__main__":
         partition="dev",
         jobtime=f"{NUM_HOURS}:00:00",
         prefix="python -u parlai_diplomacy/scripts/distributed_eval.py",
-        # prefix="python -u parlai_diplomacy/scripts/multiprocessing_eval.py",
         one_job_per_node=False,
         gpus=8,
-        # nodes=4,
-        nodes=1,
+        nodes=2,
         create_model_file=False,
         requeue=True,
         include_job_id=False,
