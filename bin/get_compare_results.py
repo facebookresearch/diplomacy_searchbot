@@ -35,12 +35,19 @@ def get_result(game_json_path):
     """
     power_one = get_power_one(game_json_path)
 
-    with open(game_json_path) as f:
-        j = json.load(f)
+    try:
+        with open(game_json_path) as f:
+            j = json.load(f)
+    except Exception as e:
+        print(e)
+        return None
 
     rl_rewards = compute_game_scores(POWERS.index(power_one), j)
 
     counts = {k: len(v) for k, v in j["phases"][-1]["state"]["centers"].items()}
+    for p in POWERS:
+        if p not in counts:
+            counts[p] = 0
     powers_won = {p for p, v in counts.items() if v == max(counts.values())}
     power_won = power_one if power_one in powers_won else powers_won.pop()
 
@@ -55,17 +62,6 @@ def get_result(game_json_path):
         return "one", power_one, power_won, rl_rewards
     else:
         return "six", power_one, power_won, rl_rewards
-
-
-def make_safe(fn):
-    def foo(*args, **kwargs):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as e:
-            print(e)
-            return None
-
-    return foo
 
 
 def print_rl_stats(results, args):
@@ -97,6 +93,6 @@ if __name__ == "__main__":
         if len(paths) > 0:
             break
 
-    results = [make_safe(get_result)(path) for path in paths]
+    results = [get_result(path) for path in paths]
     results = [r for r in results if r is not None]
     print_rl_stats(results, args)
