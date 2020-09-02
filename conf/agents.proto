@@ -285,6 +285,11 @@ message ReproAgent {
   optional string game_path = 1;
 }
 
+message ParlAIAgent {
+  // Required. Path to the model.
+  optional string model_path = 1;
+}
+
 message Agent {
   oneof agent {
     MilaSlAgent mila = 1;
@@ -295,5 +300,6 @@ message Agent {
     CE1PAgent ce1p = 6;
     ReproAgent repro = 7;
     FP1PAgent fp1p = 8;
+    ParlAIAgent parlai = 9;
   }
 }

@@ -32,43 +32,44 @@ class BaseWrapper(ABC):
         """
         Return the model's prediction for an input sequence
         """
-        ex = {
-            "text": input_seq,
-            "episode_done": True,
-        }
+        ex = {"text": input_seq, "episode_done": True}
         self.parlai_agent.observe(ex)
         response = self.parlai_agent.act()["text"]
         return response
 
     def produce_order(
-        self, game_json: Dict, possible_orders: List[List[str]], max_orders: Optional[int] = None
-    ) -> Dict[str, str]:
+        self,
+        game_json: Dict,
+        possible_orders: List[List[str]],
+        power: str,
+        max_orders: Optional[int] = None,
+    ) -> List[str]:
         """
         Queries an agent to select most probable orders from the possible ones.
 
         Args:
-        game_json: game json file as returned by Game.to_saved_format().
-        possible_orders: list of possibilities for each location. E.g., the first location may contain all orders that are possible for “A MAR”.
-        power: name of the power for which orders are queried.
-        max_orders: only available for build stage, max number of orders to produce.
+            game_json: game json file as returned by Game.to_saved_format().
+            possible_orders: list of possibilities for each location. E.g.,
+              the first location may contain all orders that are possible for
+              “A MAR”.
+            power: name of the power for which orders are queried.
+            max_orders: only available for build stage, max number of orders
+              to produce.
 
         Returns:
-        orders: list of orders for each position or list of build/disband orders for chosen positions.
+            orders: list of orders for each position or list of build/disband orders for chosen positions.
 
-        If `max_orders is None`, than `len(orders) == len(possible_orders)`
-        and `orders in product(*possible_orders)`.
+            If `max_orders is None`, than `len(orders) == len(possible_orders)`
+            and `orders in product(*possible_orders)`.
 
-        If `max_orders is not None`, then `len(orders) <= max_orders`
-        and `any(set(seq).issuperset(orders) for seq in product(*possible_orders))`.
+            If `max_orders is not None`, then `len(orders) <= max_orders`
+            and `any(set(seq).issuperset(orders) for seq in product(*possible_orders))`.
         """
-        output_dct = {}
+        game_json = game_load.organize_game_by_phase(game_json)
         seqs = self.format_input_seq(game_json)
-        phase = list(seqs.keys())[-1]
-        for power, seq in seqs[phase].items():
-            raw_pred = self.get_model_pred(seq)
-            output_dct[power] = self.format_output_seq(raw_pred, power)
-
-        return output_dct
+        seq = list(seqs.values())[-1][power]
+        raw_pred = self.get_model_pred(seq)
+        return self.format_output_seq(raw_pred, power)
 
     @abstractmethod
     def format_input_seq(self, game_json: Dict) -> Dict[str, str]:
@@ -136,7 +137,6 @@ def test_load_single():
     for _, info in data.items():
         game_json_path = info["game_path"]
         game = game_load.load_viz_to_dipcc_format(game_json_path)
-        game = game_load.organize_game_by_phase(game)
         orders = agent.produce_order(game_json=game, possible_orders=[], max_orders=None)
         print(orders)
         break
@@ -156,7 +156,6 @@ def test_load_all():
     for _, info in data.items():
         game_json_path = info["game_path"]
         game = game_load.load_viz_to_dipcc_format(game_json_path)
-        game = game_load.organize_game_by_phase(game)
         orders = agent.produce_order(game_json=game, possible_orders=[], max_orders=None)
         print(orders)
         break
