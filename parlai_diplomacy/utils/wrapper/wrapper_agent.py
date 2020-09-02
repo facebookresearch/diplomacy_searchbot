@@ -67,7 +67,11 @@ class BaseWrapper(ABC):
         seqs = self.format_input_seq(game_json)
         seq = list(seqs.values())[-1][power]
         raw_pred = self.get_model_pred(seq)
-        return list(self.format_output_seq(raw_pred, power))
+        orders = list(self.format_output_seq(raw_pred, power))
+        if orders == [""]:
+            # This must be a bug somewhere in format_output_seq.
+            orders = []
+        return orders
 
     @abstractmethod
     def format_input_seq(self, game_json: Dict) -> Dict[str, str]:
