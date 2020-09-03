@@ -269,8 +269,8 @@ class Dataset(torch.utils.data.Dataset):
             value_decay_alpha=None,
         )
 
-        game_offsets = np.cumsum([0] + [d.num_games for d in datasets[:-1]])
-        phase_offsets = np.cumsum([0] + [d.num_phases for d in datasets[:-1]])
+        game_offsets = torch.from_numpy(np.cumsum([0] + [d.num_games for d in datasets[:-1]]))
+        phase_offsets = torch.from_numpy(np.cumsum([0] + [d.num_phases for d in datasets[:-1]]))
 
         merged.game_idxs = torch.cat([d.game_idxs + off for d, off in zip(datasets, game_offsets)])
         merged.phase_idxs = torch.cat([d.phase_idxs for d in datasets])
