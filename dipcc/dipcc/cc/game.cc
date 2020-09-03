@@ -21,6 +21,9 @@ void Game::set_orders(const std::string &power_str,
   staged_orders.clear();
   staged_orders.reserve(order_strs.size());
   for (const std::string &order_str : order_strs) {
+    if (order_str == "WAIVE") {
+      continue;
+    }
     staged_orders.push_back(Order(order_str));
   }
 }
@@ -31,7 +34,7 @@ void Game::process() {
 
   try {
     state_ = std::make_shared<GameState>(
-      state_->process(staged_orders_, exception_on_convoy_paradox_));
+        state_->process(staged_orders_, exception_on_convoy_paradox_));
     maybe_early_exit();
   } catch (const ConvoyParadoxException &e) {
     throw e;
@@ -60,8 +63,8 @@ Game::get_all_possible_orders() {
 }
 
 Game::Game(int draw_on_stalemate_years)
-    : state_(std::make_shared<GameState>())
-    , draw_on_stalemate_years_(draw_on_stalemate_years) {
+    : state_(std::make_shared<GameState>()),
+      draw_on_stalemate_years_(draw_on_stalemate_years) {
 
   // game id
   this->game_id = gen_game_id();
@@ -139,7 +142,9 @@ unordered_map<string, vector<string>> Game::py_get_all_possible_orders() {
   return r;
 }
 
-bool Game::is_game_done() const { return state_->get_phase().phase_type == 'C'; }
+bool Game::is_game_done() const {
+  return state_->get_phase().phase_type == 'C';
+}
 
 string Game::to_json() {
   json j;
