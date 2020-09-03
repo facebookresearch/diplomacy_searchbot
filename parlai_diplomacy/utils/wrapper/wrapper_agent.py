@@ -69,7 +69,7 @@ class BaseWrapper(ABC):
         raw_pred = self.get_model_pred(seq)
         orders = list(self.format_output_seq(raw_pred, power))
         if orders == [""]:
-            # This must be a bug somewhere in format_output_seq.
+            # Parlai returns [""] for no orders, while the engine expects [].
             orders = []
         return orders
 
