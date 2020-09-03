@@ -200,6 +200,8 @@ def main(task, cfg):
     if heyhi.is_on_slurm():
         logging.info("Slurm job id: %s", heyhi.get_slurm_job_id())
     logging.info("Is master: %s", heyhi.is_master())
+    if getattr(cfg, "use_default_requeue", False):
+        heyhi.maybe_init_requeue_handler()
 
     if task not in TASKS:
         raise ValueError("Unknown task: %s. Known tasks: %s" % (task, sorted(TASKS)))

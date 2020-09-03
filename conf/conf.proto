@@ -243,6 +243,8 @@ message TrainTask {
   // puproses.
   optional int32 epoch_max_batches = 51;
 
+  // If specified, requeue on slurm signal
+  optional bool use_default_requeue = 900 [ default = false ];
   optional Launcher launcher = 1000;
 }
 
@@ -296,8 +298,8 @@ message LaunchBotTask {
   // If specified, connect only as this power
   optional string power = 8;
 
-  // If specified, attempt to requeue on slurm signal
-  optional bool requeue = 900 [ default = false ];
+  // If specified, requeue on slurm signal
+  optional bool use_default_requeue = 900 [ default = false ];
   optional Launcher launcher = 1000;
 }
 
