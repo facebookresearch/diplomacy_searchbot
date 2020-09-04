@@ -57,9 +57,13 @@ def count_single_chunk(opt, chunk_idx):
     teacher = task_module(opt)
     exs = teacher.load_from_chunk(chunk_idx)
 
+    silence_cnt = 0
+    for ex in exs:
+        if "SILENCE" in ex["message"]:
+            silence_cnt += 1
     del teacher
 
-    return chunk_idx, len(exs)
+    return chunk_idx, len(exs), silence_cnt
 
 
 def count_single_chunk_wrapper(args):
@@ -69,22 +73,23 @@ def count_single_chunk_wrapper(args):
 if __name__ == "__main__":
     pp = ParlaiParser()
     opt = pp.parse_args()
-    total_dct = defaultdict(int)
-    chunk_idx_to_num_examples = defaultdict(int)
+    total_dct = defaultdict(dict)
+    chunk_idx_to_num_examples = defaultdict(list)
 
     # safety check to avoid overwriting example_counts
-    if os.path.exists(constants.CHUNK_EXAMPLE_COUNT_PATH):
+    if os.path.exists(constants.CHUNK_EXAMPLE_COUNT_PATH + "weiyan"):
         overwrite = input(
-            f"{constants.CHUNK_EXAMPLE_COUNT_PATH} exists!\nDo you want to overwrite it?[Y/y] "
+            f"{constants.CHUNK_EXAMPLE_COUNT_PATH+'weiyan'} exists!\nDo you want to overwrite it?[Y/y] "
         )
         if overwrite not in ["Y", "y"]:
             print("Aborting...")
             sys.exit(-1)
 
-    for dt in ["train:stream", "valid:stream"]:
+    for dt in ["valid:stream", "train:stream"]:
         opt["datatype"] = dt
         opt["no_auto_enqueues"] = True
         total = 0
+        total_silence = 0
         fold_chunks = get_fold_chunks(opt)
         for i, chunk_lst in tqdm(enumerate(chunks(fold_chunks, n=NUM_PROCESSES))):
             args = [(deepcopy(opt), chunk_num) for chunk_num in chunk_lst]
@@ -95,18 +100,27 @@ if __name__ == "__main__":
             pool.close()
             pool.join()
             chunk_idx_to_num_examples.update(
-                {chunk_idx_tmp: num_example_tmp for chunk_idx_tmp, num_example_tmp in ret}
+                {
+                    chunk_idx_tmp: [num_example_tmp, num_silence_example_tmp]
+                    for chunk_idx_tmp, num_example_tmp, num_silence_example_tmp in ret
+                }
             )
-            total += sum([num_example_tmp for _, num_example_tmp in ret])
-            logging.warn(f"Current subtotal: {total}")
+            total += sum([num_example_tmp for _, num_example_tmp, _ in ret])
+            total_silence += sum(
+                [num_silence_example_tmp for _, _, num_silence_example_tmp in ret]
+            )
+            logging.warn(f"Current subtotal: {total} subtotal_silence: {total_silence}")
 
-        logging.success(f"Final value for datatype: {dt} -- {total} examples")
-        total_dct[dt] = total
+        logging.success(
+            f"Final value for datatype: {dt} -- {total} examples, {total_silence} silence examples"
+        )
+        total_dct[dt]["total"] = total
+        total_dct[dt]["total_silence"] = total_silence
 
-    with open(constants.CHUNK_EXAMPLE_COUNT_PATH, "w") as fh:
+    with open(constants.CHUNK_EXAMPLE_COUNT_PATH + "weiyan", "w") as fh:
         json.dump(chunk_idx_to_num_examples, fh)
         logging.success(
-            f"Successfully saved example_counts to {constants.CHUNK_EXAMPLE_COUNT_PATH}"
+            f"Successfully saved example_counts to {constants.CHUNK_EXAMPLE_COUNT_PATH+'weiyan'}"
         )
 
     for dt, cnt in total_dct.items():

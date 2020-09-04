@@ -267,15 +267,17 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         :param msgs:
         :param msg_history:
         :return:
-        # We should either
+        # We should either 
         # 1) focus on the phase-level, i.e. have SILENCE at the start and finish the tail at the end,
         #    even if we've added a SILENCE token at the end of the phase t-1, a new SILENCE is still needed
-        #    at phase t at the beginning, search for 'S1903R France' in
-        #    /checkpoint/fairdiplomacy/press_diplomacy/display_data_paste_for_debug/message_history_dialogue_chunk_new_valid_moreSILENCE.log
-        #    we have more SILENCE this way
+        #    at phase t at the beginning, search for 'S1903R France' in 
+        #    /checkpoint/fairdiplomacy/press_diplomacy/display_data_paste_for_debug/message_history_dialogue_chunk_new_valid_new.log
+        #    we have more SILENCE this way 
         # OR
-        # 2) focus on the msg-level, check the last msg or msg_history, and add SILENCE
-        #    ONLY when msg_history[-1][-1]['speaker']!=cur_power, and msgs[0]['speaker']!=cur_power,
+        # 2) focus on the msg-level only, forget about the phase start, only add SILENCE when there are 
+        #    consecutive messages whose speakers are not us.
+        #    e.g. check the last msg or msg_history, and add SILENCE 
+        #    ONLY when msg_history[-1][-1]['speaker']!=cur_power, and msgs[0]['speaker']!=cur_power, 
         #    we have fewer SILENCE this way
         """
         silence_message = {
@@ -287,11 +289,9 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         }
         updated_msgs = []
 
-        # if there are no previous phase msg exchange, message_history[-1] will be '', so power_cur_speaker
-        # will be False len(message_history[-1]) > 0 always, because even if message_history=="",
-        # message_history.split('\n') would be ['']
         assert isinstance(msg_history, list)
 
+        # we add SILENCE at the beginnig of a phase
         power_cur_speaker = False
         for msg in msgs:
             if msg["speaker"] == power:
@@ -304,6 +304,7 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
                 updated_msgs.append(msg)
                 power_cur_speaker = False
 
+        # we add SILENCE if the last speaker is not us
         if not power_cur_speaker:
             updated_msgs.append(silence_message)
 
@@ -361,7 +362,7 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         data["state_history"] = self.format_state_history(data["state_history"])
 
         # save original formatted message for debugging purposes
-        data["formatted_original_message"] = self.format_msg(data["message"], phase_id)
+        data["formatted_original_message"] = self.format_msg(data["message"])
         data["formatted_original_message_history"] = self.format_msg_history(
             data["message_history"]
         )
@@ -373,9 +374,7 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         msgs = data["message"]
         msg_history = data["message_history"]
 
-        msgs = self.add_silence_messages(
-            cur_phase, cur_power, msgs, msg_history
-        )  # msgs[0] is the phase name, so we exclude
+        msgs = self.add_silence_messages(cur_phase, cur_power, msgs, msg_history)
 
         msg_history.append([])
         msg_history_buffer_list = copy.deepcopy(msg_history)
@@ -433,7 +432,7 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
             if v:
                 output_message_list.extend(v)
 
-        data_dict["message"] = self.format_msg(output_message_list, phase_id=cur_phase)
+        data_dict["message"] = self.format_msg(output_message_list)
         data_dict["message_history"] = self.format_msg_history(pre_msg_history_buffer_list)
 
         return data_dict

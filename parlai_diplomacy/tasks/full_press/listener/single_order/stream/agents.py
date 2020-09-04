@@ -45,10 +45,10 @@ class MessageStateOrderChunkTeacher(BaseOrderChunkTeacher):
         return Message(msg)
 
 
-@register_teacher("allmessage_state_order_chunk")
-class AllmessageStateOrderChunkTeacher(BaseOrderChunkTeacher):
+@register_teacher("message_history_state_order_chunk")
+class MessageHistoryStateOrderChunkTeacher(BaseOrderChunkTeacher):
     """
-    Text field (input) contains MESSAGE then STATE information
+    Text field (input) contains MESSAGE HISTORY then STATE information
 
     Label is the order given by the player
     """
@@ -56,18 +56,13 @@ class AllmessageStateOrderChunkTeacher(BaseOrderChunkTeacher):
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
         curr_player = self._get_player_prompt_token(queue_output)
-        if queue_output["message"] == "":
-            # current phase has no msg
-            all_message = queue_output["message_history"]
-        else:
-            all_message = queue_output["message_history"] + "\n" + queue_output["message"]
-        msg["text"] = f"{all_message} {queue_output['state']} {curr_player}"
+        msg["text"] = f"{queue_output['message_history']} {queue_output['state']} {curr_player}"
 
         return Message(msg)
 
 
-@register_teacher("allmessage_shortstate_order_chunk")
-class AllmessageStateOrderChunkTeacher(BaseOrderChunkTeacher):
+@register_teacher("message_history_shortstate_order_chunk")
+class MessageHistoryStateOrderChunkTeacher(BaseOrderChunkTeacher):
     """
     Text field (input) contains MESSAGE then STATE information
 
@@ -77,12 +72,9 @@ class AllmessageStateOrderChunkTeacher(BaseOrderChunkTeacher):
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
         curr_player = self._get_player_prompt_token(queue_output)
-        if queue_output["message"] == "":
-            # current phase has no msg
-            all_message = queue_output["message_history"]
-        else:
-            all_message = queue_output["message_history"] + "\n" + queue_output["message"]
-        msg["text"] = f"{all_message} {queue_output['short_state']} {curr_player}"
+        msg[
+            "text"
+        ] = f"{queue_output['message_history']} {queue_output['short_state']} {curr_player}"
 
         return Message(msg)
 
@@ -135,8 +127,8 @@ class MessageOrderChunkTeacher(BaseOrderChunkTeacher):
         return Message(msg)
 
 
-@register_teacher("allmessage_order_chunk")
-class MessageOrderChunkTeacher(BaseOrderChunkTeacher):
+@register_teacher("message_history_order_chunk")
+class MessageHistoryOrderChunkTeacher(BaseOrderChunkTeacher):
     """
     Text field (input) contains MESSAGE information only
     Label is the order given by the player
@@ -145,7 +137,6 @@ class MessageOrderChunkTeacher(BaseOrderChunkTeacher):
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
         curr_player = self._get_player_prompt_token(queue_output)
-        all_message = queue_output["message_history"] + "\n" + queue_output["message"]
-        msg["text"] = f"{all_message} {curr_player}"
+        msg["text"] = f"{queue_output['message_history']} {curr_player}"
 
         return Message(msg)

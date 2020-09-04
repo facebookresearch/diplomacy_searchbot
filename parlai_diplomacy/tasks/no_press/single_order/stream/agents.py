@@ -20,6 +20,7 @@ from glob import glob
 import os
 from typing import List, Tuple
 import json
+import copy
 
 """
 File that takes board state data to predict orders for one single player. (streaming)
@@ -153,6 +154,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         for game_id, game in game_data.items():
             for phase_id, phase in game.items():
                 for player_id, data in phase.items():
+                    data = self.remove_game_master_msg(data)
                     lst.extend(self._generate_example_tuples(game_id, phase_id, player_id, data))
 
         logging.info(f"Loaded {len(lst)} examples from chunk {chunk_idx}.")
@@ -189,12 +191,43 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         data["state_history"] = self.format_state_history(data["state_history"])
 
         # format messages
-        data["message"] = self.format_msg(data["message"], phase_id)
+        # the current phase msg is also part of msg_history in the order teacher
+        cur_phase_msg = copy.deepcopy(data["message"])
+        data["message"] = self.format_msg(data["message"])
+        data["message_history"].append(cur_phase_msg)
         data["message_history"] = self.format_msg_history(data["message_history"])
         del data["message_processed"]
         del data["message_history_processed"]
 
         yield data
+
+    def remove_game_master_msg(self, data):
+        # this function is a hacky way to filter out GameMaster msg in the current data format
+        # TODO once we deal with the GameMaster msg in the data processing,
+        # we should depreciate this function!!!
+        msg_history_lst = data["message_history"]
+        cur_phase_msg_lst = data["message"]
+
+        # remove for msg_history first
+        new_msg_history_lst = []
+        for phase_msg_lst in msg_history_lst:
+            phase_msg_lst = [
+                msg_dct
+                for msg_dct in phase_msg_lst
+                if msg_dct["speaker"] != "GameMaster" and msg_dct["listener"] != "GameMaster"
+            ]
+            new_msg_history_lst.append(phase_msg_lst)
+        data["message_history"] = new_msg_history_lst
+
+        # remove for current phase msg
+        new_cur_phase_msg_lst = [
+            msg_dct
+            for msg_dct in cur_phase_msg_lst
+            if msg_dct["speaker"] != "GameMaster" and msg_dct["listener"] != "GameMaster"
+        ]
+        data["message"] = new_cur_phase_msg_lst
+
+        return data
 
     def format_order(self, order_lst):
         """
@@ -252,13 +285,13 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         """
         return game_formatting.flatten_state_history(state_history_dct)
 
-    def format_msg(self, message_lst, phase_id):
+    def format_msg(self, message_lst):
         """
         Format messages
 
         Left easily overridable to change formatting
         """
-        return game_formatting.flatten_one_phase_message(message_lst, phase_name=phase_id)
+        return game_formatting.flatten_one_phase_message(message_lst)
 
     def format_msg_history(self, message_history_lst):
         """

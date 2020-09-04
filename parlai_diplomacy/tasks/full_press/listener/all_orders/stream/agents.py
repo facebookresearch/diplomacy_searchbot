@@ -45,8 +45,8 @@ class MessageStateOrderChunkTeacher(BaseAllorderChunkTeacher):
         return Message(msg)
 
 
-@register_teacher("allmessage_state_allorder_chunk")
-class AllmessageStateOrderChunkTeacher(BaseAllorderChunkTeacher):
+@register_teacher("message_history_state_allorder_chunk")
+class MessageHistoryStateOrderChunkTeacher(BaseAllorderChunkTeacher):
     """
     Text field (input) contains MESSAGE then STATE information
 
@@ -56,18 +56,13 @@ class AllmessageStateOrderChunkTeacher(BaseAllorderChunkTeacher):
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
         curr_player = self._get_player_prompt_token(queue_output)
-        if queue_output["message"] == "":
-            # current phase has no msg
-            all_message = queue_output["message_history"]
-        else:
-            all_message = queue_output["message_history"] + "\n" + queue_output["message"]
-        msg["text"] = f"{all_message} {queue_output['state']} {curr_player}"
+        msg["text"] = f"{queue_output['message_history']} {queue_output['state']} {curr_player}"
 
         return Message(msg)
 
 
-@register_teacher("allmessage_shortstate_allorder_chunk")
-class AllmessageStateOrderChunkTeacher(BaseAllorderChunkTeacher):
+@register_teacher("message_history_shortstate_allorder_chunk")
+class MessageHistoryStateOrderChunkTeacher(BaseAllorderChunkTeacher):
     """
     Text field (input) contains MESSAGE then STATE information
 
@@ -77,12 +72,9 @@ class AllmessageStateOrderChunkTeacher(BaseAllorderChunkTeacher):
     def create_message(self, queue_output, entry_idx=0):
         msg = self._get_base_msg(queue_output)
         curr_player = self._get_player_prompt_token(queue_output)
-        if queue_output["message"] == "":
-            # current phase has no msg
-            all_message = queue_output["message_history"]
-        else:
-            all_message = queue_output["message_history"] + "\n" + queue_output["message"]
-        msg["text"] = f"{all_message} {queue_output['short_state']} {curr_player}"
+        msg[
+            "text"
+        ] = f"{queue_output['message_history']} {queue_output['short_state']} {curr_player}"
 
         return Message(msg)
 

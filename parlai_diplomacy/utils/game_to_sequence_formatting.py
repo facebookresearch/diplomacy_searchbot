@@ -10,10 +10,6 @@ Utils for converting game JSONs into string sequences for model input
 import parlai_diplomacy.tasks.common_task_utils as task_utils
 import parlai_diplomacy.utils.game_to_sequence_formatting as fmt
 
-EMPTY_MSG_PHASE_TOKEN = "EMPTY_PHASE"
-
-EMPTY_MSG_PHASE_TOKEN = "EMPTY_PHASE"
-
 
 class SequenceFormatHelper:
     """
@@ -283,34 +279,38 @@ def format_one_message(speaker, listener, msg, special_tokens_map=None, with_spe
 def flatten_one_message(one_msg_dct, special_tokens_map=None, with_special_token=False):
     speaker = one_msg_dct["speaker"]
     listener = one_msg_dct["listener"]
-    msg = one_msg_dct["message"]
+    # check for GameMaster
+    assert speaker != "GameMaster" and listener != "GameMaster"
 
+    msg = one_msg_dct["message"]
     flat_msg = format_one_message(speaker, listener, msg, special_tokens_map, with_special_token)
 
     return flat_msg
 
 
-def flatten_one_phase_message(
-    msg_lst, phase_name, special_tokens_map=None, with_special_token=False
-):
+def flatten_one_phase_message(msg_lst, special_tokens_map=None, with_special_token=False):
     """
-    flatten messages in one phase, 
-    if len(msg_lst) == 0: 
-        return [phase_name]\nEMPTY_PHASE_TOKEN
-    else:
-        return:
-            phase_name  
-            England -> Turkey: msg1 [EO_M] 
-            Turkey -> England: msg2 [EO_M] 
+    flatten messages in one phase, called in self.format_msg in the teacher
+    for the current phase msg 
+    
+    Args:
+        msg_lst: list[dict]
+    
+    Returns:
+        if len(msg_lst) == 0: 
+            return ""
+        else:
+            return:
+                S1901M  
+                England -> Turkey: msg [EO_M] 
+                Turkey -> England: msg [EO_M] 
     """
-    flat_msgs = []
-    # remove GameMaster explicitly
-    msg_lst = [
-        msg_dct
-        for msg_dct in msg_lst
-        if msg_dct["speaker"] != "GameMaster" and msg_dct["listener"] != "GameMaster"
-    ]
+    if len(msg_lst) == 0:
+        # empty phase
+        return ""
 
+    flat_msgs = []
+    phase_name = msg_lst[0]["phase"]
     for msg_dct in msg_lst:
         # just checking if they are from the same phase
         assert phase_name == msg_dct["phase"]
@@ -318,33 +318,41 @@ def flatten_one_phase_message(
         flat_msgs.append(flat_msg)
 
     # add phase info
-    if len(flat_msgs) > 0:
-        flat_msgs = phase_name + "\n" + "\n".join(flat_msgs)
-    else:
-        flat_msgs = phase_name + "\n" + EMPTY_MSG_PHASE_TOKEN
+    flat_msgs = phase_name + "\n" + "\n".join(flat_msgs)
     return flat_msgs
 
 
-def flatten_message_history(msg_lst, special_tokens_map=None, with_special_token=False):
+def flatten_message_history(msg_his_lst, special_tokens_map=None, with_special_token=False):
+    """flatten the message history, 
+    message history = all msgs that happen before the prediction
+    e.g. 
+    1) if predicting an order, message history = all msgs that happen before the end of the phase
+    2) if predicting a message, message history = all msgs that happen before the time to generate a new message
 
-    phase_msgs = []
-    for phase_msg_lst in msg_lst:
-        # remove GameMaster explicitly
-        phase_msg_lst = [
-            msg_dct
-            for msg_dct in phase_msg_lst
-            if msg_dct["speaker"] != "GameMaster" and msg_dct["listener"] != "GameMaster"
-        ]
+    Args:
+        msg_his_lst (list[list[dict]]): a list of phase messages, each phase message is a list of messages
+        special_tokens_map (dict, optional): [description]. Defaults to None.
+        with_special_token (bool, optional): [description]. Defaults to False.
 
-        if len(phase_msg_lst) > 0:
-            # if that phase has msg
-            phase_name = phase_msg_lst[0]["phase"]
-            phase_msg = flatten_one_phase_message(
-                phase_msg_lst, phase_name, special_tokens_map, with_special_token
-            )
-            phase_msgs.append(phase_msg)
+    Returns:
+        if len(msg_his_lst) == 0: 
+            return ""
         else:
-            # if that phase doesn't have msg, temporarily doing nothing (could add EMPTY token)
-            pass
+            return:
+                S1901M  
+                England -> Turkey: msg [EO_M] 
+                Turkey -> England: msg [EO_M] 
+                F1901M  
+                England -> Turkey: msg [EO_M] 
+                Turkey -> England: msg [EO_M] 
+    """
+    phase_msgs = []
+    for phase_msg_lst in msg_his_lst:
+        phase_msg = flatten_one_phase_message(
+            phase_msg_lst, special_tokens_map, with_special_token
+        )
+        phase_msgs.append(phase_msg)
 
+    # remove empty phase
+    phase_msgs = [msg for msg in phase_msgs if msg != ""]
     return "\n".join(phase_msgs)
