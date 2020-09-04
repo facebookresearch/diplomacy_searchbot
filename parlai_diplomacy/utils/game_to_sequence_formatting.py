@@ -12,6 +12,8 @@ import parlai_diplomacy.utils.game_to_sequence_formatting as fmt
 
 EMPTY_MSG_PHASE_TOKEN = "EMPTY_PHASE"
 
+EMPTY_MSG_PHASE_TOKEN = "EMPTY_PHASE"
+
 
 class SequenceFormatHelper:
     """
@@ -268,7 +270,11 @@ def flatten_state_history(
 
 
 def format_one_message(speaker, listener, msg, special_tokens_map=None, with_special_token=False):
-    formatted_msg = f"{speaker} -> {listener}: {msg}"
+    if listener:
+        formatted_msg = f"{speaker} -> {listener}: {msg}"
+    else:
+        formatted_msg = f"{speaker}: {msg}"
+
     formatted_msg = add_end_token(formatted_msg, "[EO_M]", with_special_token, special_tokens_map)
 
     return formatted_msg
@@ -298,7 +304,6 @@ def flatten_one_phase_message(
             Turkey -> England: msg2 [EO_M] 
     """
     flat_msgs = []
-
     # remove GameMaster explicitly
     msg_lst = [
         msg_dct

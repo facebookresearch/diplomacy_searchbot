@@ -19,6 +19,7 @@ from parlai.utils import logging
 import parlai_diplomacy.tasks.common_task_utils as utls
 import parlai_diplomacy.utils.datapath_constants as constants
 from parlai_diplomacy.tasks.no_press.single_order.stream.agents import BaseOrderChunkTeacher
+import parlai_diplomacy.utils.game_to_sequence_formatting as game_formatting
 
 """
 File for all dialogue teachers
@@ -258,32 +259,53 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
     """
 
     @staticmethod
-    def add_silence_messages(power, messages, message_history):
+    def add_silence_messages(phase, power, msgs, msg_history):
         """
         Static method that adds the SILENCE tokens to messages
+        :param phase:
         :param power:
-        :param messages:
-        :param message_history:
+        :param msgs:
+        :param msg_history:
         :return:
+        # We should either
+        # 1) focus on the phase-level, i.e. have SILENCE at the start and finish the tail at the end,
+        #    even if we've added a SILENCE token at the end of the phase t-1, a new SILENCE is still needed
+        #    at phase t at the beginning, search for 'S1903R France' in
+        #    /checkpoint/fairdiplomacy/press_diplomacy/display_data_paste_for_debug/message_history_dialogue_chunk_new_valid_moreSILENCE.log
+        #    we have more SILENCE this way
+        # OR
+        # 2) focus on the msg-level, check the last msg or msg_history, and add SILENCE
+        #    ONLY when msg_history[-1][-1]['speaker']!=cur_power, and msgs[0]['speaker']!=cur_power,
+        #    we have fewer SILENCE this way
         """
-        empty_output = f"{power}: SILENCE"
+        silence_message = {
+            "speaker": power,
+            "listener": None,
+            "message": "SILENCE",
+            "time_sent": None,
+            "phase": phase,
+        }
         updated_msgs = []
-        if not message_history:
-            updated_msgs.append(empty_output)
-            power_cur_speaker = False
-        else:
-            power_cur_speaker = message_history[-1].startswith(power)
 
-        for msg in messages:
-            if msg.startswith(power):
+        # if there are no previous phase msg exchange, message_history[-1] will be '', so power_cur_speaker
+        # will be False len(message_history[-1]) > 0 always, because even if message_history=="",
+        # message_history.split('\n') would be ['']
+        assert isinstance(msg_history, list)
+
+        power_cur_speaker = False
+        for msg in msgs:
+            if msg["speaker"] == power:
                 power_cur_speaker = True
                 updated_msgs.append(msg)
             else:
                 if not power_cur_speaker:
-                    updated_msgs.append(empty_output)
+                    updated_msgs.append(silence_message)
 
                 updated_msgs.append(msg)
                 power_cur_speaker = False
+
+        if not power_cur_speaker:
+            updated_msgs.append(silence_message)
 
         return updated_msgs
 
@@ -291,12 +313,13 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         """
         Return the number of samples given the datatype.
         """
+        # TODO: get actual counts here for train
         datatype = opt["datatype"]
         if "train" in datatype:
-            return 10343021, 10343021
+            return 14834555, 14834555
 
         if "valid" in datatype:
-            return 113013, 113013
+            return 159498, 159498
 
     def _generate_example_tuples(self, game_id, phase_id, player_id, data):
         """
@@ -311,58 +334,75 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         data["game_id"] = game_id
         data["phase_id"] = phase_id
         data["player_id"] = player_id
+        data["data_status"] = data["metadata"]["data_status"]
+        data_status = data["data_status"]
+
         cur_power = utls.COUNTRY_ID_TO_POWER[int(player_id)].capitalize()
+        cur_phase = phase_id
+
         data["player"] = cur_power
 
-        # We only include Game_Phase_Msg
-        if data["metadata"]["data_status"] != "Game_Phase_Msg":
+        # We only include Game_Phase_Msg and Game_Phase_NoMsg
+        if data_status not in [
+            "Game_Phase_Msg",
+            "Game_Phase_NoMsg",
+        ]:
             return
 
         # format orders
         data["order"] = self.format_order(data["order"])
         data["order_history"] = self.format_order_history(data["order_history"])
+        data["all_orders"] = self.format_all_orders(data["all_orders"], player_id)
 
         # format state
+        data["short_state"] = self.format_short_state(data["state"])
+        data["short_state_history"] = self.format_short_state_history(data["state_history"])
         data["state"] = self.format_state(data["state"])
+        data["state_history"] = self.format_state_history(data["state_history"])
 
-        # format messages
-        data["message"] = self.format_msg(data)
-        data["message_history"] = self.format_msg_history(data)
+        # save original formatted message for debugging purposes
+        data["formatted_original_message"] = self.format_msg(data["message"], phase_id)
+        data["formatted_original_message_history"] = self.format_msg_history(
+            data["message_history"]
+        )
+        del data["message_processed"]
+        del data["message_history_processed"]
 
         # We convert a single data example into several different ones by splitting each "message" into
         # a different example and adapting "message_history" accordingly at each phase
-        msgs = data["message"].split("\n")  # check
+        msgs = data["message"]
+        msg_history = data["message_history"]
 
-        msg_history_list = (
-            data["message_history"].replace(data["message"], "").split("\n")
-        )  # Small hack to fix message history
+        msgs = self.add_silence_messages(
+            cur_phase, cur_power, msgs, msg_history
+        )  # msgs[0] is the phase name, so we exclude
 
-        msgs = self.add_silence_messages(cur_power, msgs, msg_history_list)
+        msg_history.append([])
+        msg_history_buffer_list = copy.deepcopy(msg_history)
+        pre_msg_history_buffer_list = copy.deepcopy(msg_history)
 
-        msg_history_buffer_list = msg_history_list.copy()
-        pre_msg_history_buffer_list = msg_history_list.copy()
-
-        # We include self-talks, messages to GameMaster and SILENCE
+        # We include self-talks, and SILENCE
+        # key for the dict is a tuple (cur_power, to_power)
         default_msg_dict = {
-            f"{cur_power} -> {v.capitalize()}": [] for _, v in utls.COUNTRY_ID_TO_POWER.items()
+            (cur_power, v.capitalize()): [] for _, v in utls.COUNTRY_ID_TO_POWER.items()
         }
-        default_msg_dict[f"{cur_power} -> GameMaster"] = []
-        default_msg_dict[f"{cur_power}"] = []
+        default_msg_dict[(cur_power, None)] = []
+        default_msg_dict[(cur_power, "GameMaster")] = []
 
         msg_dict = copy.deepcopy(default_msg_dict)
         yield_example = False
 
         for msg in msgs:
-            if msg.startswith(cur_power):
+            if msg["speaker"] == cur_power:
                 if not yield_example:
-                    pre_msg_history_buffer_list = msg_history_buffer_list.copy()
+                    pre_msg_history_buffer_list = copy.deepcopy(msg_history_buffer_list)
 
-                if "SILENCE" not in msg:
-                    msg_history_buffer_list.append(msg)
+                if msg["message"] != "SILENCE":
+                    msg_history_buffer_list[-1].append(msg)
 
                 yield_example = True
 
-                key, msg = msg.split(":", 1)
+                key = (msg["speaker"], msg["listener"])
                 msg_dict[key].append(msg)
 
             else:
@@ -373,13 +413,12 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
                     yield_example = False
                     msg_dict = copy.deepcopy(default_msg_dict)
 
-                msg_history_buffer_list.append(msg)
+                msg_history_buffer_list[-1].append(msg)
 
         if yield_example:
             yield self._construct_example_dict(data.copy(), msg_dict, pre_msg_history_buffer_list)
 
-    @staticmethod
-    def _construct_example_dict(data_dict, msg_dict, pre_msg_history_buffer_list):
+    def _construct_example_dict(self, data_dict, msg_dict, pre_msg_history_buffer_list):
         """
         Static method that takes the data dict and updates "messages" and "message_history"
         with the msg_dict
@@ -388,14 +427,14 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         :param pre_msg_history_buffer_list:
         :return:
         """
+        cur_phase = data_dict["phase_id"]
         output_message_list = []
         for k, v in msg_dict.items():
             if v:
-                joined_msg = " ".join(v)
-                output_message_list.append(f"{k}: {joined_msg}")
+                output_message_list.extend(v)
 
-        data_dict["message"] = "\n".join(output_message_list)
-        data_dict["message_history"] = "\n".join(pre_msg_history_buffer_list)
+        data_dict["message"] = self.format_msg(output_message_list, phase_id=cur_phase)
+        data_dict["message_history"] = self.format_msg_history(pre_msg_history_buffer_list)
 
         return data_dict
 
@@ -460,6 +499,24 @@ class MessageHistoryOrderHistoryDialogueChunkTeacher(BaseDialogueChunkTeacher):
         msg[
             "text"
         ] = f"{queue_output['message_history']} {queue_output['order_history']} {curr_player}"
+
+        return Message(msg)
+
+
+@register_teacher("message_history_allorder_dialogue_chunk")
+class MessageHistoryAllorderHistoryDialogueChunkTeacher(BaseDialogueChunkTeacher):
+    """
+    Text field (input) contains MESSAGE HISTORY, All future order information
+    - [Message History, All future orders at the end of the turn] -> [Message]
+    Label is the next dialogue
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        msg[
+            "text"
+        ] = f"{queue_output['message_history']} {queue_output['all_orders']} {curr_player}"
 
         return Message(msg)
 
