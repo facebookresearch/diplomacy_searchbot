@@ -63,8 +63,7 @@ def get_result(game_json_path):
     else:
         return "six", power_one, power_won, rl_rewards
 
-
-def print_rl_stats(results, args):
+def print_rl_stats(results, print_stderr=False):
     stats_per_power = collections.defaultdict(list)
     for _, real_power, _, rl_stats in results:
         stats_per_power[real_power].append(rl_stats)
@@ -76,7 +75,8 @@ def print_rl_stats(results, args):
     cols = list(GameScores._fields)
 
     table = [["-"] + cols]
-    for power, stats in sorted(stats_per_power.items()):
+    for power, (avgs, stderrs) in sorted(stats_per_power.items()):
+        stats = stderrs if print_stderr else avgs
         table.append([power[:3]] + [getattr(stats, col) for col in cols])
     print(tabulate.tabulate(table, headers="firstrow"))
 
@@ -84,6 +84,7 @@ def print_rl_stats(results, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("results_dir", help="Directory containing game.json files")
+    parser.add_argument("--stderr", action="store_true", default=False)
     args = parser.parse_args()
 
     results_dir = ""
@@ -95,4 +96,4 @@ if __name__ == "__main__":
 
     results = [get_result(path) for path in paths]
     results = [r for r in results if r is not None]
-    print_rl_stats(results, args)
+    print_rl_stats(results, print_stderr=args.stderr)

@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 import tabulate
 
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.utils.game_scoring import average_game_scores, compute_game_scores, GameScores
+from fairdiplomacy.utils.game_scoring import compute_game_scores, GameScores
 
 
 def avg(L):

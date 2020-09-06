@@ -1,4 +1,4 @@
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Tuple
 import collections
 
 from fairdiplomacy.models.consts import POWERS, N_SCS
@@ -61,15 +61,18 @@ def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
     return compute_phase_scores(power_id, game_json["phases"][-1])
 
 
-def average_game_scores(many_games_scores: Sequence[GameScores]) -> GameScores:
+def average_game_scores(many_games_scores: Sequence[GameScores]) -> Tuple[GameScores, GameScores]:
     assert many_games_scores, "Must be non_empty"
-    result = {}
+    avgs, stderrs = {}, {}
     tot_n_games = sum(scores.num_games for scores in many_games_scores)
     for key in GameScores._fields:
         if key == "num_games":
             continue
-        result[key] = (
+        avgs[key] = (
             sum(getattr(scores, key) * scores.num_games for scores in many_games_scores)
             / tot_n_games
         )
-    return GameScores(**result, num_games=tot_n_games)
+        stderrs[key] = (
+            (sum( (getattr(scores, key) - avgs[key]) ** 2 * scores.num_games for scores in many_games_scores) / tot_n_games ** 2) ** 0.5
+        )
+    return GameScores(**avgs, num_games=tot_n_games), GameScores(**stderrs, num_games=tot_n_games)
