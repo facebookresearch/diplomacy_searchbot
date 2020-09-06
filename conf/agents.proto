@@ -125,6 +125,12 @@ message CFR1PAgent {
   // Optional. If set and a call to compute strategy for several agents is done
   // (e.g., in compare agents), then CFR is run only once.
   optional bool share_strategy = 31;
+
+  // If true, then exploitability is calculated at regular intervals.
+  optional bool enable_compute_nash_conv = 32;
+
+  // Optional. Excludes all-hold orders of length >=N from plausible orders.
+  optional int32 exclude_n_holds = 33;
 }
 
 message BRSearchAgent {

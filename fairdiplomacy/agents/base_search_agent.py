@@ -11,6 +11,10 @@ from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
 
 
 class BaseSearchAgent(BaseAgent):
+
+    def __init__(self, exclude_n_holds=None):
+        self.exclude_n_holds = exclude_n_holds
+
     def get_plausible_orders(
         self,
         game,
@@ -76,7 +80,7 @@ class BaseSearchAgent(BaseAgent):
         # filter out badly-coordinated actions
         counters = {
             power: (
-                filter_keys(counter, are_supports_coordinated) if len(counter) > limit else counter
+                filter_keys(counter, self.is_plausible_orders) if len(counter) > limit else counter
             )
             for (power, counter), limit in zip(counters.items(), limits)
         }
@@ -120,6 +124,13 @@ class BaseSearchAgent(BaseAgent):
             power: {orders: orders_to_logprobs[orders] for orders, _ in orders_and_counts}
             for power, orders_and_counts in most_common.items()
         }
+
+    def is_plausible_orders(self, orders: List[str]) -> bool:
+        if self.exclude_n_holds is not None and len(orders) >= self.exclude_n_holds and all([o.endswith(" H") for o in orders]):
+            logging.info(f"Excluding {orders} because all-holds")
+            return False
+
+        return are_supports_coordinated(orders)
 
 
 def compute_sampled_logprobs(sampled_idxs, logits):

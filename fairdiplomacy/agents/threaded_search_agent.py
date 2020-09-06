@@ -48,8 +48,9 @@ class ThreadedSearchAgent(BaseSearchAgent):
         device=0,
         mix_square_ratio_scoring=0,
         clear_old_all_possible_orders=False,
+        **kwargs
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.n_rollout_procs = n_rollout_procs
         self.rollout_temperature = rollout_temperature
         self.rollout_top_p = rollout_top_p
