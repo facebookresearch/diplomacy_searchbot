@@ -73,6 +73,10 @@ def average_game_scores(many_games_scores: Sequence[GameScores]) -> Tuple[GameSc
             / tot_n_games
         )
         stderrs[key] = (
-            (sum( (getattr(scores, key) - avgs[key]) ** 2 * scores.num_games for scores in many_games_scores) / tot_n_games ** 2) ** 0.5
-        )
+            sum(
+                (getattr(scores, key) - avgs[key]) ** 2 * scores.num_games
+                for scores in many_games_scores
+            )
+            / tot_n_games ** 2
+        ) ** 0.5
     return GameScores(**avgs, num_games=tot_n_games), GameScores(**stderrs, num_games=tot_n_games)

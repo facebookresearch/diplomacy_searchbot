@@ -63,6 +63,7 @@ def get_result(game_json_path):
     else:
         return "six", power_one, power_won, rl_rewards
 
+
 def print_rl_stats(results, print_stderr=False):
     stats_per_power = collections.defaultdict(list)
     for _, real_power, _, rl_stats in results:

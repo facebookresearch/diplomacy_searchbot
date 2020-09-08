@@ -11,7 +11,6 @@ from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
 
 
 class BaseSearchAgent(BaseAgent):
-
     def __init__(self, exclude_n_holds=None):
         self.exclude_n_holds = exclude_n_holds
 
@@ -126,7 +125,11 @@ class BaseSearchAgent(BaseAgent):
         }
 
     def is_plausible_orders(self, orders: List[str]) -> bool:
-        if self.exclude_n_holds is not None and len(orders) >= self.exclude_n_holds and all([o.endswith(" H") for o in orders]):
+        if (
+            self.exclude_n_holds is not None
+            and len(orders) >= self.exclude_n_holds
+            and all([o.endswith(" H") for o in orders])
+        ):
             logging.info(f"Excluding {orders} because all-holds")
             return False
 

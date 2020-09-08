@@ -1,0 +1,33 @@
+train {
+    dataset_params: {
+        data_dir: "/checkpoint/alerer/fairdiplomacy/mila_data/games";
+        num_dataloader_workers: 20;
+        debug_only_opening_phase: false;
+        value_decay_alpha: 1.0;
+    }
+
+    data_cache: "/checkpoint/apjacob/fairdiplomacy/mila_data/data_cache_mila2.pt";
+    metadata_path: "/checkpoint/alerer/fairdiplomacy/mila_data/metadata.json";
+    val_set_pct: 0.01;
+    batch_size: 2500;
+    lr: 0.001;
+    lr_decay: 0.99;
+    clip_grad_norm: 0.5;
+    checkpoint: "./checkpoint.pth";
+    teacher_force: 1.0;
+    lstm_dropout: 0.1;
+    num_encoder_blocks: 8;
+
+    encoder_dropout: 0.4;
+
+    num_epochs: 200;
+    debug_no_mp: false;
+    skip_validation: false;
+    learnable_A: false;
+    learnable_alignments: false;
+    avg_embedding: false;
+    write_jsonl: true;
+    value_decoder_init_scale: 0.01;
+    value_decoder_clip_grad_norm: 1e-7;
+    batch_size: 1000;
+}

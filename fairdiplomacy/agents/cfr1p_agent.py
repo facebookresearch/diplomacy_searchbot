@@ -192,7 +192,14 @@ class CFR1PAgent(ThreadedSearchAgent):
         if self.enable_compute_nash_conv:
             logging.info(f"Computing nash conv for blueprint")
             for temperature in (1.0, 0.5, 0.1, 0.01):
-                self.compute_nash_conv(cfr_data, f"blueprint T={temperature}", game, lambda cfr_data, power: self.bp_strategy(cfr_data, power, temperature=temperature))
+                self.compute_nash_conv(
+                    cfr_data,
+                    f"blueprint T={temperature}",
+                    game,
+                    lambda cfr_data, power: self.bp_strategy(
+                        cfr_data, power, temperature=temperature
+                    ),
+                )
 
         iter_weight = 0.0
         for cfr_iter in range(self.n_rollouts):
@@ -356,7 +363,7 @@ class CFR1PAgent(ThreadedSearchAgent):
     @classmethod
     def bp_strategy(cls, cfr_data, power, temperature=1.0) -> List[float]:
         actions = cfr_data.power_plausible_orders[power]
-        sigmas = [cfr_data.bp_sigma[(power, a)]**(1./temperature) for a in actions]
+        sigmas = [cfr_data.bp_sigma[(power, a)] ** (1.0 / temperature) for a in actions]
         sum_sigmas = sum(sigmas)
         assert len(actions) == 0 or sum_sigmas > 0, f"{actions} {cfr_data.bp_sigma}"
         return [s / sum_sigmas for s in sigmas]
@@ -470,7 +477,6 @@ class CFR1PAgent(ThreadedSearchAgent):
         )
         for orders, p, bp_p, avg_u, cur_u in sorted_metrics:
             logging.info(f"|>  {p:8.5f}  {bp_p:8.5f}  {avg_u:8.5f}  {cur_u:8.5f}  {orders}")
-
 
     def compute_nash_conv(self, cfr_data, label, game, strat_f):
         """For each power, compute EV of each action assuming opponent ave policies"""
