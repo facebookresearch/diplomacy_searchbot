@@ -707,7 +707,11 @@ GameState::GameState(const json &j) {
   // retreats
   if (phase_.phase_type == 'R') {
     for (Power power : POWERS) {
-      for (auto &it : j["retreats"][power_str(power)].items()) {
+      auto power_s = power_str(power);
+      if (j["retreats"].find(power_s) == j["retreats"].end()) {
+        continue;
+      }
+      for (auto &it : j["retreats"][power_s].items()) {
         Unit unit = Unit(it.key());
         dislodged_units_[unit.owned_by(power)] = Loc::NONE;
         orderable_locations_[power].insert(root_loc(unit.loc));
