@@ -20,6 +20,7 @@ NAME=$3
 GPU=${GPU:-1}
 CPU=${CPU:-10}
 NUM_TRIALS=${NUM_TRIALS:-10}
+ARRAY_BASE=${ARRAY_BASE:-0}
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/checkpoint/$USER/fairdiplomacy}/$NAME
 PARTITION=${PARTITION:-learnfair}
 MEM=${MEM:-0}
@@ -31,7 +32,7 @@ shift 3
 SBATCH_ARGS="--partition=$PARTITION --cpus-per-task=$CPU \
              --gpus=$GPU --mem=$MEM --time=$TIME --open-mode=append \
              --chdir=$CHECKPOINT_DIR \
-             --array=0-$(($NUM_TRIALS - 1))"
+             --array=$ARRAY_BASE-$(($ARRAY_BASE + $NUM_TRIALS - 1))"
 
 
 # copy repo
@@ -71,7 +72,8 @@ python $CODE_CHECKPOINT/run.py \
   I.agent_six=agents/$AGENT_SIX \
   power_one=$POWER \
   seed=\$(echo "(\$SLURM_ARRAY_TASK_ID + 1000 * \$SLURM_ARRAY_JOB_ID) % 67867979" | bc) \
-  out=${CHECKPOINT_DIR}/game_${POW}.\$SLURM_ARRAY_TASK_ID.json $@
+  out=${CHECKPOINT_DIR}/game_${POW}.\$SLURM_ARRAY_TASK_ID.json $@ \
+  use_default_requeue=true
 
 EOF
 done
