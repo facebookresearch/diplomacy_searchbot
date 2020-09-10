@@ -14,7 +14,7 @@ from torch.utils.data import RandomSampler
 from torch.utils.data.distributed import DistributedSampler
 
 from fairdiplomacy.data.dataset import Dataset, DataFields
-from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.models.consts import POWERS, SEASONS
 from fairdiplomacy.models.dipnet.load_model import new_model
 from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary,
@@ -154,10 +154,15 @@ def calculate_value_accuracy(final_sos, y_final_scores):
     return (actual_winner & guessed_winner).any(dim=1).float().mean()
 
 
-def calculate_split_accuracy_counts(sampled_idxs, y_truth):
+def calculate_split_accuracy_counts(sampled_idxs, batch):
     counts = Counter()
 
-    y_truth = y_truth[: (sampled_idxs.shape[0]), : (sampled_idxs.shape[1])].to(sampled_idxs.device)
+    y_truth = batch["y_actions"][: (sampled_idxs.shape[0]), : (sampled_idxs.shape[1])].to(
+        sampled_idxs.device
+    )
+    x_season_idx = batch["x_season"].nonzero()[:, 1]
+    assert len(x_season_idx) == len(sampled_idxs)
+
     for b in range(y_truth.shape[0]):
         for s in range(y_truth.shape[1]):
             if y_truth[b, s] == EOS_IDX:
@@ -165,6 +170,7 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
 
             truth_order = ORDER_VOCABULARY[y_truth[b, s]]
             correct = y_truth[b, s] == sampled_idxs[b, s]
+            season = SEASONS[x_season_idx[b]][0]  # S/F/W
 
             # stats by loc
             loc = truth_order.split()[1]
@@ -176,6 +182,9 @@ def calculate_split_accuracy_counts(sampled_idxs, y_truth):
 
             # stats by order step
             counts["step.{}.{}".format(s, "y" if correct else "n")] += 1
+
+            # stats by season
+            counts["season.{}.{}".format(season, "y" if correct else "n")] += 1
 
     return counts
 
@@ -209,14 +218,7 @@ def validate(net, val_set, policy_loss_fn, value_loss_fn, batch_size, value_loss
             batch_value_accuracies.append(
                 calculate_value_accuracy(final_sos, batch["y_final_scores"])
             )
-            batch_acc_split_counts.append(
-                calculate_split_accuracy_counts(
-                    sampled_idxs,
-                    cand_idxs_to_order_idxs(
-                        batch["y_actions"], batch["x_possible_actions"], pad_out=EOS_IDX
-                    ),
-                )
-            )
+            batch_acc_split_counts.append(calculate_split_accuracy_counts(sampled_idxs, batch))
         net.train()
 
     # validation loss
