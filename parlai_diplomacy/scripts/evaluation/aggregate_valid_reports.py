@@ -87,6 +87,9 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
     total_without_key_error = 0
     correct = 0
     correct_non_empty = 0
+    total_non_empty = 0
+    total_non_empty_predicted = 0
+    total_empty_predicted = 0
     key_error = 0
     for data in raw_data:
         total += 1
@@ -119,8 +122,18 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
             if order == predicted_order:
                 correct += 1
 
-            if not order and order == predicted_order:
+            # non-empty order
+            if order and (order == predicted_order):
                 correct_non_empty += 1
+
+            if order:
+                total_non_empty += 1
+
+            if predicted_order:
+                total_non_empty_predicted += 1
+
+            if not predicted_order:
+                total_empty_predicted += 1
 
             if game_id in final_data:
                 if phase_id in final_data[game_id]:
@@ -147,8 +160,13 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
     # just for reference, these metrics cannot be directly compared against fairdip
     print(f"order acc: {correct/total_without_key_error} ({correct}/{total_without_key_error})")
     print(
-        f"non-empty order acc: {correct_non_empty/total_without_key_error} ({correct_non_empty}/{total_without_key_error})"
+        f"non-empty order/all acc: {correct_non_empty/total_without_key_error} ({correct_non_empty}/{total_without_key_error})"
     )
+    print(
+        f"non-empty order/total-non-empty acc: {correct_non_empty/total_non_empty} ({correct_non_empty}/{total_non_empty})"
+    )
+    print(f"total non-empty predicted: {total_non_empty_predicted}")
+    print(f"total empty predicted: {total_empty_predicted}")
     print(f"key error: {key_error/total} ({key_error}/{total})")
 
     with open(VALID_REPORT_SAVE_JSON_PATH, "w") as fh:
