@@ -19,6 +19,7 @@ from parlai.core.loader import load_teacher_module
 import parlai_diplomacy.utils.datapath_constants as constants
 
 import parlai_diplomacy.utils.loading as load
+import parlai_diplomacy.tasks.common_task_utils as task_utls
 
 from copy import deepcopy
 from collections import defaultdict
@@ -76,14 +77,12 @@ if __name__ == "__main__":
     total_dct = defaultdict(dict)
     chunk_idx_to_num_examples = defaultdict(list)
 
-    # safety check to avoid overwriting example_counts
-    if os.path.exists(constants.CHUNK_EXAMPLE_COUNT_PATH + "weiyan"):
-        overwrite = input(
-            f"{constants.CHUNK_EXAMPLE_COUNT_PATH+'weiyan'} exists!\nDo you want to overwrite it?[Y/y] "
-        )
-        if overwrite not in ["Y", "y"]:
-            print("Aborting...")
-            sys.exit(-1)
+    (
+        _,
+        CHUNK_TO_EXAMPLE_COUNT_SAVE_PATH,
+        TOTAL_EXAMPLE_COUNT_SAVE_PATH,
+    ) = task_utls.get_chunk_to_example_count_save_path(opt)
+    logging.warn(f"will save example_count to {CHUNK_TO_EXAMPLE_COUNT_SAVE_PATH}")
 
     for dt in ["valid:stream", "train:stream"]:
         opt["datatype"] = dt
@@ -117,11 +116,17 @@ if __name__ == "__main__":
         total_dct[dt]["total"] = total
         total_dct[dt]["total_silence"] = total_silence
 
-    with open(constants.CHUNK_EXAMPLE_COUNT_PATH + "weiyan", "w") as fh:
+    # save each chunk's example count
+    with open(CHUNK_TO_EXAMPLE_COUNT_SAVE_PATH, "w") as fh:
         json.dump(chunk_idx_to_num_examples, fh)
-        logging.success(
-            f"Successfully saved example_counts to {constants.CHUNK_EXAMPLE_COUNT_PATH+'weiyan'}"
-        )
+        logging.success(f"Successfully saved example_counts to {CHUNK_TO_EXAMPLE_COUNT_SAVE_PATH}")
 
+    # save total example count
     for dt, cnt in total_dct.items():
         logging.success(f"Final count for {dt}: {cnt}")
+
+    with open(TOTAL_EXAMPLE_COUNT_SAVE_PATH, "w") as fh:
+        json.dump(total_dct, fh)
+        logging.success(
+            f"Successfully saved total_example_counts to {TOTAL_EXAMPLE_COUNT_SAVE_PATH}"
+        )

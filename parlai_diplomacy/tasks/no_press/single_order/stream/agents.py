@@ -44,7 +44,8 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             "--n_chunks",
             type=int,
             default=-1,
-            help="Number of chunks to load, default to -1 (loading all chunks for that data type)",
+            help="Number of chunks to load, default to -1 (loading all chunks for that data type), "
+            "only useful for calculation such as data_stat to save time, normally it should be -1",
         )
         return argparser
 
@@ -81,25 +82,48 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             if "valid" in datatype:
                 return 141624, 141624
         else:
-            all_chunk_idxs = list(self.chunk_idx_to_file.keys())
+            return self._get_num_samples_for_n_chunks(opt)
 
-            if "train" in datatype:
-                chunk_idxs_to_load = all_chunk_idxs[:TRAIN_VAL_SPLIT]
-            elif "valid" in datatype:
-                chunk_idxs_to_load = all_chunk_idxs[TRAIN_VAL_SPLIT:]
+    def _get_num_samples_for_n_chunks(self, opt):
+        datatype = opt["datatype"]
+        n_chunks = opt.get("n_chunks")
+        all_chunk_idxs = list(self.chunk_idx_to_file.keys())
 
-            logging.warn(
-                f"Loading only {n_chunks} chunks out of {len(chunk_idxs_to_load)} chunks in datatype {datatype}!"
+        if "train" in datatype:
+            chunk_idxs_to_load = all_chunk_idxs[:TRAIN_VAL_SPLIT]
+        elif "valid" in datatype:
+            chunk_idxs_to_load = all_chunk_idxs[TRAIN_VAL_SPLIT:]
+
+        logging.warn(
+            f"Loading only {n_chunks} chunks out of {len(chunk_idxs_to_load)} chunks in datatype {datatype}!"
+        )
+        chunk_idxs_to_load = chunk_idxs_to_load[:n_chunks]
+
+        # load chunk_to_example_count.json
+        CHUNK_TO_EXAMPLE_COUNT_SAVE_FOLDER, _, _ = utls.get_chunk_to_example_count_save_path(opt)
+        example_count_fles = sorted(
+            [
+                fle_name
+                for fle_name in os.listdir(CHUNK_TO_EXAMPLE_COUNT_SAVE_FOLDER)
+                if fle_name.startswith("chunk")
+            ]
+        )
+
+        if len(example_count_fles) == 0:
+            raise ValueError(
+                f"There are no chunk_to_example_count files in {CHUNK_TO_EXAMPLE_COUNT_SAVE_FOLDER}!"
             )
-            chunk_idxs_to_load = chunk_idxs_to_load[:n_chunks]
-            with open(constants.CHUNK_EXAMPLE_COUNT_PATH, "r") as fh:
-                chunk_idx_to_count = json.load(fh)
+        with open(
+            os.path.join(CHUNK_TO_EXAMPLE_COUNT_SAVE_FOLDER, example_count_fles[-1]), "r"
+        ) as fh:  # load the most recent one
+            chunk_idx_to_count = json.load(fh)
 
-            total_counts = sum(
-                [chunk_idx_to_count[str(chunk_idx)] for chunk_idx in chunk_idxs_to_load]
-            )
+        # get count
+        total_counts = sum(
+            [chunk_idx_to_count[str(chunk_idx)][0] for chunk_idx in chunk_idxs_to_load]
+        )
 
-            return total_counts, total_counts
+        return total_counts, total_counts
 
     def _set_chunk_idx_to_file(self):
         folder = self._get_data_folder()

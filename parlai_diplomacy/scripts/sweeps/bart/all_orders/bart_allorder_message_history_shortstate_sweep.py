@@ -11,7 +11,7 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "message_history_allorder_dialogue_chunk_BART_diplomacy_batch4"
+sweep_name = "message_history_shortstate_allorder_chunk_bart_diplomacy_batchsize4_learnfair"
 NUM_HOURS = 72
 
 # Define param grid
@@ -19,10 +19,9 @@ grid = {
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "--load-from-checkpoint": ["True"],
     "--dynamic-batching": ["full"],
-    "-t": ["message_history_allorder_dialogue_chunk",],
+    "-t": ["message_history_shortstate_allorder_chunk"],
     "-dt": ["train:stream"],
-    "--num-epochs": [10],
-    "--min-turns": [1,],
+    "--num-epochs": [20],
     "-veps": [0.1],
     "--attention-dropout": [0.00],
     "--dropout": [0.1],
@@ -35,7 +34,7 @@ grid = {
     "--log_every_n_secs": [10],
     "-lr": [5e-5],
     "--lr-scheduler": ["linear"],
-    "--max-lr-steps": [50_000],
+    "--max-lr-steps": [150_000],
     "--lr-scheduler-patience": [3],
     "--optimizer": ["adam"],
     "--relu-dropout": [0.0],
@@ -43,13 +42,12 @@ grid = {
     "--model-parallel": [False],
     "--save-after-valid": [True],
     "--text-truncate": [1024],
-    "--warmup-updates": [5_000],
+    "--warmup-updates": [10_000],
     "--fp16-impl": ["mem_efficient"],
-    "--update-freq": [1],
+    "--update-freq": [2],
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
-    "-vp": [50],
-    # "--max-train-time": [0.96 * NUM_HOURS * 60 * 60],  # just under 8 hours
+    "-vp": [100],
     "-vmt": ["ppl"],
     "-vmm": ["min"],
     "-stim": [360],

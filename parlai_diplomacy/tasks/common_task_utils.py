@@ -13,6 +13,8 @@ import sys
 import time
 import numpy as np
 from copy import deepcopy
+from pathlib import Path
+from datetime import datetime
 
 import parlai.utils.logging as logging
 import parlai_diplomacy.utils.game_loading as game_loading
@@ -81,6 +83,71 @@ def add_common_dialogue_args(argparser):
 
 def is_training(datatype):
     return "train" in datatype and "evalmode" not in datatype
+
+
+def get_teacher_output_type(task):
+    """
+    Return the teacher output type: order or dialogue.
+    The returned value indicates if the teacher is an order prediction teacher 
+    or a dialogue generation teacher. If the teacher predicts all orders, 
+    e.g. state_allorder_chunk, the function will still return order 
+    because it's an order prediction teacher. 
+    This function is useful for creating and organizing paths to save things.
+
+    Args:
+        task (str): opt['task'], the task argument in teacher opt
+
+    Returns:
+        str: one of {order, dialogue}
+    """
+    output = task.split("chunk")[-2]
+    if "order" in output:
+        order_or_dialogue_teacher = "order"
+    elif "dialogue" in output:
+        order_or_dialogue_teacher = "dialogue"
+    else:
+        raise ValueError(f"{output} teacher not supported!")
+
+    return order_or_dialogue_teacher
+
+
+def get_chunk_to_example_count_save_path(opt):
+    """ get the path to chunk_to_example_count.json
+    
+    Organized as  
+        <Path to joined json>/example_count/order_teacher/chunk_to_example_count_<time>.sjon
+        <Path to joined json>/example_count/dialogue_teacher/chunk_to_example_count_<time>.sjon
+    """
+    cur_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if opt.get("loading_chunks", 1000) == 1000:
+        chunk_to_example_count_save_folder = "/".join(
+            constants.CHUNK_MESSAGE_ORDER_PATH.split("/")[:-1]
+        )
+    else:
+        chunk_to_example_count_save_folder = "/".join(
+            constants.CHUNK_MESSAGE_ORDER_250_PATH.split("/")[:-1]
+        )
+    assert os.path.exists(chunk_to_example_count_save_folder)
+
+    teacher_output_type = get_teacher_output_type(opt["task"])
+    chunk_to_example_count_save_folder = os.path.join(
+        chunk_to_example_count_save_folder, "example_count", f"{teacher_output_type}_teacher"
+    )
+    Path(chunk_to_example_count_save_folder).mkdir(parents=True, exist_ok=True)
+    assert os.path.exists(chunk_to_example_count_save_folder)
+
+    chunk_to_example_count_save_path = os.path.join(
+        chunk_to_example_count_save_folder, f"chunk_to_example_count_{cur_time}.json",
+    )
+    total_example_count_save_path = os.path.join(
+        chunk_to_example_count_save_folder, f"total_example_count_{cur_time}.json",
+    )
+
+    return (
+        chunk_to_example_count_save_folder,
+        chunk_to_example_count_save_path,
+        total_example_count_save_path,
+    )
 
 
 def analyze_redacted():

@@ -314,13 +314,16 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
         """
         Return the number of samples given the datatype.
         """
-        # TODO: get actual counts here for train
         datatype = opt["datatype"]
-        if "train" in datatype:
-            return 14834555, 14834555
+        n_chunks = opt.get("n_chunks")
+        if n_chunks < 0:
+            if "train" in datatype:
+                return 14834555, 14834555
 
-        if "valid" in datatype:
-            return 159498, 159498
+            if "valid" in datatype:
+                return 159498, 159498
+        else:
+            return self._get_num_samples_for_n_chunks(opt)
 
     def _generate_example_tuples(self, game_id, phase_id, player_id, data):
         """
