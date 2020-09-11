@@ -84,16 +84,15 @@ def print_rl_stats(results, print_stderr=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("results_dir", help="Directory containing game.json files")
+    parser.add_argument("results_dirs", nargs="+", help="Directories containing game.json files")
     parser.add_argument("--stderr", action="store_true", default=False)
     args = parser.parse_args()
 
-    results_dir = ""
-    for d in [args.results_dir, "/fairdiplomacy", "/compare_agents"]:
-        results_dir += d
-        paths = glob.glob(os.path.join(results_dir, "game*.json"))
-        if len(paths) > 0:
-            break
+    paths = [
+        x
+        for results_dir in args.results_dirs
+        for x in glob.glob(os.path.join(results_dir, "game*.json"))
+    ]
 
     results = [get_result(path) for path in paths]
     results = [r for r in results if r is not None]
