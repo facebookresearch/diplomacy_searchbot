@@ -1,0 +1,4 @@
+parlai {
+    model_path: "/checkpoint/wyshi/20200827/resume_newdata_state_order_chunk_bart_diplomacy/18e/model"
+    predict_all_orders: false
+}

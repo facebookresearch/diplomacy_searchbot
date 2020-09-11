@@ -291,6 +291,15 @@ message ReproAgent {
   optional string game_path = 1;
 }
 
+message ParlAIAgent {
+  // Required. Path to the model.
+  optional string model_path = 1;
+
+  // Required. Whether to use wrapper that predicts orders per power or predict
+  // all powers at once. The model should match this.
+  optional bool predict_all_orders = 2;
+}
+
 message Agent {
   oneof agent {
     MilaSlAgent mila = 1;
@@ -301,5 +310,6 @@ message Agent {
     CE1PAgent ce1p = 6;
     ReproAgent repro = 7;
     FP1PAgent fp1p = 8;
+    ParlAIAgent parlai = 9;
   }
 }

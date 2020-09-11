@@ -8,7 +8,6 @@
 Utils for converting game JSONs into string sequences for model input
 """
 import parlai_diplomacy.tasks.common_task_utils as task_utils
-import parlai_diplomacy.utils.game_to_sequence_formatting as fmt
 
 
 class SequenceFormatHelper:
@@ -22,6 +21,8 @@ class SequenceFormatHelper:
     def change_format(cls, json, fmt="state_order"):
         if fmt == "state_order":
             return cls.state_order_format(json)
+        if fmt == "shortstate_order":
+            return cls.shortstate_order_format(json)
 
         raise RuntimeError(f"Format {fmt} not currently supported")
 
@@ -31,7 +32,22 @@ class SequenceFormatHelper:
         for phase in json:
             seqs[phase] = {}
             # TODO: make this work with special tokens
-            state = fmt.flatten_state(json[phase]["state"], None, None)
+            state = flatten_state(json[phase]["state"], None, None)
+            for _, speaker in task_utils.COUNTRY_ID_TO_POWER.items():
+                # set up speaker
+                player_prompt_token = f"{phase} {speaker.capitalize()}:"
+                input_seq = f"{state} {player_prompt_token}"
+                seqs[phase][speaker] = input_seq
+
+        return seqs
+
+    @staticmethod
+    def shortstate_order_format(json):
+        seqs = {}
+        for phase in json:
+            seqs[phase] = {}
+            # TODO: make this work with special tokens
+            state = flatten_state(json[phase]["state"], None, None, short_version=True)
             for _, speaker in task_utils.COUNTRY_ID_TO_POWER.items():
                 # set up speaker
                 player_prompt_token = f"{phase} {speaker.capitalize()}:"

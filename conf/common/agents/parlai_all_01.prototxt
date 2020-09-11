@@ -1,0 +1,5 @@
+parlai {
+    model_path: "/checkpoint/wyshi/20200827/resume_allorder_shortstate_bart_diplomacy/18e/model"
+    predict_all_orders: true
+
+}
