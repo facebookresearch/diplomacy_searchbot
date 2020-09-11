@@ -114,6 +114,13 @@ class ThreadedSearchAgent(BaseSearchAgent):
         # Returning None for values. Must call with values_only to get values.
         return (decoded, order_logprobs, None)
 
+    def get_values(self, game) -> np.ndarray:
+        batch_inputs = encode_batch_inputs(self.thread_pool, [game])
+        batch_est_final_scores = self.do_model_request(
+            batch_inputs, self.rollout_temperature, self.rollout_top_p, values_only=True
+        )
+        return batch_est_final_scores[0]
+
     def do_rollouts(
         self, game_init, set_orders_dicts, average_n_rollouts=1, timings=None, log_timings=False
     ):

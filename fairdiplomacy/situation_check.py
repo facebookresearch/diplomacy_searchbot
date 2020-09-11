@@ -49,6 +49,11 @@ def run_situation_check(meta, agent):
                     orders = agent.get_orders(game, power)
                     prob_distributions[power][tuple(orders)] += 1 / NUM_ROLLOUTS
 
+        if hasattr(agent, "get_values"):
+            logging.info(
+                "Values: %s",
+                " ".join(f"{p}={v:.3f}" for p, v in zip(POWERS, agent.get_values(game))),
+            )
         for power in POWERS:
             pd = prob_distributions[power]
             pdl = sorted(list(pd.items()), key=lambda x: -x[1])

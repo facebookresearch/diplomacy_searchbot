@@ -126,14 +126,21 @@ def situation_check(cfg):
 
     agent = build_agent_from_cfg(cfg.agent)
 
-    # If not absolute path, assume relative to project root.
-    with open(heyhi.PROJ_ROOT / cfg.situation_json) as f:
-        meta = json.load(f)
+    if cfg.single_game:
+        # Creating fake meta from a single game.
+        meta = {"game": {"game_path": cfg.single_game}}
+        if cfg.single_phase:
+            meta["game"]["phase"] = cfg.single_phase
+        logging.info("Created fake test situation JSON: %s", meta)
+    else:
+        # If not absolute path, assume relative to project root.
+        with open(heyhi.PROJ_ROOT / cfg.situation_json) as f:
+            meta = json.load(f)
 
-    selection = None
-    if cfg.selection != "":
-        selection = cfg.selection.split(",")
-        meta = {k: v for k, v in meta.items() if k in selection}
+        selection = None
+        if cfg.selection != "":
+            selection = cfg.selection.split(",")
+            meta = {k: v for k, v in meta.items() if k in selection}
 
     run_situation_check(meta, agent)
 

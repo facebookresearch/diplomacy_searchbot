@@ -526,6 +526,11 @@ message SituationCheckTask {
   optional string situation_json = 2;
   optional int32 seed = 3 [ default = -1 ];
   optional string selection = 4;
+  // Optional. If single_game is set, then the game is used instead of
+  // situation_json.
+  optional string single_game = 5;
+  // Optional. Only applies to the case when single_game is set.
+  optional string single_phase = 6;
   optional Launcher launcher = 100;
 }
 
