@@ -46,6 +46,13 @@ def compare_agents(cfg):
 
     power_string = _power_to_string(cfg.power_one)
 
+    kwargs = dict(
+        start_game=cfg.start_game,
+        start_phase=cfg.start_phase,
+        max_turns=cfg.max_turns,
+        max_year=cfg.max_year,
+    )
+
     if cfg.num_processes > 0:
         assert cfg.num_trials > 0
         result = run_1v6_trial_multiprocess(
@@ -57,9 +64,8 @@ def compare_agents(cfg):
             cf_agent=cf_agent,
             num_processes=cfg.num_processes,
             num_trials=cfg.num_trials,
-            max_turns=cfg.max_turns,
-            max_year=cfg.max_year,
             use_shared_agent=cfg.use_shared_agent,
+            **kwargs,
         )
     else:
         result = run_1v6_trial(
@@ -69,9 +75,8 @@ def compare_agents(cfg):
             save_path=cfg.out if cfg.out else None,
             seed=cfg.seed,
             cf_agent=cf_agent,
-            max_turns=cfg.max_turns,
-            max_year=cfg.max_year,
             use_shared_agent=cfg.use_shared_agent,
+            **kwargs,
         )
         logging.warning("Result: {}".format(result))
 

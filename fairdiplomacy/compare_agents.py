@@ -1,6 +1,7 @@
 import logging
 import multiprocessing as mp
 import os
+import pydipcc
 
 import numpy as np
 import torch
@@ -20,6 +21,8 @@ def run_1v6_trial(
     use_shared_agent=False,
     max_turns=None,
     max_year=1935,
+    start_game=None,
+    start_phase=None,
 ):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
@@ -29,9 +32,11 @@ def run_1v6_trial(
     - save_path: if specified, save game.json to this path
     - seed: random seed
     - cf_agent: print out the orders for each power assuming that this agent was in charge
+    - use_shared_agent: ingore agent_six and use agent_one for all
     - max_turns: finish game early; flag to speed up testing.
     - max_year: finish game early; flag to speed up testing.
-    - use_shared_agent: ingore agent_six and use agent_one for all
+    - start_game: optional path game.json to start playing from.
+    - start_phase: optional phase in start_game to start with.
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
@@ -45,7 +50,21 @@ def run_1v6_trial(
             agent_one=agent_one, agent_six=agent_six, agent_one_power=agent_one_power, seed=seed
         )
 
-    env = Env(policy_profile=policy_profile, seed=seed, cf_agent=cf_agent, max_year=max_year)
+    if start_game:
+        with open(start_game) as stream:
+            game_obj = pydipcc.Game.from_json(stream.read())
+        if start_phase:
+            game_obj.rollback_to_phase(start_phase)
+    else:
+        game_obj = None
+
+    env = Env(
+        policy_profile=policy_profile,
+        seed=seed,
+        cf_agent=cf_agent,
+        max_year=max_year,
+        game_obj=game_obj,
+    )
 
     scores = env.process_all_turns(max_turns=max_turns)
 
@@ -79,7 +98,12 @@ def run_1v6_trial_multiprocess(
     cf_agent=None,
     num_processes=8,
     num_trials=100,
+    *,
+    start_game=None,
+    start_phase=None,
 ):
+    assert not start_game, "Not supported"
+    assert not start_phase, "Not supported"
     torch.set_num_threads(1)
     save_base, save_ext = save_path.rsplit(".", 1)  # sloppy, assuming that there's an extension
     os.makedirs(save_base, exist_ok=True)

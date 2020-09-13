@@ -42,8 +42,10 @@ class SharedPolicyProfile:
 
 
 class Env:
-    def __init__(self, policy_profile, seed=0, cf_agent=None, max_year=PYDIPCC_MAX_YEAR):
-        self.game = Game()
+    def __init__(
+        self, policy_profile, seed=0, cf_agent=None, max_year=PYDIPCC_MAX_YEAR, game_obj=None
+    ):
+        self.game = Game(game_obj) if game_obj is not None else Game()
 
         # set random seeds
         random.seed(seed)
