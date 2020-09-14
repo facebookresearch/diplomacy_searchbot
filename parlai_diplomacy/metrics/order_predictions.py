@@ -28,16 +28,17 @@ class OrderPredMetricMixin:
         order_pred = set(order_seq_to_fairdip(model_response["text"]))
         empty_order = order_is_empty(labels[0])
 
-        if order_label == order_pred:
-            # count 1 / 1 exact match
-            self.metrics.add("order_exact_avg", AverageMetric(1, 1))
-            if not empty_order:
-                self.metrics.add("order_exact_no_empty_avg", AverageMetric(1, 1))
-        else:
-            # count 0 /1 exact match
-            self.metrics.add("order_exact_avg", AverageMetric(0, 1))
-            if not empty_order:
-                self.metrics.add("order_exact_no_empty_avg", AverageMetric(0, 1))
+        if not empty_order:
+            # set intersection metric
+            intersect = len(order_pred.intersection(order_label))
+            denom = len(order_label)
+            self.metrics.add("order_no_empty_avg", AverageMetric(intersect, denom))
+
+        # exact match metric
+        exact_match = int(order_label == order_pred)
+        self.metrics.add("order_exact_avg", AverageMetric(exact_match, 1))
+        if not empty_order:
+            self.metrics.add("order_exact_no_empty_avg", AverageMetric(exact_match, 1))
 
 
 class AllOrderPredMetricMixin:
@@ -64,23 +65,21 @@ class AllOrderPredMetricMixin:
 
             empty_order = not order_label
 
-            if order_label == order_pred:
-                # count 1 / 1 exact match
-                self.metrics.add("all_order_exact_avg", AverageMetric(1, 1))
-                if not empty_order:
-                    self.metrics.add("all_order_exact_no_empty_avg", AverageMetric(1, 1))
+            # intersection metrics
+            if not empty_order:
+                intersect = len(order_pred.intersection(order_label))
+                denom = len(order_label)
+                self.metrics.add("all_order_no_empty_avg", AverageMetric(intersect, denom))
                 if power == player:
-                    # get metrics for predicting your OWN order
-                    self.metrics.add("order_exact_avg", AverageMetric(1, 1))
-                    if not empty_order:
-                        self.metrics.add("order_exact_no_empty_avg", AverageMetric(1, 1))
-            else:
-                # count 0 / 1 exact match
-                self.metrics.add("all_order_exact_avg", AverageMetric(0, 1))
+                    self.metrics.add("order_no_empty_avg", AverageMetric(intersect, denom))
+
+            # exact match metrics
+            exact_match = int(order_label == order_pred)
+            self.metrics.add("all_order_exact_avg", AverageMetric(exact_match, 1))
+            if not empty_order:
+                self.metrics.add("all_order_exact_no_empty_avg", AverageMetric(exact_match, 1))
+            if power == player:
+                # get metrics for predicting your OWN order
+                self.metrics.add("order_exact_avg", AverageMetric(exact_match, 1))
                 if not empty_order:
-                    self.metrics.add("all_order_exact_no_empty_avg", AverageMetric(0, 1))
-                if power == player:
-                    # get metrics for predicting your OWN order
-                    self.metrics.add("order_exact_avg", AverageMetric(0, 1))
-                    if not empty_order:
-                        self.metrics.add("order_exact_no_empty_avg", AverageMetric(0, 1))
+                    self.metrics.add("order_exact_no_empty_avg", AverageMetric(exact_match, 1))
