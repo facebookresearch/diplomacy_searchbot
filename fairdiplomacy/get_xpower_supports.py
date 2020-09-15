@@ -12,10 +12,11 @@ import tabulate
 import pprint
 import joblib
 import torch
-from typing import Optional
+from typing import Optional, Union
 
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.game import Game
+import pydipcc
 
 
 def compute_xpower_supports_from_saved(path, max_year=None, cf_agent=None):
@@ -33,7 +34,7 @@ def compute_xpower_supports_from_saved(path, max_year=None, cf_agent=None):
 
 
 def compute_xpower_supports(
-    game: Game,
+    game: Union[Game, pydipcc.Game],
     max_year: Optional[str] = None,
     cf_agent: Optional[fairdiplomacy.agents.base_agent.BaseAgent] = None,
     name: str = "",
@@ -48,12 +49,14 @@ def compute_xpower_supports(
         - name: a label for this game, returned in the output.
 
         Returns a dict of statistics for this game.
+          name --> copied name from the argument
+          o --> total number of orders
           s --> total number of support orders
           x --> number of support orders that are cross-power
           e --> number of cross-power support orders that "had an effect" (vs. a hold order for that unit)
         """
 
-    num_supports, num_xpower, num_eff = 0, 0, 0
+    num_orders, num_supports, num_xpower, num_eff = 0, 0, 0, 0
     for phase in game.get_phase_history():
         state = phase.state
         if state["name"][1:-1] == max_year:
@@ -62,6 +65,7 @@ def compute_xpower_supports(
             unit.split()[1]: power for power, units in state["units"].items() for unit in units
         }
         if cf_agent is not None:
+            assert isinstance(game, Game), "Not implemented"
             cf_orders = cf_agent.get_orders_many_powers(
                 Game.clone_from(game, up_to_phase=state["name"]), powers=POWERS
             )
@@ -71,6 +75,7 @@ def compute_xpower_supports(
                 power_orders = cf_orders[power]
 
             for order in power_orders:
+                num_orders += 1
                 order_tokens = order.split()
                 is_support = (
                     len(order_tokens) >= 5
@@ -89,7 +94,11 @@ def compute_xpower_supports(
 
                 cf_states = []
                 for do_support in (False, True):
-                    g_cf = Game.clone_from(game, up_to_phase=state["name"])
+                    if isinstance(game, Game):
+                        g_cf = Game.clone_from(game, up_to_phase=state["name"])
+                    else:
+                        g_cf = pydipcc.Game(game)
+                        g_cf.rollback_to_phase(state["name"])
                     g_cf.set_orders(power, power_orders)
 
                     assert g_cf.get_state()["name"] == state["name"]
@@ -105,7 +114,7 @@ def compute_xpower_supports(
                 if cf_states[0] != cf_states[1]:
                     num_eff += 1
 
-    return {"name": name, "s": num_supports, "x": num_xpower, "e": num_eff}
+    return {"name": name, "s": num_supports, "x": num_xpower, "e": num_eff, "o": num_orders}
 
 
 def compute_xpower_statistics(paths, max_year=None, num_jobs=40, cf_agent=None):
@@ -188,7 +197,7 @@ if __name__ == "__main__":
         "--max-games", type=int, default=1000000, help="Max # of games to evaluate"
     )
     parser.add_argument(
-        "--max-year", help="Stop computing at this year (to avoid endless supports for draw",
+        "--max-year", help="Stop computing at this year (to avoid endless supports for draw"
     )
     parser.add_argument(
         "--metadata-path", help="Path to metadata file for games, allowing for filtering"
