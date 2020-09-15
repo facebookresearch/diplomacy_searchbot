@@ -1,4 +1,4 @@
-from typing import Dict, Sequence, Tuple
+from typing import Dict, Sequence, Tuple, List
 import collections
 
 from fairdiplomacy.models.consts import POWERS, N_SCS
@@ -20,6 +20,26 @@ GameScores = collections.namedtuple(
         "num_games",  # Number of games being averaged
     ],
 )
+
+
+def compute_game_sos_from_state(game_state: Dict) -> List[float]:
+    center_counts = [len(game_state["centers"].get(p, [])) for p in POWERS]
+    clear_wins = [c > (N_SCS / 2) for c in center_counts]
+    if any(clear_wins):
+        return [float(w) for w in clear_wins]
+    center_squares = [x ** 2 for x in center_counts]
+    sum_sq = sum(center_squares)
+    return [c / sum_sq for c in center_squares]
+
+
+def compute_game_dss_from_state(game_state: Dict) -> List[float]:
+    center_counts = [len(game_state["centers"].get(p, [])) for p in POWERS]
+    clear_wins = [c > (N_SCS / 2) for c in center_counts]
+    if any(clear_wins):
+        return [float(w) for w in clear_wins]
+    alive = [c > 0 for c in center_counts]
+    n_alive = sum(alive)
+    return [a / n_alive for a in alive]
 
 
 def compute_phase_scores(power_id: int, phase_json: Dict) -> GameScores:
