@@ -17,7 +17,7 @@ typing_extensions     # for submitit
 
 # diplomacy_research deps
 tornado>=5.0
-protobuf==3.6.1
+protobuf>=3.6.1
 pyyaml
 python-hostlist
 gym>=0.9.6
