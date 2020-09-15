@@ -8,7 +8,7 @@ GameScores = collections.namedtuple(
     "GameScores",
     [
         "center_ratio",  # Ratio of the player's SCs to N_SCS.
-        "draw_score",  # Ratio of the player's SCs to sum(SSs). But 1/0 if clear win/loss.
+        "draw_score",  # 1. / num alive players, but 1/0 if clear win/loss.
         "square_ratio",  # Ratio of the squure of the SCs to sum of squares.
         "square_score",  # Same as square_ratio, but 1 if is_clear_win.
         "is_complete_unroll",  # 0/1 whether last phase is complete.
@@ -72,7 +72,7 @@ def compute_game_scores_from_state(power_id: int, game_state: Dict) -> GameScore
         1.0 if is_clear_win else (0 if is_clear_loss else metrics["square_ratio"])
     )
     metrics["draw_score"] = (
-        float(is_clear_win) if someone_wins else center_counts[power_id] / sum(center_counts)
+        float(is_clear_win) if someone_wins else 1.0 / sum(x > 0 for x in center_counts)
     )
     return GameScores(**metrics, num_games=1)
 
