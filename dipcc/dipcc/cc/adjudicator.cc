@@ -1234,8 +1234,6 @@ GameState GameState::process_m(
   const unordered_map<Loc, set<Order>> &all_possible_orders(
       this->get_all_possible_orders());
 
-  unordered_map<Loc, Order> orders_by_src = organize_orders_by_src(orders);
-
   // Build up candidate data
   LocCandidates loc_candidates;
   vector<pair<Order, bool>> move_via_orders;
@@ -1254,73 +1252,78 @@ GameState GameState::process_m(
     loc_candidates.add_candidate(loc, unit, false, false);
   }
 
-  // Loop through all orders and build up data structures
-  for (auto &power_orders_pair : orders) {
-    Power power = power_orders_pair.first;
-    for (Order order : power_orders_pair.second) {
+  // Organize orders by src loc
+  unordered_map<Loc, Order> orders_by_src;
+  for (auto & [ power, porders ] : orders) {
+    for (const Order order : porders) {
+      Loc loc = order.get_unit().loc;
       // check if correct power ordering unit
-      if (this->get_unit(order.get_unit().loc).power != power) {
+      if (this->get_unit(loc).power != power) {
         DLOG(WARNING) << power_str(power)
                       << " tried wrong-power order: " << order.to_string();
         continue;
       }
+      orders_by_src[root_loc(loc)] = order;
+    }
+  }
 
-      // check if order is possible
-      auto loc_possible_orders_it =
-          all_possible_orders.find(order.get_unit().loc);
-      if (loc_possible_orders_it == all_possible_orders.end() ||
-          !set_contains(loc_possible_orders_it->second, order)) {
-        if (is_implicit_via(order, all_possible_orders)) {
-          // set via to explicitly true and move on
-          DLOG(WARNING) << "Accepting implicit via for order: "
-                        << order.to_string();
-          order = order.with_via(true);
-          orders_by_src[root_loc(order.get_unit().loc)] = order;
-        } else {
-          DLOG(WARNING) << "Order not possible: " << order.to_string();
-          illegal_orderers.insert(root_loc(order.get_unit().loc));
-          continue;
-        }
-      }
-
-      // check if via move is to adjacent loc (i.e. non-via move also
-      // allowed)
-      bool via_adj =
-          (order.get_via() &&
-           loc_possible_orders_it != all_possible_orders.end() &&
-           set_contains(loc_possible_orders_it->second, order.with_via(false)));
-
-      // add all loc candidates and set aside supports
-      if (order.get_type() == OrderType::H) {
-        // do nothing, hold candidates already added
-      } else if (order.get_type() == OrderType::M) {
-        if (order.get_via()) {
-          // Handle via moves after gathering convoy orders.
-          move_via_orders.push_back(make_pair(order, via_adj));
-        } else {
-          // move to dest with max=1
-          loc_candidates.add_candidate(order.get_dest(),
-                                       this->get_unit(order.get_unit().loc),
-                                       false, false);
-        }
-      } else if (order.get_type() == OrderType::SM ||
-                 order.get_type() == OrderType::SH) {
-        // handle supports after determining which moves are legal
-        support_orders.push_back(order);
-      } else if (order.get_type() == OrderType::C) {
-        auto target = orders_by_src.find(root_loc(order.get_target().loc));
-        if (target != orders_by_src.end() &&
-            target->second.get_type() == OrderType::M &&
-            target->second.get_dest() == order.get_dest() &&
-            (target->second.get_via() ||
-             is_implicit_via(target->second, all_possible_orders))) {
-          loc_candidates.add_convoy_order(order);
-        } else {
-          DLOG(WARNING) << "Uncoordinated convoy: " << order.to_string();
-        }
+  // Loop through all orders and build up data structures
+  for (auto & [ rloc, order ] : orders_by_src) {
+    // check if order is possible
+    auto loc_possible_orders_it =
+        all_possible_orders.find(order.get_unit().loc);
+    if (loc_possible_orders_it == all_possible_orders.end() ||
+        !set_contains(loc_possible_orders_it->second, order)) {
+      if (is_implicit_via(order, all_possible_orders)) {
+        // set via to explicitly true and move on
+        DLOG(WARNING) << "Accepting implicit via for order: "
+                      << order.to_string();
+        order = order.with_via(true);
+        orders_by_src[root_loc(order.get_unit().loc)] = order;
       } else {
-        throw("Can't yet categorize order: " + order.to_string());
+        DLOG(WARNING) << "Order not possible: " << order.to_string();
+        illegal_orderers.insert(root_loc(order.get_unit().loc));
+        continue;
       }
+    }
+
+    // check if via move is to adjacent loc (i.e. non-via move also
+    // allowed)
+    bool via_adj =
+        (order.get_via() &&
+         loc_possible_orders_it != all_possible_orders.end() &&
+         set_contains(loc_possible_orders_it->second, order.with_via(false)));
+
+    // add all loc candidates and set aside supports
+    if (order.get_type() == OrderType::H) {
+      // do nothing, hold candidates already added
+    } else if (order.get_type() == OrderType::M) {
+      if (order.get_via()) {
+        // Handle via moves after gathering convoy orders.
+        move_via_orders.push_back(make_pair(order, via_adj));
+      } else {
+        // move to dest with max=1
+        loc_candidates.add_candidate(order.get_dest(),
+                                     this->get_unit(order.get_unit().loc),
+                                     false, false);
+      }
+    } else if (order.get_type() == OrderType::SM ||
+               order.get_type() == OrderType::SH) {
+      // handle supports after determining which moves are legal
+      support_orders.push_back(order);
+    } else if (order.get_type() == OrderType::C) {
+      auto target = orders_by_src.find(root_loc(order.get_target().loc));
+      if (target != orders_by_src.end() &&
+          target->second.get_type() == OrderType::M &&
+          target->second.get_dest() == order.get_dest() &&
+          (target->second.get_via() ||
+           is_implicit_via(target->second, all_possible_orders))) {
+        loc_candidates.add_convoy_order(order);
+      } else {
+        DLOG(WARNING) << "Uncoordinated convoy: " << order.to_string();
+      }
+    } else {
+      throw("Can't yet categorize order: " + order.to_string());
     }
   }
 

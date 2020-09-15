@@ -14,9 +14,6 @@
 
 namespace dipcc {
 
-std::unordered_map<Loc, Order> organize_orders_by_src(
-    const std::unordered_map<Power, std::vector<Order>> &orders);
-
 bool is_implicit_via(const Order &order,
                      const std::set<Order> &loc_possible_orders);
 

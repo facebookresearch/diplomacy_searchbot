@@ -10,18 +10,6 @@
 
 namespace dipcc {
 
-std::unordered_map<Loc, Order> organize_orders_by_src(
-    const std::unordered_map<Power, std::vector<Order>> &orders) {
-  std::unordered_map<Loc, Order> r;
-  for (auto &it : orders) {
-    for (const Order order : it.second) {
-
-      r[root_loc(order.get_unit().loc)] = order;
-    }
-  }
-  return r;
-}
-
 bool is_implicit_via(const Order &order,
                      const std::set<Order> &loc_possible_orders) {
   return order.get_type() == OrderType::M && !order.get_via() &&
