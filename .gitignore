@@ -22,3 +22,14 @@ service_account_credentials.json
 sheets.googleapis.com-python.json
 .mypy_cache
 dummy_situations.json
+.noseids
+nohup.out
+perf.data
+gmon.out
+callgrind.out*
+build/
+dipcc/vgcore*
+dipcc/Testing/
+.nfs*
+/fairdiplomacy/selfplay/*.so
+/src/
