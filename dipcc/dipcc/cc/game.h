@@ -50,7 +50,9 @@ public:
 
   void rollback_to_phase(const std::string &phase_s);
 
-  std::map<Phase, std::shared_ptr<GameState>> &get_state_history() { return state_history_; }
+  std::map<Phase, std::shared_ptr<GameState>> &get_state_history() {
+    return state_history_;
+  }
   std::map<Phase, std::unordered_map<Power, std::vector<Order>>> &
   get_order_history() {
     return order_history_;
@@ -64,6 +66,10 @@ public:
 
   void set_exception_on_convoy_paradox() {
     exception_on_convoy_paradox_ = true;
+  }
+
+  void set_draw_on_stalemate_years(int year) {
+    draw_on_stalemate_years_ = year;
   }
 
   // python

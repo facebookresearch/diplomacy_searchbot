@@ -42,7 +42,8 @@ PYBIND11_MODULE(pydipcc, m) {
       .def("clear_old_all_possible_orders",
            &Game::clear_old_all_possible_orders)
       .def("set_exception_on_convoy_paradox",
-           &Game::set_exception_on_convoy_paradox);
+           &Game::set_exception_on_convoy_paradox)
+      .def("set_draw_on_stalemate_years", &Game::set_draw_on_stalemate_years);
 
   // class PhaseData
   py::class_<PhaseData>(m, "PhaseData")
