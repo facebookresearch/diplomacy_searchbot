@@ -1,5 +1,6 @@
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 import json
+import logging
 
 from fairdiplomacy.agents.base_agent import BaseAgent
 from fairdiplomacy.agents.dipnet_agent import encode_inputs, decode_order_idxs
@@ -36,4 +37,18 @@ class ParlAIAgent(BaseAgent):
                 possible_orders=possible_orders,
                 max_orders=max_orders,
             )
+            power_orders[power], bad_orders = _filter_orders(power_orders[power], possible_orders)
+            if bad_orders:
+                logging.info("Removing bad orders for %s: %s", power, bad_orders)
+
         return power_orders
+
+
+def _filter_orders(
+    all_orders: Sequence[str], allowed_orders: Sequence[str]
+) -> Tuple[List[str], List[str]]:
+    allowed_orders = frozenset(allowed_orders)
+    good_orders, bad_orders = [], []
+    for order in all_orders:
+        (bad_orders, good_orders)[order in allowed_orders].append(order)
+    return good_orders, bad_orders
