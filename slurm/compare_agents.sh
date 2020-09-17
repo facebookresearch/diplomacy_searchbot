@@ -70,7 +70,7 @@ for POWER in AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY; do
         SRUN_MODE_ARG="--mode start_continue"
     fi
 
-    cat <<EOF | tee /checkpoint/jsgray/himom.txt | sbatch --job-name $FULL_NAME $SBATCH_ARGS $SBATCH_ARRAY_ARG
+    cat <<EOF | sbatch --job-name $FULL_NAME $SBATCH_ARGS $SBATCH_ARRAY_ARG
 #!/bin/bash
 
 OUT_DIR=$CHECKPOINT_DIR/${FULL_NAME}.\$SLURM_ARRAY_TASK_ID
