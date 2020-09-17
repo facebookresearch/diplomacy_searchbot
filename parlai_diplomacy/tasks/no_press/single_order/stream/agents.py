@@ -63,6 +63,13 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             self.chunk_idx_to_file = shared["chunk_idx_to_file"]
         super().__init__(opt, shared)
 
+    def get_buffersize(self):
+        """
+        Size of buffer.
+        Override this in your child class to change the buffer size.
+        """
+        return 10_000
+
     def _get_data_folder(self):
         if self.opt.get("loading_chunks", 1000) == 1000:
             return constants.CHUNK_MESSAGE_ORDER_PATH
