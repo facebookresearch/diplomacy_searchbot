@@ -71,9 +71,9 @@ def compute_game_scores_from_state(power_id: int, game_state: Dict) -> GameScore
     metrics["square_score"] = (
         1.0 if is_clear_win else (0 if is_clear_loss else metrics["square_ratio"])
     )
-    metrics["draw_score"] = (
-        float(is_clear_win) if someone_wins else 1.0 / sum(x > 0 for x in center_counts)
-    )
+    is_alive = not is_eliminated
+    num_alive = sum(x > 0 for x in center_counts)
+    metrics["draw_score"] = float(is_clear_win) if someone_wins else float(is_alive) / num_alive
     return GameScores(**metrics, num_games=1)
 
 
