@@ -8,6 +8,7 @@ import random
 import json
 
 from fairdiplomacy import pydipcc
+from fairdiplomacy.agents.base_search_agent import num_orderable_units
 from fairdiplomacy.agents.threaded_search_agent import ThreadedSearchAgent
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.utils.sampling import sample_p_dict
@@ -619,15 +620,6 @@ class RolloutResultsCache:
         return "RolloutResultsCache[{} / {} = {:.3f}]".format(
             self.hits, self.hits + self.misses, self.hits / (self.hits + self.misses)
         )
-
-
-def num_orderable_units(game_state, power):
-    if game_state["name"][-1] == "A":
-        return abs(game_state["builds"].get(power, {"count": 0})["count"])
-    if game_state["name"][-1] == "R":
-        return len(game_state["retreats"].get(power, []))
-    else:
-        return len(game_state["units"].get(power, []))
 
 
 if __name__ == "__main__":

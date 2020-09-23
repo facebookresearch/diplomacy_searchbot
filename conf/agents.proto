@@ -164,6 +164,14 @@ message BRSearchAgent {
 
   // Temperature used for rollouts
   optional float rollout_temperature = 10;
+
+  // Optional, cap n_plausible_orders as a ratio of # orderable units
+  optional float max_actions_units_ratio = 11 [ default = -1 ];
+
+  // Optional. Nucleus ratio used for rollouts. During nucleus sampling only the
+  // smallest subset of actions that has probability at least top_p is
+  // considered. All other actions are never sampled.
+  optional float rollout_top_p = 12;
 }
 
 message CE1PAgent {

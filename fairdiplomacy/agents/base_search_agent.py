@@ -239,3 +239,12 @@ def get_square_scores_from_game(game):
         compute_game_scores_from_state(power_idx, game.get_state()).square_score
         for power_idx in range(len(POWERS))
     ]
+
+
+def num_orderable_units(game_state, power):
+    if game_state["name"][-1] == "A":
+        return abs(game_state["builds"].get(power, {"count": 0})["count"])
+    if game_state["name"][-1] == "R":
+        return len(game_state["retreats"].get(power, []))
+    else:
+        return len(game_state["units"].get(power, []))

@@ -128,8 +128,9 @@ class MultiprocSearchAgent(BaseSearchAgent):
             fake_pool_class = type("FakePool", (), {"map": lambda self, *a, **k: map(*a, **k)})
             self.proc_pool = fake_pool_class()
 
+    @classmethod
     def do_model_request(
-        self, x: DataFields, temperature: float, top_p: float, client: postman.Client = None
+        cls, x: DataFields, temperature: float, top_p: float, *, client: postman.Client
     ) -> Tuple[List[List[Tuple[str]]], np.ndarray]:
         """Synchronous request to model server
 
@@ -142,8 +143,6 @@ class MultiprocSearchAgent(BaseSearchAgent):
         - a list (len = batch size) of lists (len=7) of order-tuples
         - [7] float32 array of estimated final scores
         """
-        if client is None:
-            client = self.client
         B = x["x_board_state"].shape[0]
         x["temperature"] = torch.zeros(B, 1).fill_(temperature)
         x["top_p"] = torch.zeros(B, 1).fill_(top_p)
@@ -323,7 +322,7 @@ class MultiprocSearchAgent(BaseSearchAgent):
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
-                batch_inputs = self.cat_pad_inputs(xs)
+                batch_inputs = cls.cat_pad_inputs(xs)
 
             with timings("model"):
                 if client != value_client:
@@ -439,6 +438,10 @@ class MultiprocSearchAgent(BaseSearchAgent):
             result = (set_orders_dict, final_game_scores)
 
         return result, timings
+
+    @classmethod
+    def cat_pad_inputs(cls, xs: List[DataFields]) -> DataFields:
+        return cat_pad_inputs(xs)
 
 
 def make_server_process(*, model_path, device, max_batch_size, wait_till_full, seed):
@@ -602,10 +605,6 @@ def server_handler(
                 logging.info("TimeoutError: %s", e)
 
     logging.info("SERVER DONE")
-
-    @classmethod
-    def cat_pad_inputs(cls, xs: List[DataFields]) -> DataFields:
-        return cat_pad_inputs(xs)
 
 
 # imported by RL code

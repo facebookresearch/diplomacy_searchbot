@@ -1,11 +1,15 @@
+import json
 import logging
+from math import ceil
 from collections import Counter
 from typing import List, Tuple, Dict
 
-from fairdiplomacy.agents.multiproc_search_agent import MultiprocSearchAgent
+from fairdiplomacy.agents.base_search_agent import num_orderable_units
+from fairdiplomacy.agents.threaded_search_agent import ThreadedSearchAgent
+from fairdiplomacy import pydipcc
 
 
-class BRSearchAgent(MultiprocSearchAgent):
+class BRSearchAgent(ThreadedSearchAgent):
     """One-ply search with dipnet-policy rollouts
 
     ## Policy
@@ -17,13 +21,32 @@ class BRSearchAgent(MultiprocSearchAgent):
     4. Choose the order set with the highest score.
     """
 
-    def __init__(self, *, rollouts_per_plausible_order, n_plausible_orders, **kwargs):
+    def __init__(
+        self,
+        *,
+        rollouts_per_plausible_order,
+        n_plausible_orders,
+        max_actions_units_ratio=-1,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.rollouts_per_plausible_order = rollouts_per_plausible_order
         self.n_plausible_orders = n_plausible_orders
+        self.max_actions_units_ratio = (
+            max_actions_units_ratio if max_actions_units_ratio > 0 else 1e6
+        )
 
     def get_orders(self, game, power) -> List[str]:
-        plausible_orders = self.get_plausible_orders(game, limit=self.n_plausible_orders)[power]
+        if type(game) != pydipcc.Game:
+            game = pydipcc.Game.from_json(json.dumps(game.to_saved_game_format()))
+
+        n_units = num_orderable_units(game.get_state(), power)
+        plausible_orders = list(
+            self.get_plausible_orders(
+                game,
+                limit=min(self.n_plausible_orders, ceil(n_units * self.max_actions_units_ratio)),
+            )[power].keys()
+        )
         logging.info("Plausible orders: {}".format(plausible_orders))
 
         if len(plausible_orders) == 0:
@@ -31,11 +54,16 @@ class BRSearchAgent(MultiprocSearchAgent):
         if len(plausible_orders) == 1:
             return list(plausible_orders.pop())
 
-        results = self.distribute_rollouts(
-            game,
-            [{power: orders} for orders in plausible_orders],
-            self.rollouts_per_plausible_order,
+        n_chunks, chunk_size = self.get_chunk_size(
+            len(plausible_orders), self.rollouts_per_plausible_order
         )
+        results = []
+        for _ in range(n_chunks):
+            r = self.do_rollouts(
+                game, [{power: orders} for orders in plausible_orders], chunk_size
+            )
+            results.extend(r)
+
         return self.best_order_from_results(results, power)
 
     @classmethod
@@ -64,3 +92,12 @@ class BRSearchAgent(MultiprocSearchAgent):
         }
         logging.info("order_avg_score: {}".format(order_avg_score))
         return list(max(order_avg_score.items(), key=lambda kv: kv[1])[0])
+
+    @classmethod
+    def get_chunk_size(cls, n_actions, n_rollouts):
+        MAX = 1024  # make config param? ideally we just handle this in do_rollouts, really...
+        n_chunks, chunk_size = 1, n_rollouts
+        while chunk_size * n_actions > MAX and chunk_size % 2 == 0:
+            n_chunks *= 2
+            chunk_size //= 2
+        return n_chunks, chunk_size
