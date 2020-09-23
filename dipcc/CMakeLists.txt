@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 # For pybind11 to work on Linux.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Set output directory
+# Set default output directory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
@@ -26,11 +26,15 @@ file(GLOB SOURCES "dipcc/cc/*.cc")
 add_library(dipcc ${SOURCES})
 target_link_libraries(dipcc glog pthread)
 
-# Compile pybind
+# Compile python interface
 file(GLOB PY_SOURCES "dipcc/pybind/*.cc")
 pybind11_add_module(pydipcc ${PY_SOURCES} ${SOURCES})
-set_target_properties(pydipcc PROPERTIES LIBRARY_OUTPUT_DIRECTORY "dipcc/python/")
 target_link_libraries(pydipcc PRIVATE glog pthread)
+IF (DEFINED ENV{PYDIPCC_OUT_DIR})
+    set_target_properties(pydipcc PROPERTIES LIBRARY_OUTPUT_DIRECTORY $ENV{PYDIPCC_OUT_DIR})
+ELSE()
+    set_target_properties(pydipcc PROPERTIES LIBRARY_OUTPUT_DIRECTORY "dipcc/python/")
+ENDIF()
 
 # Compile profiling
 IF(CMAKE_BUILD_TYPE MATCHES RELEASE)

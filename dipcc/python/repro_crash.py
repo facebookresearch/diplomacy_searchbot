@@ -2,7 +2,7 @@ import os
 import argparse
 import json
 
-import pydipcc
+from fairdiplomacy import pydipcc
 
 parser = argparse.ArgumentParser()
 parser.add_argument("crash_dump")

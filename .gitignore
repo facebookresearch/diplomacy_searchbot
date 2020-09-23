@@ -32,4 +32,5 @@ dipcc/vgcore*
 dipcc/Testing/
 .nfs*
 /fairdiplomacy/selfplay/*.so
+/fairdiplomacy/*.so
 /src/

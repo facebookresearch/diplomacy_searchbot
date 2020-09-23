@@ -8,7 +8,7 @@ import logging
 from collections import defaultdict
 from typing import List
 
-from pydipcc import Game
+from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.data.build_dataset import (
     TERR_ID_TO_LOC,
     COUNTRY_ID_TO_POWER,
@@ -262,7 +262,7 @@ def play_webdip(
                 "message": msg,
             }
             requests.post(
-                api_url, params={"route": SEND_MESSAGE_ROUTE}, headers=api_header, json=msg_json,
+                api_url, params={"route": SEND_MESSAGE_ROUTE}, headers=api_header, json=msg_json
             )
 
         # I can probably use the diplomacy API for this, but it wasn't

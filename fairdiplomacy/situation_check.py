@@ -1,7 +1,7 @@
 import json
 import logging
 from collections import defaultdict
-from pydipcc import Game
+from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.models.consts import POWERS
 import heyhi
 

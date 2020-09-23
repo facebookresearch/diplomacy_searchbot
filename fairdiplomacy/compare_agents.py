@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import os
-import pydipcc
+from fairdiplomacy import pydipcc
 
 import numpy as np
 import torch

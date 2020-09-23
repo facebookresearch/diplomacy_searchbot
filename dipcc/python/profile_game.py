@@ -4,7 +4,7 @@ import json
 import time
 from pprint import pprint
 
-import pydipcc
+from fairdiplomacy import pydipcc
 import fairdiplomacy.game
 
 parser = argparse.ArgumentParser()

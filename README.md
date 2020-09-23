@@ -47,7 +47,7 @@ The following command will create/activate conda env with all needed modules:
 . fair_activate.sh
 ```
 
-After each pull it's recommended to run `make` to re-compile internal C++ and protobuf code. In case of missing dependencies, run `make deps` to install all depenndencies.
+After each pull it's recommended to run `make` to re-compile internal C++ and protobuf code. In case of missing dependencies, run `make deps` to install all dependencies.
 
 ### Running tasks
 

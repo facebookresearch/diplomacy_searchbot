@@ -9,7 +9,7 @@ Utils for loading Diplomacy games.
 """
 import parlai.utils.logging as logging
 from fairdiplomacy.game import Game
-import pydipcc
+from fairdiplomacy import pydipcc
 from parlai_diplomacy.utils.datapath_constants import GAME_JSONS_PATH
 
 from glob import glob

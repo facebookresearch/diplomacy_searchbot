@@ -6,7 +6,7 @@ all: compile
 compile: | dipcc protos
 
 dipcc:
-	bash ./dipcc/compile.sh
+	PYDIPCC_OUT_DIR=$(realpath ./fairdiplomacy) SKIP_TESTS=1 bash ./dipcc/compile.sh
 
 protos:
 	protoc conf/*.proto --python_out ./

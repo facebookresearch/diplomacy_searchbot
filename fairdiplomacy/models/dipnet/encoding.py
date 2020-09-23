@@ -1,7 +1,7 @@
 import numpy as np
 import json
 
-import pydipcc
+from fairdiplomacy import pydipcc
 from diplomacy_research.models import state_space as ss
 
 from fairdiplomacy.models.consts import LOCS, LOC_TYPES, POWERS, MAP

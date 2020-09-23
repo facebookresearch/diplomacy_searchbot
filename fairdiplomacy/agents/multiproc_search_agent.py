@@ -13,7 +13,7 @@ import postman
 import torch
 import torch.multiprocessing as mp
 
-import pydipcc
+from fairdiplomacy import pydipcc
 from fairdiplomacy.game import sort_phase_key
 from fairdiplomacy.agents.base_search_agent import (
     BaseSearchAgent,

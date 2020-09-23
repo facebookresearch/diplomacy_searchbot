@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from fairdiplomacy.game import sort_phase_key
-import pydipcc
+from fairdiplomacy import pydipcc
 from fairdiplomacy.agents.base_search_agent import (
     BaseSearchAgent,
     model_output_transform,

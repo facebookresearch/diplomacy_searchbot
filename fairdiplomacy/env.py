@@ -7,7 +7,7 @@ import torch
 
 from fairdiplomacy.agents.cfr1p_agent import CFR1PAgent
 
-from pydipcc import Game
+from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.models.consts import POWERS
 
 

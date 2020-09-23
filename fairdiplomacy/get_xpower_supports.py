@@ -5,9 +5,7 @@ import collections
 import json
 import glob
 import os
-import pydipcc
 import fairdiplomacy.game
-import pydipcc
 import tabulate
 import pprint
 import joblib
@@ -16,7 +14,7 @@ from typing import Optional, Union
 
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.game import Game
-import pydipcc
+from fairdiplomacy import pydipcc
 
 
 def compute_xpower_supports_from_saved(path, max_year=None, cf_agent=None):

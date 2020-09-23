@@ -3,7 +3,7 @@ import json
 import time
 import torch
 
-import pydipcc
+from fairdiplomacy import pydipcc
 from fairdiplomacy.data.dataset import get_valid_orders_impl
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.dipnet.encoding import (

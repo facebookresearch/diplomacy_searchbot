@@ -7,7 +7,7 @@ from typing import List, Tuple, Dict
 import random
 import json
 
-import pydipcc
+from fairdiplomacy import pydipcc
 from fairdiplomacy.agents.threaded_search_agent import ThreadedSearchAgent
 from fairdiplomacy.models.consts import POWERS
 from fairdiplomacy.utils.sampling import sample_p_dict

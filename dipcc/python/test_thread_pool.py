@@ -1,4 +1,4 @@
-import pydipcc
+from fairdiplomacy import pydipcc
 import time
 import numpy as np
 from fairdiplomacy.models.dipnet.order_vocabulary import (

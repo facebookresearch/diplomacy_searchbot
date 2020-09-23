@@ -18,7 +18,7 @@ from fairdiplomacy.models.dipnet.order_vocabulary import (
     get_order_vocabulary_idxs_len,
     EOS_IDX,
 )
-import pydipcc
+from fairdiplomacy import pydipcc
 
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(get_order_vocabulary())}

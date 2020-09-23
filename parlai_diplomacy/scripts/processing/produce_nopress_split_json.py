@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from fairdiplomacy.game import Game
 from fairdiplomacy.models.consts import POWERS
-import pydipcc
+from fairdiplomacy import pydipcc
 
 
 def get_game(game_id, data_dir, data_format="dipcc"):
@@ -108,16 +108,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons/",
+        "--json_dir", type=str, default="/checkpoint/fairdiplomacy/processed_orders_jsons/"
     )
     parser.add_argument(
         "--data_cache",
         type=str,
         default="/checkpoint/apjacob/fairdiplomacy/no_press/data_cache/data_cache_fb_minrating0.5.pt",
     )
-    parser.add_argument(
-        "--save_dir", type=str, default="/tmp/",
-    )
+    parser.add_argument("--save_dir", type=str, default="/tmp/")
     parser.add_argument(
         "--data-format",
         type=str,

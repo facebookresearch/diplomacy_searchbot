@@ -1,4 +1,4 @@
-import pydipcc
+from fairdiplomacy import pydipcc
 from pprint import pprint
 import json
 import fairdiplomacy.game
