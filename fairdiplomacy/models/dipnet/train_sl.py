@@ -293,7 +293,10 @@ def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets)
     if checkpoint:
         optim.load_state_dict(checkpoint["optim"])
 
-    best_loss, best_p_loss, best_v_loss = None, None, None
+    # load best losses to not immediately overwrite best checkpoints
+    best_loss = checkpoint.get("best_loss") if checkpoint else None
+    best_p_loss = checkpoint.get("best_p_loss") if checkpoint else None
+    best_v_loss = checkpoint.get("best_v_loss") if checkpoint else None
 
     if has_gpu:
         train_set_sampler = DistributedSampler(train_set)
@@ -420,6 +423,9 @@ def main_subproc(rank, world_size, args, train_set, val_set, extra_val_datasets)
                     "batch_i": batch_i,
                     "valid_p_accuracy": valid_p_accuracy,
                     "args": args,
+                    "best_loss": best_loss,
+                    "best_p_loss": best_p_loss,
+                    "best_v_loss": best_v_loss,
                 }
                 logger.info("Saving checkpoint to {}".format(args.checkpoint))
                 torch.save(obj, args.checkpoint)
