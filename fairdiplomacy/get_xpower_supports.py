@@ -59,9 +59,21 @@ def compute_xpower_supports(
         state = phase.state
         if state["name"][1:-1] == max_year:
             break
+        if not state["name"].endswith("M"):
+            # This is required as, e.g., in retreat phase a single location
+            # could be occupied by several powers and everything is weird.
+            continue
         loc_power = {
             unit.split()[1]: power for power, units in state["units"].items() for unit in units
         }
+        # If power owns, e.g., BUL/SC, make it also own BUL. Support targets do
+        # not use "/SC" so we need both.
+        for loc, power in list(loc_power.items()):
+            if "/" in loc:
+                loc_land = loc.split("/")[0]
+                assert loc_land not in loc_power, (loc_land, loc_power)
+                loc_power[loc_land] = power
+
         if cf_agent is not None:
             assert isinstance(game, Game), "Not implemented"
             cf_orders = cf_agent.get_orders_many_powers(
@@ -85,6 +97,19 @@ def compute_xpower_supports(
                 num_supports += 1
                 src = order_tokens[4]
                 if src not in loc_power:
+                    if not isinstance(game, Game):
+                        # Only support dumping for pydicc games.
+                        torch.save(
+                            dict(
+                                game=game.to_json(),
+                                power=power,
+                                pwer_orders=power_orders,
+                                order=order,
+                                phase=phase,
+                                loc_power=loc_power,
+                            ),
+                            "xpower_debug.pt",
+                        )
                     raise RuntimeError(f"{order}: {src} not in {loc_power}")
                 if loc_power[src] == power:
                     continue
