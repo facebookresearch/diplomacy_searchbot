@@ -87,7 +87,9 @@ class Bot:
         # FIXME: there is only one channel, this should be (game_id, power)
         self.agents = {}  # (channel, power) -> Agent
         self.cfgs_with_server = []
-        self.executor = ThreadPoolExecutor(8)
+
+        n_threads = 1 if reuse_model_servers is None else min(max(reuse_model_servers, 1), 8)
+        self.executor = ThreadPoolExecutor(n_threads)
 
     @gen.coroutine
     def run(self):
