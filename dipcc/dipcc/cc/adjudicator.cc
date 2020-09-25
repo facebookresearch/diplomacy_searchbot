@@ -653,6 +653,10 @@ public:
     }
 
     // Remove any unresolved self-dislodges at this location
+    remove_self_dislodges_at_dest(unresolved_self_dislodges_, dest);
+    remove_self_dislodges_at_dest(unresolved_self_support_dislodges_, dest);
+
+    // Remove any unresolved self-dislodges at this location
     for (auto it = unresolved_self_dislodges_.begin();
          it != unresolved_self_dislodges_.end();) {
       if (root_loc(it->second) == root_loc(dest)) {
@@ -1096,6 +1100,7 @@ public:
       pair<Loc, Loc> p = *it;
       Loc src = p.first;
       Loc dest = p.second;
+      DLOG(INFO) << "Consider resolving " << src << " -> " << dest;
       if (set_contains(resolved_cycle_locs, src)) {
         unresolved_self_dislodges.erase(it);
         continue;
@@ -1137,6 +1142,18 @@ public:
         for (Loc c : cycle) {
           resolved_cycle_locs.insert(c);
         }
+      }
+    }
+  }
+
+  void remove_self_dislodges_at_dest(set<pair<Loc, Loc>> &unresolved_dislodges,
+                                     Loc dest) {
+    for (auto it = unresolved_dislodges.begin();
+         it != unresolved_dislodges.end();) {
+      if (root_loc(it->second) == root_loc(dest)) {
+        it = unresolved_dislodges.erase(it);
+      } else {
+        ++it;
       }
     }
   }

@@ -1,8 +1,10 @@
 import os
 import argparse
 import json
+import sys
 
-from fairdiplomacy import pydipcc
+sys.path.insert(0, os.path.dirname(__file__) + "/../dipcc/python/")
+import pydipcc
 
 parser = argparse.ArgumentParser()
 parser.add_argument("crash_dump")
