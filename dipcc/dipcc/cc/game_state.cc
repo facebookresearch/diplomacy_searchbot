@@ -634,7 +634,8 @@ json GameState::to_json() {
   for (Power power : POWERS) {
     j["homes"][power_str(power)] = vector<string>();
     for (Loc center : home_centers(power)) {
-      if (this->get_centers().at(center) == power) {
+      auto owner_it = this->get_centers().find(center);
+      if (owner_it != this->get_centers().end() && owner_it->second == power) {
         j["homes"][power_str(power)].push_back(loc_str(center));
       }
     }
