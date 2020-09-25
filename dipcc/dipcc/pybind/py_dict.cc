@@ -67,7 +67,8 @@ py::dict py_state_to_dict(GameState &state) {
   for (Power power : POWERS) {
     py::list homes;
     for (Loc center : home_centers(power)) {
-      if (state.get_centers().at(center) == power) {
+      auto owner_it = state.get_centers().find(center);
+      if (owner_it != state.get_centers().end() && owner_it->second == power) {
         homes.append(loc_str(center));
       }
     }
