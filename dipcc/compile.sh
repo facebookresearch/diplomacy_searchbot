@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-MODE=${MODE:-RELEASE}
+MODE=${MODE:-Release}
 
 pushd $(dirname $0)
 

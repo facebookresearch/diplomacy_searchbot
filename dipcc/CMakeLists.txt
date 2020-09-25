@@ -37,13 +37,13 @@ ELSE()
 ENDIF()
 
 # Compile profiling
-IF(CMAKE_BUILD_TYPE MATCHES RELEASE)
+IF(CMAKE_BUILD_TYPE MATCHES Release)
     add_executable(profile_dipcc dipcc/profiling/profile.cc ${SOURCES})
     target_link_libraries(profile_dipcc dipcc glog pthread)
 
     add_executable(profile_dipcc_late dipcc/profiling/profile_late.cc ${SOURCES})
     target_link_libraries(profile_dipcc_late dipcc glog pthread)
-ENDIF(CMAKE_BUILD_TYPE MATCHES RELEASE)
+ENDIF()
 
 # Compile tests
 IF(NOT DEFINED ENV{SKIP_TESTS})
@@ -54,4 +54,4 @@ IF(NOT DEFINED ENV{SKIP_TESTS})
     add_executable(test_dipcc ${TEST_SRC} ${SOURCES})
     target_link_libraries(test_dipcc dipcc gtest gtest_main)
     gtest_add_tests(TARGET test_dipcc AUTO)
-ENDIF(NOT DEFINED ENV{SKIP_TESTS})
+ENDIF()
