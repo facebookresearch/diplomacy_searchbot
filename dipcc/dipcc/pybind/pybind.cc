@@ -28,6 +28,9 @@ PYBIND11_MODULE(pydipcc, m) {
            py::return_value_policy::move)
       .def("get_phase_data", &Game::get_phase_data,
            py::return_value_policy::move)
+      .def_property_readonly("message_history", &Game::py_get_message_history,
+                             py::return_value_policy::move)
+      .def("add_message", &Game::py_add_message)
       .def("rollback_to_phase", &Game::rollback_to_phase)
       .def_property_readonly("is_game_done", &Game::is_game_done)
       .def_property_readonly("phase", &Game::get_phase_long)
@@ -50,6 +53,7 @@ PYBIND11_MODULE(pydipcc, m) {
       .def_property_readonly("name", &PhaseData::get_name)
       .def_property_readonly("state", &PhaseData::py_get_state)
       .def_property_readonly("orders", &PhaseData::py_get_orders)
+      .def_property_readonly("messages", &PhaseData::py_get_messages)
       .def("to_dict", &PhaseData::to_dict);
 
   // class ThreadPool

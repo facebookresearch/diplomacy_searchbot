@@ -11,6 +11,7 @@ struct Phase {
   uint32_t year;
   char phase_type; // 'M', 'R', 'A', 'C'
 
+  Phase() {}
   Phase(char, uint32_t, char);
   Phase(const std::string &s);
 

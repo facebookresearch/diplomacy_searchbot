@@ -144,4 +144,30 @@ py::dict Game::py_get_state() {
   return d;
 }
 
+py::dict py_message_to_dict(const Message &message) {
+  py::dict d;
+  d["sender"] = power_str(message.sender);
+  d["recipient"] = power_str(message.recipient);
+  d["phase"] = message.phase.to_string();
+  d["body"] = message.body;
+  return d;
+}
+
+py::list py_messages_to_list(const std::vector<Message> &messages) {
+  py::list lst;
+  for (const auto &m : messages) {
+    lst.append(py_message_to_dict(m));
+  }
+  return lst;
+}
+
+py::dict py_message_history_to_dict(
+    const std::map<Phase, std::vector<Message>> &message_history) {
+  py::dict d;
+  for (auto & [ phase, messages ] : message_history) {
+    d[py::cast<std::string>(phase.to_string())] = py_messages_to_list(messages);
+  }
+  return d;
+}
+
 }; // namespace dipcc

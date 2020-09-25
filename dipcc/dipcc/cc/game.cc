@@ -173,8 +173,11 @@ string Game::to_json() {
         phase["orders"][power].push_back(order.to_string());
       }
     }
+    for (auto &msg : message_history_[state.get_phase()]) {
+      phase["messages"].push_back(msg);
+    }
+
     phase["results"] = json::value_type::object(); // mila compat
-    phase["messages"] = json::value_type::array(); // mila compat
 
     j["phases"].push_back(phase);
   }
@@ -185,7 +188,9 @@ string Game::to_json() {
   current["state"] = state_->to_json();
   current["orders"] = json::value_type::object();  // mila compat
   current["results"] = json::value_type::object(); // mila compat
-  current["messages"] = json::value_type::array(); // mila compat
+  for (auto &msg : message_history_[state_->get_phase()]) {
+    current["messages"].push_back(msg);
+  }
   j["phases"].push_back(current);
 
   // staged orders
@@ -229,6 +234,13 @@ Game::Game(const string &json_str) {
           order_history_[phase_str][power].push_back(Order(j_order));
         }
       }
+
+      if (j_phase.find("messages") == j_phase.end()) {
+        continue;
+      }
+      for (auto &j_msg : j_phase["messages"]) {
+        message_history_[phase_str].push_back(j_msg);
+      }
     }
   } else {
     string phase_str;
@@ -243,6 +255,14 @@ Game::Game(const string &json_str) {
             order_history_[phase_str][power].push_back(Order(j_order));
           }
         }
+      }
+
+      if (j.find("message_history") == j.end() ||
+          j["message_history"].find(phase_str) == j["message_history"].end()) {
+        continue;
+      }
+      for (auto &j_msg : j["message_history"][phase_str]) {
+        message_history_[phase_str].push_back(j_msg);
       }
     }
   }
@@ -329,6 +349,11 @@ void Game::maybe_early_exit() {
              << " years";
 
   state_->set_phase(phase.completed());
+}
+
+void Game::add_message(Power sender, Power recipient, const std::string &body) {
+  message_history_[state_->get_phase()].push_back(
+      Message{sender, recipient, state_->get_phase(), body});
 }
 
 } // namespace dipcc
