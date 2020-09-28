@@ -5,6 +5,11 @@ NOTE: if you edit this file, please include the date that a datapath was constru
 """
 
 ######################################################
+## Metadata
+######################################################
+GAME_METADATA_PATH = "/checkpoint/alerer/fairdiplomacy/facebook_notext/metadata.json"
+
+######################################################
 ## Message data
 ######################################################
 

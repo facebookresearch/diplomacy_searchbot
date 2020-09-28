@@ -26,6 +26,8 @@ STREAM_TEACHER_LST = [
     "state_message_history_dialogue_chunk",
     "message_history_order_history_dialogue_chunk",
     "message_history_order_history_state_dialogue_chunk",
+    "message_history_allorder_dialogue_chunk",
+    "message_history_dialogue_chunk",
 ]
 
 

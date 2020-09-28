@@ -21,6 +21,7 @@ import os
 from typing import List, Tuple
 import json
 import copy
+import math
 
 """
 File that takes board state data to predict orders for one single player. (streaming)
@@ -47,6 +48,11 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             help="Number of chunks to load, default to -1 (loading all chunks for that data type), "
             "only useful for calculation such as data_stat to save time, normally it should be -1",
         )
+        argparser.add_argument(
+            "--include_player_ratings",
+            action="store_true",
+            help="Include player ratings in prompts for all models",
+        )
         return argparser
 
     def __init__(self, opt, shared=None):
@@ -59,8 +65,11 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
                     "To load a specific number of chunks, must specify --loading-chunks 1000"
                 )
             self._set_chunk_idx_to_file()
+            self._set_game_metadata()
         else:
             self.chunk_idx_to_file = shared["chunk_idx_to_file"]
+            self.game_metadata = shared["game_metadata"]
+
         super().__init__(opt, shared)
 
     def get_buffersize(self):
@@ -75,6 +84,9 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             return constants.CHUNK_MESSAGE_ORDER_PATH
         else:
             return constants.CHUNK_MESSAGE_ORDER_250_PATH
+
+    def _get_game_metadata_path(self):
+        return constants.GAME_METADATA_PATH
 
     def get_num_samples(self, opt) -> Tuple[int, int]:
         """
@@ -137,6 +149,21 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         file_lst = sorted(glob(folder))
         self.chunk_idx_to_file = {i: x for i, x in enumerate(file_lst)}
 
+    def _set_game_metadata(self):
+        metadata_path = self._get_game_metadata_path()
+        with open(metadata_path) as meta_f:
+            self.game_metadata = json.load(meta_f)
+
+        ratings = [
+            game[pwr]["logit_rating"]
+            for game in self.game_metadata.values()
+            for pwr in utls.POWERS
+            if pwr in game
+        ]
+
+        self.game_metadata["min_logit_rating"] = min(ratings)
+        self.game_metadata["max_logit_rating"] = max(ratings)
+
     def get_fold_chunks(self, opt) -> List[int]:  # type: ignore
         """
         Return a list of chunk IDs (integer).
@@ -186,6 +213,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
             for phase_id, phase in game.items():
                 for player_id, data in phase.items():
                     data = self.remove_game_master_msg(data)
+                    data = self.add_player_metadata(data)
                     lst.extend(self._generate_example_tuples(game_id, phase_id, player_id, data))
 
         logging.info(f"Loaded {len(lst)} examples from chunk {chunk_idx}.")
@@ -258,6 +286,26 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         ]
         data["message"] = new_cur_phase_msg_lst
 
+        return data
+
+    def add_player_metadata(self, data):
+        """
+        Adds player metadata
+        :param data:
+        :return:
+        """
+        game_id = str(data["metadata"]["game_id"])
+        power = data["metadata"]["speaker"]
+        min_rating = self.game_metadata["min_logit_rating"]
+        max_rating = self.game_metadata["max_logit_rating"]
+
+        if game_id in self.game_metadata:
+            player_metadata = self.game_metadata[game_id][power]
+            player_metadata["min_rating"] = min_rating
+            player_metadata["max_rating"] = max_rating
+            data["metadata"]["player_metadata"] = player_metadata
+        else:
+            raise KeyError("Player metadata is missing.")
         return data
 
     def format_order(self, order_lst):
@@ -341,6 +389,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
     def share(self):
         shared = super().share()
         shared["chunk_idx_to_file"] = self.chunk_idx_to_file
+        shared["game_metadata"] = self.game_metadata
         return shared
 
     def _get_base_msg(self, queue_output):
@@ -357,8 +406,26 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
 
         return base_msg
 
+    def _get_player_rating(self, player_metadata):
+        """
+        Gets player rating to be used from the player metadata
+        :param player_metadata: Player metadata
+        :return: player rating
+        """
+        player_rating = player_metadata["logit_rating"]
+        min_rating = player_metadata["min_rating"]
+        max_rating = player_metadata["max_rating"]
+        return math.floor(10 * (player_rating - min_rating) / (max_rating - min_rating))
+
     def _get_player_prompt_token(self, queue_output):
-        player_prompt_token = f"{queue_output['phase_id']} {queue_output['player']}:"
+        if self.opt["include_player_ratings"]:
+            player_rating = self._get_player_rating(queue_output["metadata"]["player_metadata"])
+            player_prompt_token = (
+                f"{queue_output['phase_id']} {queue_output['player']} {player_rating}:"
+            )
+        else:
+            player_prompt_token = f"{queue_output['phase_id']} {queue_output['player']}:"
+
         return player_prompt_token
 
 

@@ -46,6 +46,7 @@ COUNTRY_ID_TO_POWER = {
     7: "RUSSIA",
 }
 
+POWERS = [power for id, power in COUNTRY_ID_TO_POWER.items()]
 
 ###########################################
 # UTILITY FUNCTIONS
