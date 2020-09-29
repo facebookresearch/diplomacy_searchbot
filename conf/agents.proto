@@ -8,6 +8,11 @@ message MilaSlAgent {
   optional float temperature = 1;
 }
 
+message MilaRlAgent {
+  // Optional. Softmax temperature
+  optional float temperature = 1;
+}
+
 message RandomAgent {}
 
 message DipnetAgent {
@@ -319,5 +324,6 @@ message Agent {
     ReproAgent repro = 7;
     FP1PAgent fp1p = 8;
     ParlAIAgent parlai = 9;
+    MilaRlAgent mila_rl = 10;
   }
 }

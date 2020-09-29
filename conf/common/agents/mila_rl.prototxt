@@ -1,0 +1,3 @@
+mila_rl {
+  temperature: 0.1
+}

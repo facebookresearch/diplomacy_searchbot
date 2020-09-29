@@ -1,6 +1,7 @@
 from .base_agent import BaseAgent
 from .dipnet_agent import DipnetAgent
 from .mila_sl_agent import MilaSLAgent
+from .mila_rl_agent import MilaRLAgent
 from .br_search_agent import BRSearchAgent
 from .cfr1p_agent import CFR1PAgent
 from .ce1p_agent import CE1PAgent
@@ -18,6 +19,7 @@ def build_agent_from_cfg(agent_stanza: "conf.conf_pb2.Agent") -> "fairdiplomacy.
     agent_cfg = getattr(agent_stanza, agent_name)
     return {
         "mila": MilaSLAgent,
+        "mila_rl": MilaRLAgent,
         "br_search": BRSearchAgent,
         "dipnet": DipnetAgent,
         "cfr1p": CFR1PAgent,
@@ -33,6 +35,7 @@ __all__ = [
     build_agent_from_cfg,
     DipnetAgent,
     MilaSLAgent,
+    MilaRLAgent,
     BRSearchAgent,
     CFR1PAgent,
     CE1PAgent,
