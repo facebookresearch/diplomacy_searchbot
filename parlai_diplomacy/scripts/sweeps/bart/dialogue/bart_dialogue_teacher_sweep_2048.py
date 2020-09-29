@@ -11,7 +11,7 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "2048_message_history_allorder_dialogue_chunk_BART_diplomacy_batchsize2"
+sweep_name = "2048_multiple_lr_dialogue_batchsize2_dev"
 NUM_HOURS = 72
 
 # Define param grid
@@ -19,7 +19,7 @@ grid = {
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "--load-from-checkpoint": ["True"],
     "--dynamic-batching": ["full"],
-    "-t": ["message_history_allorder_dialogue_chunk", "message_history_dialogue_chunk"],
+    "-t": ["message_history_pseudoorder_dialogue_chunk", "message_history_dialogue_chunk"],
     "-dt": ["train:stream"],
     "--num-epochs": [10],
     "-veps": [0.1],
@@ -32,9 +32,9 @@ grid = {
     "--dict_file": ["/private/home/wyshi/ParlAI/data/models/bart_2048/bart_2048/model.dict"],
     "--label-truncate": [512],
     "--log_every_n_secs": [10],
-    "-lr": [5e-5],
+    "-lr": [8e-5,],
     "--lr-scheduler": ["linear"],
-    "--max-lr-steps": [50_000],
+    "--max-lr-steps": [100_000],
     "--lr-scheduler-patience": [3],
     "--optimizer": ["adam"],
     "--relu-dropout": [0.0],
@@ -42,13 +42,12 @@ grid = {
     "--model-parallel": [False],
     "--save-after-valid": [True],
     "--text-truncate": [2048],
-    "--warmup-updates": [5_000],
+    "--warmup-updates": [10_000],
     "--fp16-impl": ["mem_efficient"],
-    "--update-freq": [4],
+    "--update-freq": [8],
     "--gradient-clip": [0.1],
     "--skip-generation": [True],
     "-vp": [50],
-    # "--max-train-time": [0.96 * NUM_HOURS * 60 * 60],  # just under 8 hours
     "-vmt": ["ppl"],
     "-vmm": ["min"],
     "-stim": [360],
@@ -61,12 +60,12 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="learnfair",
+        partition="dev",
         jobtime=f"{NUM_HOURS}:00:00",
         prefix="python -u parlai_diplomacy/scripts/distributed_train.py",
         one_job_per_node=False,
         gpus=8,
-        nodes=8,
+        nodes=1,
         create_model_file=True,
         requeue=True,
         include_job_id=False,

@@ -57,33 +57,55 @@ class SequenceFormatHelper:
         return seqs
 
 
-def order_seq_to_fairdip(order_sequence):
+def order_seq_to_fairdip(order_sequence, special_tokens_map=None, with_special_token=False):
     """
     Convert order sequence output by a ParlAI models to a list of orders
     expected by the no-press setting.
 
     # TODO: check, is this correct?
     """
-    order = order_sequence.replace(" [EO_O]", "")
+    # remove [EO_O]
+    if with_special_token:
+        order = order_sequence.replace(special_tokens_map["[EO_O]"], "").strip()
+    else:
+        order = order_sequence.replace("[EO_O]", "").strip()
+
+    if not order:
+        # empty order
+        # TODO: check in no-press, empty_order is [] or [''] ?
+        return []
+
     order_lst = order.split("; ")
     return order_lst
 
 
-def order_is_empty(order_sequence):
+def order_is_empty(order_sequence, special_tokens_map=None, with_special_token=False):
     """
     Check if an order sequence is empty
     """
-    order = order_sequence.replace("[EO_O]", "").strip()
+    if with_special_token:
+        order = order_sequence.replace(special_tokens_map["[EO_O]"], "").strip()
+    else:
+        order = order_sequence.replace("[EO_O]", "").strip()
     if not order:
         return True
 
     return False
 
 
-def all_orders_seq_to_dct(all_orders_sequence):
+def all_orders_seq_to_dct(
+    all_orders_sequence,
+    special_tokens_map=None,
+    with_special_token=False,
+    power_name_as_key_and_return_as_set=True,
+):
     """
     Convert a sequence of a prediction for all orders to a dict containing
     the orders for all dict.
+    
+    Example all orders: England: A LVP - YOR; F EDI - NTH; F LON - ENG [EO_O]\nFrance: A MAR - SPA; A PAR - BUR; F BRE - MAO [EO_O]\nItaly: A ROM - VEN; A VEN - TYR; F NAP - ION [EO_O]\nGermany: A BER - KIE; A MUN - RUH; F KIE - DEN [EO_O]\nTurkey: A CON - BUL; A SMY - CON; F ANK - BLA [EO_O]\nRussia: A MOS - UKR; A WAR H; F SEV - BLA; F STP/SC - BOT [EO_O]\nAustria: A BUD - SER; A VIE - BUD; F TRI - ALB [EO_O]
+    :params power_name_as_key_and_return_as_set: if True (should be used for metric evaluation), the returned order_dct will use power_name as the key, and the value of the order_dct will be a set
+                                                 if False (should be used in sort_orders), the returned order_dct will use power_id as the key, and the value will be a list
     """
     order_dct = {}
     if not all_orders_sequence:
@@ -92,7 +114,14 @@ def all_orders_seq_to_dct(all_orders_sequence):
     order_split = all_orders_sequence.split("\n")
     for order in order_split:
         power, order_seq = order.split(": ")
-        order_dct[power] = set(order_seq_to_fairdip(order_seq))
+        if power_name_as_key_and_return_as_set:
+            order_dct[power] = set(
+                order_seq_to_fairdip(order_seq, special_tokens_map, with_special_token)
+            )
+        else:
+            order_dct[str(task_utils.POWER_TO_COUNTRY_ID[power.upper()])] = order_seq_to_fairdip(
+                order_seq, special_tokens_map, with_special_token
+            )
 
     return order_dct
 
@@ -116,6 +145,38 @@ def add_end_token(text, end_token, with_special_token=False, special_tokens_map=
     else:
         converted_text = f"{text} {end_token}"
     return converted_text
+
+
+def sort_orders(
+    order_str, cur_player_id, special_tokens_map=None, with_special_token=False, all_order=True
+):
+    """
+    given an order string, return the sorted version
+    sorted by countries and each country's order is sorted alphabatically
+    """
+    if not order_str:
+        return ""
+
+    if all_order:
+        # unflatten the order_str
+        all_order_dct = all_orders_seq_to_dct(
+            order_str,
+            special_tokens_map,
+            with_special_token,
+            power_name_as_key_and_return_as_set=False,
+        )
+        # re-sort the order_dct
+        sorted_order_str = flatten_all_orders(
+            all_order_dct, cur_player_id, special_tokens_map, with_special_token
+        )
+    else:
+        # if the order_str contains order for a single player
+        # unflatten the order_str
+        order_lst = order_seq_to_fairdip(order_str, special_tokens_map, with_special_token)
+        # resort the order_lst
+        sorted_order_str = flatten_orders(order_lst, special_tokens_map, with_special_token)
+
+    return sorted_order_str
 
 
 def flatten_orders(order_list, special_tokens_map=None, with_special_token=False):
@@ -279,6 +340,25 @@ def flatten_state_history(
         state_list.append(one_state)
 
     return "\n".join(state_list)
+
+
+def concate_msghistory_curmsg(queue_output):
+    """
+    concate message_history and current_msg to form future msg for the pseudo-order generation
+    msg[:t] + msg[t] --> order[t-1]
+    :param queue_output: the queue_output with all the data used in the streaming teacher
+    """
+    if queue_output["phase_id"] in queue_output["message_history"]:
+        future_msg = (
+            queue_output["message_history"]
+            + "\n"
+            + "\n".join(queue_output["message"].split("\n")[1:])
+        )
+    else:
+        future_msg = queue_output["message_history"] + "\n" + queue_output["message"]
+    future_msg = future_msg.strip("\n")
+
+    return future_msg
 
 
 def format_one_message(speaker, listener, msg, special_tokens_map=None, with_special_token=False):

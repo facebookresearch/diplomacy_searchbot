@@ -24,9 +24,15 @@ class OrderPredMetricMixin:
         if "text" not in model_response:
             # model didn't speak, skip this example
             return
-        order_label = set(order_seq_to_fairdip(labels[0]))
-        order_pred = set(order_seq_to_fairdip(model_response["text"]))
-        empty_order = order_is_empty(labels[0])
+        order_label = set(
+            order_seq_to_fairdip(labels[0], special_tokens_map=None, with_special_token=False)
+        )
+        order_pred = set(
+            order_seq_to_fairdip(
+                model_response["text"], special_tokens_map=None, with_special_token=False
+            )
+        )
+        empty_order = order_is_empty(labels[0], special_tokens_map=None, with_special_token=False)
 
         if not empty_order:
             # set intersection metric
@@ -53,8 +59,12 @@ class AllOrderPredMetricMixin:
             # model didn't speak, skip this example
             return
 
-        orders_label = all_orders_seq_to_dct(labels[0])
-        orders_pred = all_orders_seq_to_dct(model_response["text"])
+        orders_label = all_orders_seq_to_dct(
+            labels[0], special_tokens_map=None, with_special_token=False
+        )
+        orders_pred = all_orders_seq_to_dct(
+            model_response["text"], special_tokens_map=None, with_special_token=False
+        )
         player = teacher_action["player"]
 
         for power, order_label in orders_label.items():

@@ -67,7 +67,14 @@ class BaseWrapper(ABC):
         seqs = self.format_input_seq(game_json)
         seq = list(seqs.values())[-1][power]
         raw_pred = self.get_model_pred(seq)
-        orders = list(self.format_output_seq(raw_pred, power))
+        orders = list(
+            self.format_output_seq(
+                raw_pred,
+                power,
+                self.parlai_agent.opt.get("special_tokens_map", None),
+                self.parlai_agent.opt.get("with_special_token", False),
+            )
+        )
         if orders == [""]:
             # Parlai returns [""] for no orders, while the engine expects [].
             orders = []
@@ -107,8 +114,10 @@ class ParlAISingleOrderWrapper(BaseWrapper):
         format_sequences = formatter.SequenceFormatHelper.change_format(game_json, "state_order")
         return format_sequences
 
-    def format_output_seq(self, output_seq, power):
-        preds = formatter.order_seq_to_fairdip(output_seq)
+    def format_output_seq(
+        self, output_seq, power, special_tokens_map=None, with_special_token=False
+    ):
+        preds = formatter.order_seq_to_fairdip(output_seq, special_tokens_map, with_special_token)
         return preds
 
 
@@ -119,8 +128,12 @@ class ParlAIAllOrderWrapper(BaseWrapper):
         )
         return format_sequences
 
-    def format_output_seq(self, output_seq, power):
-        orders_dct = formatter.all_orders_seq_to_dct(output_seq)
+    def format_output_seq(
+        self, output_seq, power, special_tokens_map=None, with_special_token=False
+    ):
+        orders_dct = formatter.all_orders_seq_to_dct(
+            output_seq, special_tokens_map, with_special_token
+        )
         power_preds = orders_dct[power.capitalize()]
         return power_preds
 

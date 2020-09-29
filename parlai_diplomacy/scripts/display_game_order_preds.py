@@ -105,14 +105,14 @@ def get_model_pred(agent, input_seq):
     return response
 
 
-def run_tests(power, response, tests):
+def run_tests(power, response, tests, special_tokens_map=None, with_special_token=False):
     """
     Check tests for a given response from the model
     """
     for test_name, test in tests.items():
         if test_name[:3] != power[:3]:  # not relevant to this power
             continue
-        orders = formatter.order_seq_to_fairdip(response)
+        orders = formatter.order_seq_to_fairdip(response, special_tokens_map, with_special_token)
         func = eval(test)
         success = func(orders)
         if not success:
@@ -138,7 +138,13 @@ def display_game_order_preds(opt):
         for power, input_seq in phase.items():
             response = get_model_pred(agent, input_seq)
             logging.info(f"{power}: {response}")
-            run_tests(power, response, info["tests"])
+            run_tests(
+                power,
+                response,
+                info["tests"],
+                opt.get("special_tokens_map", None),
+                opt.get("with_special_token", False),
+            )
 
 
 @register_script("display_game_order_preds", aliases=["dgop"])

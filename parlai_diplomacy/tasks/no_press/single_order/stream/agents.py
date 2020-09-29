@@ -57,6 +57,7 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
 
     def __init__(self, opt, shared=None):
         self.id = "Base Order Chunk"
+
         if shared is None:
             # set map
             self.opt = opt

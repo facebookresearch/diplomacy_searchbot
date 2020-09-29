@@ -19,7 +19,7 @@ grid = {
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "--load-from-checkpoint": ["True"],
     "--dynamic-batching": ["full"],
-    "-t": ["message_history_allorder_dialogue_chunk", "message_history_dialogue_chunk"],
+    "-t": ["message_history_pseudoorder_dialogue_chunk"],
     "-dt": ["train:stream"],
     "--num-epochs": [10],
     "-veps": [0.1],

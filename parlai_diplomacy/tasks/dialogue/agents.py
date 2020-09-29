@@ -22,7 +22,7 @@ from parlai_diplomacy.tasks.no_press.single_order.stream.agents import BaseOrder
 import parlai_diplomacy.utils.game_to_sequence_formatting as game_formatting
 
 """
-File for all dialogue teachers
+File for all dialogue teachers that don't load pseudo orders
 """
 
 TRAIN_SPLIT = 800_000  # (total game turns is 868_046)
@@ -393,6 +393,7 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
 
         msg_dict = copy.deepcopy(default_msg_dict)
         yield_example = False
+        n_examples = 0
 
         for msg in msgs:
             if msg["speaker"] == cur_power:
@@ -409,8 +410,9 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
 
             else:
                 if yield_example:
+                    n_examples += 1
                     yield self._construct_example_dict(
-                        data.copy(), msg_dict, pre_msg_history_buffer_list
+                        data.copy(), msg_dict, pre_msg_history_buffer_list, n_examples
                     )
                     yield_example = False
                     msg_dict = copy.deepcopy(default_msg_dict)
@@ -418,15 +420,21 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
                 msg_history_buffer_list[-1].append(msg)
 
         if yield_example:
-            yield self._construct_example_dict(data.copy(), msg_dict, pre_msg_history_buffer_list)
+            n_examples += 1
+            yield self._construct_example_dict(
+                data.copy(), msg_dict, pre_msg_history_buffer_list, n_examples
+            )
 
-    def _construct_example_dict(self, data_dict, msg_dict, pre_msg_history_buffer_list):
+    def _construct_example_dict(
+        self, data_dict, msg_dict, pre_msg_history_buffer_list, n_examples
+    ):
         """
         Static method that takes the data dict and updates "messages" and "message_history"
         with the msg_dict
         :param data_dict:
         :param msg_dict:
         :param pre_msg_history_buffer_list:
+        :param n_examples: n_examples to build the special id used in pseudo-order joining, the id looks like 44-S1901M-5-4 (game_id-phase_id-player_id-n_examples)
         :return:
         """
         cur_phase = data_dict["phase_id"]
@@ -437,6 +445,12 @@ class BaseDialogueChunkTeacher(BaseOrderChunkTeacher):
 
         data_dict["message"] = self.format_msg(output_message_list)
         data_dict["message_history"] = self.format_msg_history(pre_msg_history_buffer_list)
+
+        # add a special id to join pseudo-order later,
+        # if doesn't hurt to leave it here when not loading pseudo orders, and could also helps us debug
+        data_dict[
+            "example_id"
+        ] = f"{data_dict['game_id']}-{data_dict['phase_id']}-{data_dict['player_id']}-{n_examples}"
 
         return data_dict
 
@@ -544,8 +558,8 @@ class MessageHistoryOrderHistoryStateDialogueChunkTeacher(BaseDialogueChunkTeach
 @register_teacher("message_history_dialogue_chunk")
 class MessageHistoryDialogueChunkTeacher(BaseDialogueChunkTeacher):
     """
-    Text field (input) contains MESSAGE HISTORY, ORDER HISTORY, STATE information
-    - [Message History, Order History, State] -> [Message]
+    Text field (input) contains MESSAGE HISTORY information
+    - [Message History] -> [Message]
     Label is the next dialogue
     """
 
@@ -553,5 +567,59 @@ class MessageHistoryDialogueChunkTeacher(BaseDialogueChunkTeacher):
         msg = self._get_base_msg(queue_output)
         curr_player = self._get_player_prompt_token(queue_output)
         msg["text"] = f"{queue_output['message_history']} {curr_player}"
+
+        return Message(msg)
+
+
+@register_teacher("message_history_shortstate_dialogue_chunk")
+class MessageHistoryShortstateDialogueChunkTeacher(BaseDialogueChunkTeacher):
+    """
+    Text field (input) contains MESSAGE then SHORT_STATE information
+
+    Label is the order given by the player
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        msg[
+            "text"
+        ] = f"{queue_output['message_history']} {queue_output['short_state']} {curr_player}"
+
+        return Message(msg)
+
+
+@register_teacher("message_history_shortstate_allorder_dialogue_chunk")
+class MessageHistoryShortstateAllorderDialogueChunkTeacher(BaseDialogueChunkTeacher):
+    """
+    Text field (input) contains MESSAGE then STATE then ALL_ORDER information
+
+    Label is the order given by the player
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        msg[
+            "text"
+        ] = f"{queue_output['message_history']} {queue_output['short_state']} {queue_output['all_orders']} {curr_player}"
+
+        return Message(msg)
+
+
+@register_teacher("allorder_message_history_dialogue_chunk")
+class AllorderMessageHistoryDialogueChunkTeacher(BaseDialogueChunkTeacher):
+    """
+    Text field (input) contains ALL_ORDER, MESSAGE_HISTORY information
+
+    Label is the order given by the player
+    """
+
+    def create_message(self, queue_output, entry_idx=0):
+        msg = self._get_base_msg(queue_output)
+        curr_player = self._get_player_prompt_token(queue_output)
+        msg[
+            "text"
+        ] = f"{queue_output['all_orders']} {queue_output['message_history']} {curr_player}"
 
         return Message(msg)

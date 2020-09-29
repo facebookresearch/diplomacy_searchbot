@@ -11,7 +11,7 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "message_history_shortstate_allorder_chunk_bart_diplomacy_batchsize4_learnfair"
+sweep_name = "resume_message_history_shortstate_allorder_chunk_batchsize4_priority"
 NUM_HOURS = 72
 
 # Define param grid
@@ -27,12 +27,16 @@ grid = {
     "--dropout": [0.1],
     "--fp16": [True],
     "-m": ["bart",],
-    "--init-model": ["/private/home/wyshi/ParlAI/data/models/bart/bart_large/model",],
     "--n-positions": [1024],
-    "--dict_file": ["/private/home/wyshi/ParlAI/data/models/bart/bart_large/model.dict"],
+    "--init-model": [
+        "/checkpoint/wyshi/diplomacy/message_history_shortstate_allorder_chunk/202009211412_copy/model",
+    ],
+    "--dict_file": [
+        "/checkpoint/wyshi/diplomacy/message_history_shortstate_allorder_chunk/202009211412_copy/model.dict"
+    ],
     "--label-truncate": [512],
     "--log_every_n_secs": [10],
-    "-lr": [5e-5],
+    "-lr": [2.37e-5],
     "--lr-scheduler": ["linear"],
     "--max-lr-steps": [150_000],
     "--lr-scheduler-patience": [3],
@@ -42,7 +46,7 @@ grid = {
     "--model-parallel": [False],
     "--save-after-valid": [True],
     "--text-truncate": [1024],
-    "--warmup-updates": [10_000],
+    "--warmup-updates": [0],
     "--fp16-impl": ["mem_efficient"],
     "--update-freq": [2],
     "--gradient-clip": [0.1],
@@ -60,7 +64,8 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="learnfair",
+        partition="priority",
+        comment="end of internship, last day 09/25",
         jobtime=f"{NUM_HOURS}:00:00",
         prefix="python -u parlai_diplomacy/scripts/distributed_train.py",
         one_job_per_node=False,

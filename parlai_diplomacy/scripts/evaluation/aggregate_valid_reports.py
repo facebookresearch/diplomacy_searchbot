@@ -37,12 +37,12 @@ import parlai_diplomacy.tasks.common_task_utils as utls
 VALID_SAVE_ROOT = "/checkpoint/fairdiplomacy/press_diplomacy/validation/validation_report/"
 
 
-def get_valid_report_path(sweep_name, teacher, date_of_sweep=None):
+def get_valid_report_path(sweep_name, teacher, date_of_sweep=None, user=None):
     """
     return report related paths
     """
     # save path
-    USER = os.environ["USER"]
+    USER = os.environ["USER"] if user is None else user
     DATE = date_of_sweep if date_of_sweep else str(date.today()).replace("-", "")
     # report paths
     VALID_REPORT_SAVE_PATH = os.path.join(
@@ -61,27 +61,38 @@ def get_valid_report_path(sweep_name, teacher, date_of_sweep=None):
         teacher,
         "combined_parlai_valid_set_prediction.json",
     )
+    VALID_REPORT_PSEUDO_ORDER_JSON_PATH = os.path.join(
+        VALID_SAVE_ROOT, USER, DATE, sweep_name, teacher, "combined_parlai_pseudo_labels.json",
+    )
 
-    return VALID_REPORT_SAVE_PATH, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH
+    return (
+        VALID_REPORT_SAVE_PATH,
+        VALID_REPORT_JSONL_PATH,
+        VALID_REPORT_SAVE_JSON_PATH,
+        VALID_REPORT_PSEUDO_ORDER_JSON_PATH,
+    )
 
 
-def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_order=False):
+def convert_test_results(
+    sweep_name, teacher, date_of_sweep=None, user=None, predict_all_order=False, debug=False
+):
     """
     gather valid reports --> output one json for evaluation and comparison
     """
     # get validation report path
-    _, VALID_REPORT_JSONL_PATH, VALID_REPORT_SAVE_JSON_PATH = get_valid_report_path(
-        sweep_name, teacher, date_of_sweep
-    )
+    (
+        _,
+        VALID_REPORT_JSONL_PATH,
+        VALID_REPORT_SAVE_JSON_PATH,
+        VALID_REPORT_PSEUDO_ORDER_JSON_PATH,
+    ) = get_valid_report_path(sweep_name, teacher, date_of_sweep, user)
 
     # read jsonl
     paths = glob(VALID_REPORT_JSONL_PATH)
     final_data = {}
-    raw_data = []
-    for i, path in enumerate(paths):
-        print(f"[Loading ...{i+1}/{len(paths)}: {path} ...]")
-        raw_data.extend(load_jsonl(path))
-
+    final_pseudo_orders = {}
+    if debug:
+        final_pseudo_orders_debug = {}
     # initialize some stats
     total = 0
     total_without_key_error = 0
@@ -91,71 +102,94 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
     total_non_empty_predicted = 0
     total_empty_predicted = 0
     key_error = 0
-    for data in raw_data:
-        total += 1
-        try:
-            total_without_key_error += 1
-            ground_truth = data["dialog"][0][0]
-            game_id, phase_id, speaker_id, order = (
-                ground_truth["game_id"],
-                ground_truth["phase_id"],
-                int(ground_truth["player_id"]),
-                ground_truth["eval_labels"][0],
-            )
 
-            if predict_all_order:
-                order = [
-                    s.replace(ground_truth["player"] + ": ", "")
-                    for s in order.split("\n")
-                    if s.startswith(ground_truth["player"])
-                ][0]
-                predicted_order = [
-                    s.replace(ground_truth["player"] + ": ", "")
-                    for s in data["dialog"][0][-1]["text"].split("\n")
-                    if s.startswith(ground_truth["player"])
-                ][0]
-            else:
-                predicted_order = data["dialog"][0][-1]["text"]
-            order = order.replace("[EO_O]", "").strip()
-            predicted_order = predicted_order.replace("[EO_O]", "").strip()
+    for i, path in enumerate(tqdm(paths)):
+        raw_data = []
+        print(f"[Loading ...{i+1}/{len(paths)}: {path} ...]")
+        raw_data.extend(load_jsonl(path))
 
-            if order == predicted_order:
-                correct += 1
+        for data in raw_data:
+            total += 1
+            try:
+                total_without_key_error += 1
+                ground_truth = data["dialog"][0][0]
+                game_id, phase_id, speaker_id, order = (
+                    ground_truth["game_id"],
+                    ground_truth["phase_id"],
+                    int(ground_truth["player_id"]),
+                    ground_truth["eval_labels"][0],
+                )
 
-            # non-empty order
-            if order and (order == predicted_order):
-                correct_non_empty += 1
-
-            if order:
-                total_non_empty += 1
-
-            if predicted_order:
-                total_non_empty_predicted += 1
-
-            if not predicted_order:
-                total_empty_predicted += 1
-
-            if game_id in final_data:
-                if phase_id in final_data[game_id]:
-                    if speaker_id in final_data[game_id][phase_id]:
-                        assert ValueError("repeated speaker_id")
-                    else:
-                        final_data[game_id][phase_id][
-                            utls.COUNTRY_ID_TO_POWER[speaker_id]
-                        ] = predicted_order
-                else:
-                    final_data[game_id][phase_id] = {
-                        utls.COUNTRY_ID_TO_POWER[speaker_id]: predicted_order
+                # pseudo labels
+                pseudo_orders = data["dialog"][0][-1]["text"]
+                final_pseudo_orders[ground_truth["example_id"]] = pseudo_orders
+                if debug:
+                    final_pseudo_orders_debug[ground_truth["example_id"]] = {
+                        "text": ground_truth["text"],
+                        "labels": order,
+                        "pseudo_orders": pseudo_orders,
                     }
-            else:
-                final_data[game_id] = {
-                    phase_id: {utls.COUNTRY_ID_TO_POWER[speaker_id]: predicted_order}
-                }
-        except KeyError as e:
-            # some has key error, possibly due to partial games
-            total_without_key_error -= 1
-            print(f"I got a KeyError - reason {e}")
-            key_error += 1
+
+                # extra single order for accuracy calculation
+                if predict_all_order:
+                    order = [
+                        s.replace(ground_truth["player"] + ": ", "")
+                        for s in order.split("\n")
+                        if s.startswith(ground_truth["player"])
+                    ][0]
+                    predicted_order = [
+                        s.replace(ground_truth["player"] + ": ", "")
+                        for s in data["dialog"][0][-1]["text"].split("\n")
+                        if s.startswith(ground_truth["player"])
+                    ]
+                    if len(predicted_order):
+                        predicted_order = predicted_order[0]
+                    else:
+                        print(f"len(predicted_order) == 0, {data['dialog'][0][-1]['text']}")
+                        predicted_order = ""
+                else:
+                    predicted_order = data["dialog"][0][-1]["text"]
+                order = order.replace("[EO_O]", "").strip()
+                predicted_order = predicted_order.replace("[EO_O]", "").strip()
+
+                if order == predicted_order:
+                    correct += 1
+
+                # non-empty order
+                if order and (order == predicted_order):
+                    correct_non_empty += 1
+
+                if order:
+                    total_non_empty += 1
+
+                if predicted_order:
+                    total_non_empty_predicted += 1
+
+                if not predicted_order:
+                    total_empty_predicted += 1
+
+                if game_id in final_data:
+                    if phase_id in final_data[game_id]:
+                        if speaker_id in final_data[game_id][phase_id]:
+                            assert ValueError("repeated speaker_id")
+                        else:
+                            final_data[game_id][phase_id][
+                                utls.COUNTRY_ID_TO_POWER[speaker_id]
+                            ] = predicted_order
+                    else:
+                        final_data[game_id][phase_id] = {
+                            utls.COUNTRY_ID_TO_POWER[speaker_id]: predicted_order
+                        }
+                else:
+                    final_data[game_id] = {
+                        phase_id: {utls.COUNTRY_ID_TO_POWER[speaker_id]: predicted_order}
+                    }
+            except KeyError as e:
+                # some has key error, possibly due to partial games
+                total_without_key_error -= 1
+                if str(e) != "'game_id'":
+                    print(f"I got a KeyError - reason {e}")
+                key_error += 1
 
     # just for reference, these metrics cannot be directly compared against fairdip
     print(f"order acc: {correct/total_without_key_error} ({correct}/{total_without_key_error})")
@@ -171,8 +205,18 @@ def convert_test_results(sweep_name, teacher, date_of_sweep=None, predict_all_or
 
     with open(VALID_REPORT_SAVE_JSON_PATH, "w") as fh:
         json.dump(final_data, fh)
+        print(f"aggregated validation json saved to {VALID_REPORT_SAVE_JSON_PATH}")
 
-    print(f"aggregated validation json saved to {VALID_REPORT_SAVE_JSON_PATH}")
+    with open(VALID_REPORT_PSEUDO_ORDER_JSON_PATH, "w") as fh:
+        json.dump(final_pseudo_orders, fh)
+        print(f"aggregated pseudo labels json saved to {VALID_REPORT_PSEUDO_ORDER_JSON_PATH}")
+
+    if debug:
+        with open(VALID_REPORT_PSEUDO_ORDER_JSON_PATH + "debug.json", "w") as fh:
+            json.dump(final_pseudo_orders_debug, fh)
+            print(
+                f"aggregated pseudo labels json saved to {VALID_REPORT_PSEUDO_ORDER_JSON_PATH + 'debug.json'}"
+            )
 
 
 def load_jsonl(path):
@@ -189,8 +233,8 @@ def load_jsonl(path):
     return results
 
 
-def main(sweep_name, teacher, date_of_sweep=None, predict_all_order=False):
-    convert_test_results(sweep_name, teacher, date_of_sweep, predict_all_order)
+def main(sweep_name, teacher, date_of_sweep=None, user=None, predict_all_order=False, debug=False):
+    convert_test_results(sweep_name, teacher, date_of_sweep, user, predict_all_order, debug)
 
 
 if __name__ == "__main__":
@@ -205,10 +249,23 @@ if __name__ == "__main__":
         "--date_of_sweep", type=str, help="date of the validation sweep",
     )
     parser.add_argument(
+        "--user", type=str, help="user who ran the sweep",
+    )
+    parser.add_argument(
         "--predict_all_order", action="store_true", help="if the report is for all orders",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="debug mode",
     )
 
     args = parser.parse_args()
 
     # save to json
-    main(args.sweep_name, args.teacher, args.date_of_sweep, args.predict_all_order)
+    main(
+        args.sweep_name,
+        args.teacher,
+        args.date_of_sweep,
+        args.user,
+        args.predict_all_order,
+        args.debug,
+    )

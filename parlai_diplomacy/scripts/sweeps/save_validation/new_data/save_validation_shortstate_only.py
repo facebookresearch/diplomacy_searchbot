@@ -16,16 +16,17 @@ load.register_all_agents()
 load.register_all_tasks()
 
 # Params
-sweep_name = "eval_newdata_shortstate_order_chunk"  # change this
+sweep_name = "new_bs_80_allchunks_eval_message_history_shortstate_allorder_chunk_chunksize_10_000"  # change this
 NUM_HOURS = 72
 
 # save path
 DATE = str(date.today()).replace("-", "")
-TEACHER = "shortstate_order_chunk"  # change this
+TEACHER = "message_history_shortstate_allorder_chunk"  # change this
 (
     VALID_REPORT_SAVE_PATH,
     _,
     VALID_REPORT_SAVE_JSON_PATH,
+    _,
 ) = aggregate_valid_reports.get_valid_report_path(sweep_name, TEACHER, date_of_sweep=DATE)
 logging.info(f"mkdir {VALID_REPORT_SAVE_PATH}")
 bash("mkdir -p " + VALID_REPORT_SAVE_PATH)
@@ -36,19 +37,21 @@ grid = {
     # "--verbose": [True],
     "--datapath": ["/private/home/wyshi/ParlAI/data"],
     "-mf": [
-        "/checkpoint/wyshi/20200827/resume_newdata_shortstate_order_chunk_bart_diplomacy/18e/model"
+        "/checkpoint/wyshi/diplomacy/message_history_shortstate_allorder_chunk/202009161408/model"
     ],  # change this
     "-m": ["bart",],
+    # "--dynamic-batching": ["full"],
     "-t": [f"{TEACHER}"],
     "-dt": ["valid:stream"],
     "--report-filename": [os.path.join(VALID_REPORT_SAVE_PATH, "valid_report")],
-    "--label-truncate": [256],
-    "--text-truncate": [256],
+    "--label-truncate": [512],
+    "--text-truncate": [1024],
     "--save-world-logs": [True],
     "--skip-generation": [False],
     "--inference": ["greedy"],
-    "-bs": [256],
-    "--min-turns": [1,],
+    "--log-keep-fields": ["game_id,phase_id,player_id,eval_labels,example_id,player,text"],
+    "-bs": [96],
+    # "--n_chunks": [2],
 }
 
 if __name__ == "__main__":
@@ -56,12 +59,13 @@ if __name__ == "__main__":
         grid=grid,
         name_keys={},
         sweep_name=sweep_name,
-        partition="dev",
+        partition="priority",
+        comment="end of internship, last day 09/25",
         jobtime=f"{NUM_HOURS}:00:00",
         prefix="python -u parlai_diplomacy/scripts/distributed_eval.py",
         one_job_per_node=False,
         gpus=8,
-        nodes=2,
+        nodes=8,
         create_model_file=False,
         requeue=True,
         include_job_id=False,

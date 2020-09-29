@@ -17,6 +17,7 @@ def register_all_agents():
 def register_all_tasks():
     # list all tasks here
     import parlai_diplomacy.tasks.dialogue.agents  # noqa: F401
+    import parlai_diplomacy.tasks.dialogue.pseudo_order.agents  # noqa: F401
     import parlai_diplomacy.tasks.full_press.listener.single_order.regular.agents  # noqa: F401
     import parlai_diplomacy.tasks.full_press.listener.single_order.stream.agents  # noqa: F401
     import parlai_diplomacy.tasks.full_press.listener.all_orders.stream.agents  # noqa: F401

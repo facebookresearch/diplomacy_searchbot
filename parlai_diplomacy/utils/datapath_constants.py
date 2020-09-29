@@ -43,3 +43,6 @@ CHUNK_MESSAGE_ORDER_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jso
 CHUNK_MESSAGE_ORDER_PATH_OLD_0813 = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/include_msg=all_msg-special_tokens=False-format=dipcc/all/data*.gz"  # 2020-08-13
 # Joined order and message data, DIP format
 CHUNK_MESSAGE_ORDER_PATH_OLD_0812 = "/checkpoint/fairdiplomacy/press_diplomacy/joined_jsons/dumps_State_OrderHistory_MessageHistory-all-msg-SpecialToken-False_order/*.json"  # 2020-08-12
+
+# Pseudo-orders for all chunks, 20200928
+PSEUDO_ORDER_PATH = "/checkpoint/fairdiplomacy/press_diplomacy/validation/validation_report/edinan/20200925/pseudo_labelling_correct_rerun/pseudoorder_generation_message_history_shortstate_dialogue_chunk/combined_parlai_pseudo_labels.json"
