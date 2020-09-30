@@ -106,16 +106,22 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
                     order_str = " ".join(variant_split)
 
             if order_str not in possible_orders:
+                if is_duplicate_last_phase_orders(phase, webdip_state_json):
+                    # we're done processing this game
+                    return game
+
+                # else, it's a bug
                 bug_report = f"/checkpoint/fairdiplomacy/bug_reports/webdip_api.{time.time()}.json"
                 with open(bug_report, "w") as f:
                     f.write(game.to_json())
-            assert order_str in possible_orders, (
-                game.phase,
-                (power, loc, order_str),
-                possible_orders,
-                order_json,
-                bug_report,
-            )
+
+                assert order_str in possible_orders, (
+                    game.phase,
+                    (power, loc, order_str),
+                    possible_orders,
+                    order_json,
+                    bug_report,
+                )
 
             logger.debug('set_phase_orders -> {} "{}"'.format(power, order_str))
             power_to_orders[power].append(order_str)
@@ -129,6 +135,24 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
             logger.debug(f"Process after: {game.phase}")
 
     return game
+
+
+def is_duplicate_last_phase_orders(phase, webdip_state_json):
+    if phase["phase"] != "Diplomacy" or phase["turn"] != webdip_state_json["phases"][-1]["turn"]:
+        return False
+    prev_move_phase = next(
+        p
+        for p in webdip_state_json["phases"]
+        if p["phase"] == "Diplomacy" and p["turn"] == (phase["turn"] - 1)
+    )
+    prev_move_orders = set(strip_key_and_freeze(d, "turn") for d in prev_move_phase["orders"])
+    this_move_orders = set(strip_key_and_freeze(d, "turn") for d in phase["orders"])
+    return prev_move_orders == this_move_orders
+
+
+def strip_key_and_freeze(d, key):
+    d = {k: v for k, v in d.items() if k != key}
+    return frozenset(d.items())
 
 
 # def get_order_type(order: List[str], phase: str):
