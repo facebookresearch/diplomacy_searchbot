@@ -28,6 +28,10 @@ def _parse_extra_plausible_orders(string) -> Dict[str, List[Tuple[str, ...]]]:
     plausible_orders = {}
     for power_orders_str in string.split(";"):
         power_orders_str = power_orders_str.strip()
+        # Ignore ")'(" so one can copy things from how we print order in the terminal.
+        power_orders_str = power_orders_str.replace("'", "")
+        power_orders_str = power_orders_str.replace("(", "")
+        power_orders_str = power_orders_str.replace(")", "")
         if not power_orders_str:
             continue
         try:
