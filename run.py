@@ -147,7 +147,7 @@ def situation_check(cfg):
             selection = cfg.selection.split(",")
             meta = {k: v for k, v in meta.items() if k in selection}
 
-    run_situation_check(meta, agent)
+    run_situation_check(meta, agent, extra_plausible_orders_str=cfg.extra_plausible_orders)
 
 
 @_register

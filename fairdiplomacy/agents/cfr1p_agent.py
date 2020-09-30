@@ -143,7 +143,12 @@ class CFR1PAgent(ThreadedSearchAgent):
         )
 
     def get_all_power_prob_distributions(
-        self, game, power_plausible_orders=None, early_exit_for_power=None, timings=None
+        self,
+        game,
+        power_plausible_orders=None,
+        early_exit_for_power=None,
+        timings=None,
+        extra_plausible_orders=None,
     ) -> Dict[str, Dict[Tuple[str], float]]:
         """Return dict {power: {action: prob}}"""
 
@@ -164,6 +169,11 @@ class CFR1PAgent(ThreadedSearchAgent):
 
         if power_plausible_orders is None:
             power_plausible_orders = self.get_plausible_orders_helper(game)
+
+        if extra_plausible_orders:
+            for p, orders in extra_plausible_orders.items():
+                power_plausible_orders[p].update({order: 1.0 for order in orders})
+                logging.info(f"Adding extra plausible orders {p}: {orders}")
 
         for p, orders_to_logprob in power_plausible_orders.items():
             for o, prob in orders_to_logprob.items():

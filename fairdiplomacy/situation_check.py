@@ -1,6 +1,7 @@
-import json
+from typing import Optional, Dict, List, Tuple
 import logging
 from collections import defaultdict
+from fairdiplomacy.agents import CFR1PAgent
 from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.models.consts import POWERS
 import heyhi
@@ -23,7 +24,32 @@ def fragment_prob(prob_distributions, power, fragment):
     return total
 
 
-def run_situation_check(meta, agent):
+def _parse_extra_plausible_orders(string) -> Dict[str, List[Tuple[str, ...]]]:
+    plausible_orders = {}
+    for power_orders_str in string.split(";"):
+        power_orders_str = power_orders_str.strip()
+        if not power_orders_str:
+            continue
+        try:
+            power, rest = power_orders_str.upper().split(":")
+        except ValueError:
+            raise ValueError(f"Excpected '<power>: orders'. Got: {power_orders_str}")
+        assert power in POWERS, power
+        if power not in plausible_orders:
+            plausible_orders[power] = []
+        plausible_orders[power].append(
+            tuple(order.strip() for order in rest.split(",") if order.strip())
+        )
+    return plausible_orders
+
+
+def run_situation_check(meta, agent, extra_plausible_orders_str: str = ""):
+    extra_plausible_orders: Optional[Dict[str, List[Tuple[str, ...]]]]
+    if extra_plausible_orders_str:
+        assert isinstance(agent, CFR1PAgent)
+        extra_plausible_orders = _parse_extra_plausible_orders(extra_plausible_orders_str)
+    else:
+        extra_plausible_orders = None
     results = {}
     for name, config in meta.items():
         logging.info("=" * 80)
@@ -38,7 +64,14 @@ def run_situation_check(meta, agent):
             game.rollback_to_phase(config["phase"])
 
         if hasattr(agent, "get_all_power_prob_distributions"):
-            prob_distributions = agent.get_all_power_prob_distributions(game)  # FIXME: early exit
+            if isinstance(agent, CFR1PAgent):
+                prob_distributions = agent.get_all_power_prob_distributions(
+                    game, extra_plausible_orders=extra_plausible_orders
+                )
+            else:
+                prob_distributions = agent.get_all_power_prob_distributions(
+                    game
+                )  # FIXME: early exit
             logging.info("CFR strategy:")
         else:
             # this is a supervised agent, sample N times to get a distribution

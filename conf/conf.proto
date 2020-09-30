@@ -537,6 +537,9 @@ message SituationCheckTask {
   optional string single_game = 5;
   // Optional. Only applies to the case when single_game is set.
   optional string single_phase = 6;
+  // Optional. Add extra orders as plausible.
+  // Format: <power> ":" <order> ["," <order> [...] ] [";" <power> ":" ...]
+  optional string extra_plausible_orders = 7;
   optional Launcher launcher = 100;
 }
 
