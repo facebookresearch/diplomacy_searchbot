@@ -24,6 +24,15 @@ def fragment_prob(prob_distributions, power, fragment):
     return total
 
 
+def has_orders(prob_distributions, *expected_orders):
+    seen = False
+    for pd in prob_distributions.values():
+        for orders in pd:
+            if all(x in orders for x in expected_orders):
+                seen = True
+    return seen
+
+
 def _parse_extra_plausible_orders(string) -> Dict[str, List[Tuple[str, ...]]]:
     plausible_orders = {}
     for power_orders_str in string.split(";"):

@@ -139,5 +139,16 @@
       "tests": {
         "Don't convoy DEN to LVN": "lambda r: fragment_prob(r, 'FRANCE', 'DEN - LVN') < 0.1"
       }
+    },
+    "everyone_against_france": {
+      "game_path": "/private/home/noambrown/web_diplomacy/fairdiplomacy/313669_f1922m.json",
+      "comment": "England should understand that TUN should be taken with WES as other can counter TYS-TUN",
+      "phase": "S1922M",
+      "powers": ["FRANCE", "TURKEY", "ENGLAND"],
+      "tests": {
+        "FRA Should consider support" : "lambda r: has_orders(r, 'FRANCE', 'F ROM S F TUN - TYS')",
+        "TUR Should consider support" : "lambda r: has_orders(r, 'TURKEY', 'F NAP S F TUN - TYS')",
+        "ENG Should use WES to go to TUR" : "lambda r: order_prob(r, 'ENGLAND', 'F WES - TUN') > 0.1"
+      }
     }
 }
