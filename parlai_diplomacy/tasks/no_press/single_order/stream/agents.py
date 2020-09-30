@@ -50,7 +50,8 @@ class BaseOrderChunkTeacher(OrderPredMetricMixin, ChunkTeacher, ABC):
         )
         argparser.add_argument(
             "--include_player_ratings",
-            action="store_true",
+            type=bool,
+            default=False,
             help="Include player ratings in prompts for all models",
         )
         return argparser
