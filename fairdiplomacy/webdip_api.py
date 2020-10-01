@@ -6,12 +6,12 @@ import json
 from pprint import pprint, pformat
 import logging
 from collections import defaultdict
-from typing import List
+from typing import List, Dict
 
 from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.data.build_dataset import (
-    TERR_ID_TO_LOC,
-    COUNTRY_ID_TO_POWER,
+    TERR_ID_TO_LOC_BY_MAP,
+    COUNTRY_ID_TO_POWER_MY_MAP,
     COUNTRY_POWER_TO_ID,
     get_valid_coastal_variant,
 )
@@ -19,6 +19,8 @@ from fairdiplomacy.models.consts import POWERS
 
 from diplomacy.integration.webdiplomacy_net.orders import Order as WebdipOrder
 from diplomacy.integration.webdiplomacy_net.game import state_dict_to_game_and_power
+
+import heyhi
 
 API_PATH = "/api.php"
 
@@ -30,14 +32,24 @@ SEND_MESSAGE_ROUTE = "game/sendmessage"
 logger = logging.getLogger("webdip")
 
 
-LOC_TO_TERR_ID = {v: k for k, v in TERR_ID_TO_LOC.items()}
-
-
-COAST_ID_TO_LOC_ID = {76: 8, 77: 8, 78: 32, 79: 32, 80: 20, 81: 20}
+def _build_coast_id_to_loc_id(loc_to_name: Dict[int, str]) -> Dict[str, str]:
+    name2loc = {v: k for k, v in loc_to_name.items()}
+    return {
+        name2loc[coastal_name]: name2loc[coastal_name.split("/")[0]]
+        for coastal_name in name2loc
+        if "/" in coastal_name
+    }
 
 
 def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
-    game = Game()
+    if webdip_state_json["variantID"] == 1:
+        game = Game()
+    elif webdip_state_json["variantID"] == 15:
+        with (heyhi.PROJ_ROOT / "bin/game_france_austria.json").open() as stream:
+            game = Game.from_json(stream.read())
+    else:
+        raise ValueError("Bad variant: %s" % webdip_state_json["variantID"])
+    terr_id_to_loc = TERR_ID_TO_LOC_BY_MAP[webdip_state_json["variantID"]]
     for phase in webdip_state_json["phases"]:
         # an adj phase with no orders may not show up at all in the json: skip
         # ahead to the spring phase to stay sync'd
@@ -50,7 +62,7 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
         for j in phase["units"]:
             if j["unitType"] == "":
                 continue
-            terr_to_unit[TERR_ID_TO_LOC[j["terrID"]]] = j["unitType"][0]
+            terr_to_unit[terr_id_to_loc[j["terrID"]]] = j["unitType"][0]
 
         orders = phase["orders"]
         power_to_orders = defaultdict(list)
@@ -59,10 +71,12 @@ def webdip_state_to_game(webdip_state_json, stop_at_phase=None):
                 break
 
             # 1. extract the data
-            power = COUNTRY_ID_TO_POWER[order_json["countryID"]]
-            loc = TERR_ID_TO_LOC[order_json["terrID"]]
-            from_loc = TERR_ID_TO_LOC[order_json["fromTerrID"]]
-            to_loc = TERR_ID_TO_LOC[order_json["toTerrID"]]
+            power = COUNTRY_ID_TO_POWER_MY_MAP[webdip_state_json["variantID"]][
+                order_json["countryID"]
+            ]
+            loc = terr_id_to_loc[order_json["terrID"]]
+            from_loc = terr_id_to_loc[order_json["fromTerrID"]]
+            to_loc = terr_id_to_loc[order_json["toTerrID"]]
             unit = order_json["unitType"][:1]
             if unit == "":
                 unit = terr_to_unit.get(loc, "F")  # default to Fleet in case we missed a coast
@@ -237,6 +251,7 @@ def play_webdip(
         iter_ += 1
         logging.info("========================================================================")
         if check_phase or force or json_out:
+            # Note, this assumes default map.
             next_game = {"gameID": game_id, "countryID": COUNTRY_POWER_TO_ID[force_power]}
         else:
             missing_orders_resp = requests.get(
@@ -254,7 +269,6 @@ def play_webdip(
 
             next_game = missing_orders_json[0]
 
-        power = COUNTRY_ID_TO_POWER[next_game["countryID"]]
         status_resp = requests.get(
             api_url,
             params={
@@ -288,6 +302,8 @@ def play_webdip(
             requests.post(
                 api_url, params={"route": SEND_MESSAGE_ROUTE}, headers=api_header, json=msg_json
             )
+
+        power = COUNTRY_ID_TO_POWER_MY_MAP[status_json["variantID"]][next_game["countryID"]]
 
         # I can probably use the diplomacy API for this, but it wasn't
         # working out ofthebox for some reason
@@ -336,14 +352,18 @@ def play_webdip(
             else "Diplomacy",
             "countryID": next_game["countryID"],
             "orders": [
-                WebdipOrder(order, game=game).to_dict() for order in agent_orders
+                WebdipOrder(order, game=game, map_id=status_json["variantID"]).to_dict()
+                for order in agent_orders
             ],  # [order_to_json(order.split(), game.phase) for order in agent_orders],
             "ready": "Yes",
         }
 
+        coast_id_to_loc_id = _build_coast_id_to_loc_id(
+            TERR_ID_TO_LOC_BY_MAP[status_json["variantID"]]
+        )
         for order in agent_orders_json["orders"]:
-            if order["fromTerrID"] in COAST_ID_TO_LOC_ID:
-                order["fromTerrID"] = COAST_ID_TO_LOC_ID[order["fromTerrID"]]
+            if order["fromTerrID"] in coast_id_to_loc_id:
+                order["fromTerrID"] = coast_id_to_loc_id[order["fromTerrID"]]
 
         print(game.phase)
         # print([p.name for p in game.get_phase_history()])
