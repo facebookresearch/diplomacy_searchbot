@@ -128,7 +128,6 @@ Code structure:
 
 External links:
 
- * [PostMan](https://github.com/fairinternal/postman) is an in-house tensor-friendly RPC library. We are using it for search and RL.
  * [TopLog](https://github.com/fairinternal/toplog) is a simple tool to have on demand TensorBoard. Both supervised and RL trainers output TB logs.
  * [Mila paper](https://papers.nips.cc/paper/8697-no-press-diplomacy-modeling-multi-agent-gameplay.pdf) that our GunBoat game is based on.
  * [DM paper](https://arxiv.org/pdf/2006.04635.pdf). We use some model improvement from the paper.
