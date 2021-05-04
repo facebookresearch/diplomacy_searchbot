@@ -1,0 +1,12 @@
+br_search {
+  max_batch_size: 1000
+  max_rollout_length: 5
+  model_path: "/checkpoint/alerer/fairdiplomacy/sl_fbdata_all/checkpoint.pth.best"
+  n_gpu: 1
+  n_plausible_orders: 8
+  n_rollout_procs: 70
+  n_server_procs: 1
+  rollouts_per_plausible_order: 20
+  use_predicted_final_scores: true
+  rollout_temperature: 0.05
+}

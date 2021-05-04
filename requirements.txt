@@ -1,0 +1,25 @@
+attr
+black==19.10b0
+flask
+ipdb
+joblib
+nose
+pandas
+parameterized
+psutil
+pre-commit
+tabulate
+tensorboard
+torch
+tqdm
+typing_extensions
+
+# diplomacy_research deps
+tornado>=5.0
+protobuf>=3.6.1
+pyyaml
+python-hostlist
+gym>=0.9.6
+requests
+grpcio==1.15.0
+grpcio-tools==1.15.0

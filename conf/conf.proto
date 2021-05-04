@@ -1,0 +1,513 @@
+/*
+Copyright (c) Facebook, Inc. and its affiliates.
+
+This source code is licensed under the MIT license found in the
+LICENSE file in the root directory of this source tree.
+*/
+
+// Format this file with clang after editing:
+//   clang-format-8 conf/*.proto -i
+syntax = "proto2";
+package fairdiplomacy;
+
+import public "conf/agents.proto";
+
+// Launcher message defines how to launch the job. Two options are avilable -
+// locally or on slurm. Launcher information is expected to be a part of the
+// main config.
+message Launcher {
+
+  message Local { optional bool use_local = 1; }
+
+  message Slurm {
+    optional int32 num_gpus = 1 [ default = 0 ];
+    // By default starting one task per GPU. But if this flag is set, then
+    // will use one task per machine.
+    optional bool single_task_per_node = 2 [ default = false ];
+
+    optional string partition = 3 [ default = "learnfair" ];
+
+    optional int32 hours = 4;
+    // Memory per GPU in GB.
+    optional int32 mem_per_gpu = 5 [ default = 62 ];
+    optional string comment = 6;
+
+    // Number of CPUs per GPU. You probably want 40 on Pascals and 10 otherwise.
+    optional int32 cpus_per_gpu = 7 [ default = 10 ];
+
+    // If set, will schedule job only on volta GPUs with 32GB of mem.
+    optional bool volta32 = 8;
+    // If set, will schedule the job only on Pascal GPUs.
+    optional bool pascal = 9;
+    // If set, will schedule job only on volta GPUs.
+    optional bool volta = 10;
+  }
+
+  oneof launcher {
+    Local local = 1;
+    Slurm slurm = 2;
+  }
+}
+
+// Root config to compare agents.
+message CompareAgentsTask {
+  // The order here is expected to match fairdiplomacy.models.consts.POWERS
+  enum Power {
+    AUSTRIA = 0;
+    ENGLAND = 1;
+    FRANCE = 2;
+    GERMANY = 3;
+    ITALY = 4;
+    RUSSIA = 5;
+    TURKEY = 6;
+  }
+
+  optional Agent agent_one = 2;
+  // Ignored if use_shared_agent.
+  optional Agent agent_six = 3;
+  optional Agent cf_agent = 4;
+
+  optional Power power_one = 5;
+
+  optional string out = 6;
+  optional int32 seed = 7 [ default = -1 ];
+
+  // Optional. For tests - max number of turns to run.
+  optional int32 max_turns = 8;
+  optional int32 max_year = 9 [ default = 1935 ];
+
+  // Optional. If set, agent_six is ignored, and agent_one is used to get all
+  // strategies. Enable share_strategy on CFR to get speed up.
+  optional bool use_shared_agent = 10;
+
+  // Optional. If set, then the agents starts from the last phase in the game
+  // unless start_phase is set.
+  optional string start_game = 11;
+  // Optional. Only applies to the case when start_game is set.
+  optional string start_phase = 12;
+
+  optional int32 num_processes = 90
+      [ default = 0 ];                            // for data collection only!
+  optional int32 num_trials = 91 [ default = 0 ]; // for data collection only!
+
+  // If specified, requeue on slurm signal
+  optional bool use_default_requeue = 99 [ default = false ];
+  optional Launcher launcher = 100;
+}
+
+message NoPressDatasetParams {
+  // Dataloader procs (1 means load in the main process).
+  optional int32 num_dataloader_workers = 1;
+
+  // Minimal score (num SC) of the at the enf of the game needed to include the
+  // power into the training set.
+  optional int32 only_with_min_final_score = 2;
+
+  // exclude actions with >=n units, all holds, from the dataset
+  optional int32 exclude_n_holds = 3 [ default = -1 ];
+
+  // If set, restrict data to S1901M.
+  optional bool debug_only_opening_phase = 4;
+
+  // Factor used in exponential weighted average of sum of squares scores
+  optional float value_decay_alpha = 5 [ default = 1.0 ];
+
+  // Path to dir containing game.json files.
+  optional string data_dir = 6;
+}
+
+message TrainTask {
+  // No Press dataset params
+  optional NoPressDatasetParams dataset_params = 45;
+
+  // Batch size per GPU.
+  optional int32 batch_size = 4;
+
+  // Learning rate.
+  optional float lr = 5;
+
+  // Learning rate decay per epoch.
+  optional float lr_decay = 6;
+
+  // Max gradient norm.
+  optional float clip_grad_norm = 7;
+
+  // Path to load/save the model.
+  optional string checkpoint = 8;
+
+  // Prob[teacher forcing] during training.
+  optional float teacher_force = 10;
+
+  // LSTM dropout pct.
+  optional float lstm_dropout = 11;
+
+  // Encoder dropout pct.
+  optional float encoder_dropout = 12;
+
+  // If set, use a single process.
+  optional bool debug_no_mp = 14;
+
+  // Skip validation / save.
+  optional bool skip_validation = 15;
+
+  // Learn adjacency matrix.
+  optional bool learnable_A = 16;
+
+  // Obsolete.
+  optional bool fill_missing_orders = 17 [ default = false ];
+
+  // Learn attention alignment matrix.
+  optional bool learnable_alignments = 18;
+
+  // Average across location embedding instead of using attention.
+  optional bool avg_embedding = 19;
+
+  // Number of GCN layers in the encoder
+  optional int32 num_encoder_blocks = 20;
+
+  // Max number of epochs to train
+  optional int32 num_epochs = 21;
+
+  // Stale. Always enabled.
+  optional bool write_jsonl = 22;
+
+  // Weight of value loss relative to policy loss, between 0 and 1
+  optional float value_loss_weight = 23;
+
+  // Scale factor for initial value decoder weights
+  optional float value_decoder_init_scale = 24;
+
+  // Max gradient norm in value decoder params
+  optional float value_decoder_clip_grad_norm = 25;
+
+  // Value head dropout pct.
+  optional float value_dropout = 27;
+
+  // obsolete
+  optional bool graph_decoder = 32 [ default = false ];
+
+  // dimension of LSTM
+  optional int32 lstm_size = 33 [ default = 200 ];
+
+  // number of LSTM layers
+  optional int32 lstm_layers = 34 [ default = 1 ];
+
+  // if true, add features to output orders in the model
+  optional bool featurize_output = 35 [ default = false ];
+
+  // if true, add "relational" features to output orders in the model
+  optional bool relfeat_output = 36 [ default = false ];
+
+  optional bool shuffle_locs = 38 [ default = false ];
+
+  optional bool featurize_prev_orders = 39 [ default = false ];
+
+  optional bool residual_linear = 40 [ default = false ];
+
+  optional bool merged_gnn = 41 [ default = false ];
+
+  // Optional. If set to a positive value, will skip each residual layer in
+  // encoder with this probability.
+  optional float encoder_layerdrop = 42 [ default = 0.0 ];
+
+  // Path to file containing game metadata.
+  optional string metadata_path = 29;
+
+  // cut this percentile of games based on player rating
+  // (only for dataset with player ratings)
+  optional float min_rating_percentile = 31 [ default = 0 ];
+
+  // Max gamesto include in dataset (for testing only)
+  optional int32 max_games = 30 [ default = -1 ];
+
+  // Percentage of games to use as val set.
+  optional float val_set_pct = 9;
+
+  // Optional. If specified, use this agent's orders instead of the orders in
+  // the game.json
+  optional Agent cf_agent = 46;
+
+  // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
+  // times, saving each as a separate row in the db.
+  optional uint32 n_cf_agent_samples = 47 [ default = 1 ];
+
+  // Path to dir containing dataset cache.
+  optional string data_cache = 2;
+
+  // Optional. Paths to additional datasets. Only validation part of these
+  // datasets will be used. The key is used for reporting.
+  map<string, string> extra_val_data_caches = 43;
+
+  // Optional. Paths to additional train datasets. Will be concatenated to the
+  // main dataset.
+  repeated string extra_train_data_caches = 44;
+
+  // Optional. Glob pattern matches will be concatenated to train and val
+  // datasets
+  optional string glob_append_data_cache = 48;
+
+  // Optional. Glob pattern. Both train and val components of data caches will
+  // be added to val set. Useful for single-game data caches.
+  optional string glob_append_data_cache_as_val = 49;
+
+  // Optional. If true, will use softmax on top of value head. Otherwise, will
+  // take squares and normalize.
+  optional bool value_softmax = 50 [ default = false ];
+
+  // Optional. If set, will stop the epoch after that many batches. For testing
+  // puproses.
+  optional int32 epoch_max_batches = 51;
+
+  // If specified, requeue on slurm signal
+  optional bool use_default_requeue = 900 [ default = false ];
+  optional Launcher launcher = 1000;
+}
+
+message LaunchBotTask {
+  // Agent cfg to play against
+  optional Agent agent = 1;
+
+  // Diplomacy server host
+  optional string host = 2;
+
+  // Diplomacy server port
+  optional int32 port = 3;
+
+  // Run every period (in seconds)
+  optional uint32 period = 4;
+
+  // Number of powers to manage on server
+  optional uint32 buffer_size = 5;
+
+  // If non-zero, # of model servers to launch and reuse
+  optional uint32 reuse_model_servers = 6;
+
+  // If specified, connect only to this game
+  optional string game_id = 7;
+
+  // If specified, connect only as this power
+  optional string power = 8;
+
+  // If specified, requeue on slurm signal
+  optional bool use_default_requeue = 900 [ default = false ];
+  optional Launcher launcher = 1000;
+}
+
+// A dummy task to use in tests.
+message TestTask {
+  message SubMessage { optional int32 subscalar = 1 [ default = -1 ]; }
+
+  enum SomeEnum {
+    ZERO = 0;
+    ONE = 1;
+  };
+
+  optional float scalar = 1 [ default = -1 ];
+  optional SubMessage sub = 2;
+  optional SubMessage sub2 = 3;
+
+  optional SomeEnum enum_value = 4 [ default = ZERO ];
+}
+
+message ExploitTask {
+  // Required. Checkpoint to initialize both the blueprint and the training
+  // agents. Use `reset_agent_weights` to train the agent from scratch.
+  optional string model_path = 1;
+
+  // Weight of critic loss in total loss.
+  optional float critic_weight = 2 [ default = 1.0 ];
+  // Weight of entropy loss in total loss.
+  optional float entropy_weight = 3 [ default = 0.0 ];
+  // Weight of surrogate entropy loss that should push action-level entropy up.
+  optional float sampled_entropy_weight = 10;
+
+  // Reward discounting.
+  optional float discounting = 7 [ default = 1.0 ];
+
+  // Optional. If set, weights of the exploit agent will be randomly
+  // initialized.
+  optional bool reset_agent_weights = 8;
+  message Optimizer {
+    // Required. Learning rate for Adam.
+    optional float lr = 1;
+    // Optional (but highly recommended). Gradient clipping.
+    optional float grad_clip = 2;
+  }
+  optional Optimizer optimizer = 4;
+
+  message Rollout {
+    // Required. Max number of steps to do in the rollout.
+    optional int32 rollout_max_length = 1;
+
+    // Optional. How many parallel games to batch within single rollout.
+    optional int32 rollout_batch_size = 2 [ default = 1 ];
+
+    // Optional. How many rollout proccesses to run. If zero or negative, will
+    // run rollouts in the main process.
+    optional int32 num_rollout_processes = 4 [ default = 1 ];
+
+    // Optional. If set, will save games with this stride.
+    optional int32 dump_games_every = 5;
+
+    // Optional. Max batch size in postman inference processes.
+    optional int32 inference_batch_size = 6;
+
+    // Optional. Wait at least this number of seconds before loading new model
+    // in the inference worker. By default check before every forward.
+    optional int32 inference_ckpt_sync_every = 14;
+
+    // Required. The size of the produces batches. That what the training loop
+    // will receive.
+    optional int32 batch_size = 7;
+
+    // Optional. How much adjancent batches overleave. Note that default value
+    // (1) means that each action frame will be used exactly once as last item
+    // in a batch is remove in impala.
+    optional int32 batch_interleave_size = 8;
+
+    // Optional. If set, the batches will concatenate rollouts until batch_size
+    // is reached, instead of following it exactly.
+    optional bool do_not_split_rollouts = 9;
+
+    optional bool single_rollout_gpu = 11;
+    optional int32 server_procs_per_gpu = 12 [ default = 1 ];
+
+    message Reward {
+      // Required. Name of the score metric from
+      // fairdiplomacy.utils.game_scoring.
+      optional string score_name = 1;
+
+      // Optional. Penalty for each move to encourage shorter games.
+      optional float delay_penalty = 2;
+
+      // Optional. If set, then the reward will be a difference between the
+      // score before the action and after the action.
+      optional bool differential_reward = 3;
+
+      // Optional. Hacky way to hardcore alliances.
+      // 0 -> no alliances
+      // 1 -> FRA, ENG, GER vs all.
+      // 2 -> FRA, ENG, GER, IT vs all.
+      // 3 -> FRA, ENG, RUS vs all.
+      // 4 -> FRA vs all.
+      optional int32 alliance_type = 4;
+    }
+
+    // Required. How to compute rewards.
+    optional Reward reward = 10;
+
+    // Optional. Whether do self plat instead of exploitability.
+    optional bool selfplay = 13;
+
+    // Required in selfplay. Number of rollout proccess to do eval rollouts
+    // against the supervised model. These rollouts are ingored for training.
+    // These workers are subtracted from num_rollout_processes.
+    optional int32 num_eval_rollout_processes = 15;
+
+    // Required. Temperature for the oponent agent.
+    optional float blueprint_temperature = 16;
+
+    // Optional. If set, will stop rollout once the explout agent/agents is out.
+    optional bool fast_finish = 17;
+
+    message LateGameConditions {
+      // Minimal number of SC of top2 players to switch to RL.
+      optional int32 min_top2_scs = 1;
+    };
+
+    // Optional. If provided, rollouts and evals with start from these games.
+    // The file is expected to contain pathes to game.jsons one per line.
+    optional string initial_games_index_file = 18;
+
+    // Optional. If set, will use only cores 10-79 for rollout processes.
+    optional bool set_affinity = 19;
+  }
+
+  optional Rollout rollout = 5;
+
+  message Trainer {
+    // Optional. By default = infinite.
+    optional int32 max_epochs = 1;
+    // Required. Number of updates per epoch.
+    optional int32 epoch_size = 2;
+    // Optional. Save checkpoint every so many iterations.
+    optional int32 save_checkpoint_every = 3;
+    // Optional. Communicate current ckpt to inference workers every so often.
+    optional int32 save_sync_checkpoint_every = 4 [ default = 1 ];
+    // Optional. Debugging option. Stop updating model after this number of
+    // updates.
+    optional int32 max_updates = 5 [ default = 0 ];
+    // Optional. If set, will train a model being in eval mode.
+    optional bool train_as_eval = 6;
+    optional bool train_encoder_as_eval = 7;
+    optional bool train_decoder_as_eval = 8;
+    // Run everything in eval mode except for batch norm modules. Essentially it
+    // puts only dropout to eval mode.
+    optional bool train_as_eval_but_batchnorm = 9;
+  }
+
+  optional Trainer trainer = 6;
+
+  // Optional. If positive, will set random seed for torch on the main process.
+  optional int32 seed = 9 [ default = -1 ];
+
+  // Arbitraty comment. Could use to make a "re" run for the same config and
+  // changed code.
+  optional string comment = 999;
+  optional Launcher launcher = 1000;
+}
+
+message BuildDbCacheTask {
+  // Dataset Params
+  optional NoPressDatasetParams dataset_params = 1;
+
+  // Required. Glob pattern to game.json files
+  optional string glob = 2;
+
+  // Required. Path to save db cache
+  optional string out_path = 3;
+
+  // Optional. If specified, use this agent's orders instead of the orders in
+  // the game.json
+  optional Agent cf_agent = 4;
+
+  // Optional, only valid with cf_agent. If > 1, sample cf_agent multiple
+  // times, saving each as a separate row in the db.
+  optional uint32 n_cf_agent_samples = 5 [ default = 1 ];
+
+  // Percentage of games to use as val set.
+  optional float val_set_pct = 6 [ default = 0.01 ];
+
+  optional Launcher launcher = 100;
+}
+
+// Every config is parsed as Cfg that is thin wrapper over actual config for the
+// task. Config inlude. Handled by HH.
+message Include {
+  // It's expected that <conf_dir>/<path>.prototxt exists. HeyHi will try a
+  // series of different conf_dir's. It's easier to give an example. Let
+  // assume that path to meta config is conf/c01/conf.prototxt and the include
+  // is {path:slurm, mount:launcher}. Then HeyHi will try the following paths:
+  // {conf/c01,conf/common,conf/c01/launcher,conf/common/launcher}/slurm.prototxt.
+  // Obviously, if mount is root, then the latter 2 paths are omitted.
+  optional string path = 1;
+  // Dot-separated path to where to include the include within the main config.
+  optional string mount = 2;
+}
+
+// The root config. Every top-level prototxt must be a message of this type.
+// User's code will recieve a specific task config after all includes and
+// redefines are resolved.
+message MetaCfg {
+  repeated Include includes = 1;
+  oneof task {
+    CompareAgentsTask compare_agents = 101;
+    TrainTask train = 102;
+    LaunchBotTask launch_bot = 103;
+    ExploitTask exploit = 104;
+    BuildDbCacheTask build_db_cache = 105;
+
+    // Dummy task to test heyhi.
+    TestTask test = 999;
+  }
+}

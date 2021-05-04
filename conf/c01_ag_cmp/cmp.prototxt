@@ -1,0 +1,7 @@
+includes {path: "agents/searchbot"; mount: "agent_one";}
+includes {path: "agents/model_sampled"; mount: "agent_six";}
+compare_agents {
+  power_one: AUSTRIA
+  seed: 0
+  out: "output.json"
+}

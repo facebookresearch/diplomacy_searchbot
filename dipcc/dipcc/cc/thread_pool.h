@@ -1,0 +1,116 @@
+/*
+Copyright (c) Facebook, Inc. and its affiliates.
+
+This source code is licensed under the MIT license found in the
+LICENSE file in the root directory of this source tree.
+*/
+
+#pragma once
+
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+#include "data_fields.h"
+#include "game.h"
+#include "orders_encoder.h"
+
+namespace py = pybind11;
+
+namespace dipcc {
+
+// Job Types
+enum ThreadPoolJobType { STEP, ENCODE, ENCODE_STATE_ONLY, ENCODE_ALL_POWERS };
+
+// Used for ENCODE* jobs
+//
+// Initialized in "new_data_fields" function
+struct EncodingArrayPointers {
+  float *x_board_state;
+  float *x_prev_state;
+  long *x_prev_orders;
+  float *x_season;
+  float *x_in_adj_phase;
+  float *x_build_numbers;
+  int8_t *x_loc_idxs;
+  int32_t *x_possible_actions;
+  int64_t *x_power;
+};
+
+// Struct for all job types
+struct ThreadPoolJob {
+  ThreadPoolJobType job_type;
+  std::vector<Game *> games;
+  std::vector<EncodingArrayPointers> encoding_array_pointers;
+
+  ThreadPoolJob() {}
+  ThreadPoolJob(ThreadPoolJobType type) : job_type(type) {}
+};
+
+class ThreadPool {
+public:
+  ThreadPool(size_t n_threads,
+             std::unordered_map<std::string, int> order_vocabulary_to_idx,
+             int max_order_cands);
+  ~ThreadPool();
+
+  const OrdersEncoder &get_orders_encoder() const { return orders_encoder_; }
+
+  // Call game.process() on each of the games. Blocks until all process()
+  // functions have exited.
+  void process_multi(std::vector<Game *> &games);
+
+  // Fill a list of pre-allocated DataFields objects with the games' input
+  // encodings
+  TensorDict encode_inputs_multi(std::vector<Game *> &games);
+
+  // Fill a list of pre-allocated DataFields objects with the games' input
+  // encodings
+  TensorDict encode_inputs_state_only_multi(std::vector<Game *> &games);
+
+  // Fill a list of pre-allocated DataFields objects with the games' input
+  // encodings
+  TensorDict encode_inputs_all_powers_multi(std::vector<Game *> &games);
+
+private:
+  /////////////
+  // Methods //
+  /////////////
+
+  // Worker thread entrypoint function
+  void thread_fn();
+
+  // Top-level job handler
+  void thread_fn_do_job_unsafe(ThreadPoolJob &);
+
+  // Job handler methods
+  void do_job_step(ThreadPoolJob &);
+  void do_job_encode(ThreadPoolJob &);
+  void do_job_encode_state_only(ThreadPoolJob &);
+  void do_job_encode_all_powers(ThreadPoolJob &);
+
+  // Job handler boilerplate
+  void boilerplate_job_prep(ThreadPoolJobType, std::vector<Game *> &);
+  void boilerplate_job_handle(std::unique_lock<std::mutex> &);
+
+  // Helpers
+  void encode_state_for_game(Game *, EncodingArrayPointers &);
+
+  //////////
+  // Data //
+  //////////
+
+  std::vector<ThreadPoolJob> jobs_;
+  std::mutex mutex_;
+  std::condition_variable cv_in_;
+  std::condition_variable cv_out_;
+  size_t unfinished_jobs_;
+  bool time_to_die_ = false;
+
+  std::vector<std::thread> threads_;
+  const OrdersEncoder orders_encoder_;
+};
+
+} // namespace dipcc
