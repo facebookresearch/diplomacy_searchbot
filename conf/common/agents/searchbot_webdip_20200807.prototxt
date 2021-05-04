@@ -1,0 +1,22 @@
+searchbot {
+  model_path: "blueprint.pt"
+
+  n_plausible_orders: 50
+  max_actions_units_ratio: 5
+
+  n_rollouts: 2048
+  average_n_rollouts: 1
+
+  use_predicted_final_scores: true
+  rollout_temperature: 0.75
+  rollout_top_p: 0.95
+  loser_bp_value: 0.02
+
+
+  max_batch_size: 700
+  plausible_orders_req_size: 1024
+  n_gpu: 1
+  n_rollout_procs: 56
+  n_server_procs: 1
+  postman_sync_batches: false
+}

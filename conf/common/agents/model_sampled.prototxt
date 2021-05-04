@@ -1,0 +1,6 @@
+# Don't change this anymore -- create a new protoxt for new default configs.
+# Keeping this for posterity.
+model_sampled {
+    model_path: "blueprint.pt"
+    temperature: 0.1
+}

@@ -1,0 +1,12 @@
+ce1p {
+  max_batch_size: 1000
+  max_rollout_length: 3
+  model_path: "blueprint.pt"
+  n_gpu: 1
+  n_plausible_orders: 8
+  n_rollout_procs: 70
+  n_rollouts: 100
+  n_server_procs: 1
+  use_predicted_final_scores: true
+  rollout_temperature: 0.05
+}

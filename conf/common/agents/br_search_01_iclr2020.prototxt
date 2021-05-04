@@ -1,0 +1,13 @@
+br_search {
+  model_path: "blueprint.pt"
+
+  n_plausible_orders: 50
+  max_actions_units_ratio: 3.5
+
+  rollouts_per_plausible_order: 256
+  max_rollout_length: 2
+  rollout_temperature: 0.75
+  rollout_top_p: 0.95
+
+  max_batch_size: 700
+}
