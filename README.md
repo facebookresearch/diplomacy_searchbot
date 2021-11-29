@@ -16,6 +16,14 @@ python run.py --adhoc --cfg c01_ag_cmp/cmp.prototxt \
     agent_six.model_path=/path/to/model
 ```
 
+- The command to train a blueprint model on the webdiplomacy dataset is:
+
+```
+python run.py --adhoc --cfg conf/c02_sup_train/sl_20200901.prototxt data_cache=/path/to/data_cache.pt
+```
+
+Instructions to download the `data_cache.pt` object are in the [Dataset](#dataset) section below.
+
 For more info about the configuration and command-line args, see the [Running Tasks](#running-tasks) section below.
 
 ## Game info
@@ -114,13 +122,13 @@ We describe all tasks in the next section.
 Here is an example of how to launch training on human data:
 
 ```
-python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt
+python run.py --adhoc --cfg conf/c02_sup_train/sl_20200901.prototxt
 ```
 
 You can override any config parameter in command line using argparse-like syntax:
 
 ```
-python run.py --adhoc --cfg conf/c02_sup_train/sl.prototxt batch_size=200 --dataset_params.value_decay_alpha=1.0
+python run.py --adhoc --cfg conf/c02_sup_train/sl_20200901.prototxt batch_size=200 --dataset_params.value_decay_alpha=1.0
 ```
 
 Note that it's optional to use "--" in front of overrides.
@@ -203,7 +211,25 @@ nosetests integration_tests/integration_test.py  -v --with-id 3
 
 ### Dataset
 
-The diplomacy model was trained via supervised learning on a dataset of 46,148 games provided by [webdiplomacy.net](https://webdiplomacy.net). This data can be obtained by emailing [admin@webdiplomacy.net](mailto:admin@webdiplomacy.net), and the trained pytorch model can be downloaded from the Releases page of this repo.
+The diplomacy model was trained via supervised learning on a dataset of 46,148 games provided by [webdiplomacy.net](https://webdiplomacy.net). 
+
+The dataset can be downloaded from this repo's "Releases" page. The file has been compressed (via gzip) and encrypted (via gpg) with a password. To obtain the password, please email [admin@webdiplomacy.net](mailto:admin@webdiplomacy.net)
+
+Once you have downloaded the `data_cache.pt.gz.gpg` file, you can run:
+
+```
+gpg data_cache.pt.gz.gpg
+```
+
+and enter the password to decrypt the file, and then:
+
+```
+gunzip data_cache.pt.gz
+```
+
+to uncompress the file. Then you can train a model by running the command in the [overview section of this README](#diplomacy-searchbot)
+
+Note that re-training the blueprint model is not necessary to run an agent comparison -- a pre-trained model can be downloaded from this repo's "Releases" page.
 
 ## License
 
