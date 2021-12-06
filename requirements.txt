@@ -1,13 +1,17 @@
+attrs==20.2.0
 attr
 black==19.10b0
 flask
 ipdb
 joblib
 nose
+numba
+nvidia-ml-py3
 pandas
 parameterized
 psutil
 pre-commit
+pyzmq==20.0.0
 tabulate
 tensorboard
 torch
@@ -23,3 +27,4 @@ gym>=0.9.6
 requests
 grpcio==1.15.0
 grpcio-tools==1.15.0
+submitit~=1.4

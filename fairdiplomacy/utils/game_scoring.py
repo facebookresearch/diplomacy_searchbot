@@ -5,6 +5,8 @@
 
 from typing import Dict, Sequence, Tuple, List
 import collections
+import json
+import re
 
 from fairdiplomacy.models.consts import POWERS, N_SCS
 
@@ -85,11 +87,16 @@ def compute_game_scores_from_state(power_id: int, game_state: Dict) -> GameScore
 def compute_game_scores(power_id: int, game_json: Dict) -> GameScores:
     return compute_phase_scores(power_id, game_json["phases"][-1])
 
+def add_offset_to_square_score(game_scores: GameScores, offset: float) -> GameScores:
+    return game_scores._replace(square_score=game_scores.square_score + offset)
 
 def average_game_scores(many_games_scores: Sequence[GameScores]) -> Tuple[GameScores, GameScores]:
     assert many_games_scores, "Must be non_empty"
     avgs, stderrs = {}, {}
     tot_n_games = sum(scores.num_games for scores in many_games_scores)
+    # In theory, we could get much better stderrs by taking into account that the means for each
+    # different powers vary, and when we have enough data, computing per-power variances and combining them.
+    # We don't do this since it's messy and much tricker, statistically.
     for key in GameScores._fields:
         if key == "num_games":
             continue
@@ -97,11 +104,56 @@ def average_game_scores(many_games_scores: Sequence[GameScores]) -> Tuple[GameSc
             sum(getattr(scores, key) * scores.num_games for scores in many_games_scores)
             / tot_n_games
         )
-        stderrs[key] = (
-            sum(
-                (getattr(scores, key) - avgs[key]) ** 2 * scores.num_games
-                for scores in many_games_scores
-            )
-            / tot_n_games ** 2
-        ) ** 0.5
+        # Divide by N-1 for unbiased estimate, with hack to not crash on divide by 0.
+        # We could do better things here given that we also know that most of our values are bounded in [0,1]
+        # and that our null hypothesis for many is 1/7, but again, that's messier and harder and not worth much.
+        sample_variance = sum(
+            (getattr(scores, key) - avgs[key]) ** 2 * scores.num_games
+            for scores in many_games_scores
+        ) / max(0.5, tot_n_games - 1)
+        stderrs[key] = (sample_variance / tot_n_games) ** 0.5
+
     return GameScores(**avgs, num_games=tot_n_games), GameScores(**stderrs, num_games=tot_n_games)
+
+
+def get_power_one(game_json_path):
+    """This function is depreccated. Use fairdiplomacy.compare_agents_array."""
+    name = re.findall("game.*\.json", game_json_path)[0]
+    for power in POWERS:
+        if power[:3] in name:
+            return power
+
+    raise ValueError(f"Couldn't parse power name from {name}")
+
+
+def get_game_result_from_json(game_json_path):
+    """This function is depreccated. Use fairdiplomacy.compare_agents_array."""
+    power_one = get_power_one(game_json_path)
+
+    try:
+        with open(game_json_path) as f:
+            j = json.load(f)
+    except Exception as e:
+        print(e)
+        return None
+
+    rl_rewards = compute_game_scores(POWERS.index(power_one), j)
+
+    counts = {k: len(v) for k, v in j["phases"][-1]["state"]["centers"].items()}
+    for p in POWERS:
+        if p not in counts:
+            counts[p] = 0
+    powers_won = {p for p, v in counts.items() if v == max(counts.values())}
+    power_won = power_one if power_one in powers_won else powers_won.pop()
+
+    if counts[power_one] == 0:
+        return "six", power_one, power_won, rl_rewards
+
+    winner_count, winner = max([(c, p) for p, c in counts.items()])
+    if winner_count < 18:
+        return "draw", power_one, power_won, rl_rewards
+
+    if winner == power_one:
+        return "one", power_one, power_won, rl_rewards
+    else:
+        return "six", power_one, power_won, rl_rewards

@@ -14,6 +14,7 @@ pip-wheel-metadata/
 local/
 .idea/
 conf/*_pb2.py
+conf/*_cfgs.py
 .ipynb_checkpoints/
 .vscode/
 .idea/
@@ -34,3 +35,7 @@ dipcc/Testing/
 /fairdiplomacy/selfplay/*.so
 /fairdiplomacy/*.so
 /src/
+dipcc/detect_cuda_version.cc
+
+models/*.ckpt
+blueprint.pt

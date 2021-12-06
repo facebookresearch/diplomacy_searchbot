@@ -1,30 +1,67 @@
-# Diplomacy SearchBot
+# Diplomacy SearchBot and DORA
 
-This code accompanies the paper ["Human-Level Performance in No-Press Diplomacy via Equilibrium Search"](https://openreview.net/forum?id=0-uUGPbIjD).
+This code contains checkpoints and training code the following papers:
 
+* ["Human-Level Performance in No-Press Diplomacy via Equilibrium Search"](https://openreview.net/forum?id=0-uUGPbIjD) from ICLR'21. Exact code version is at `iclr21` branch.
+* ["No-press Diplomacy From Scratch"](https://arxiv.org/abs/2110.02924) from NeurIPS'21.
+
+
+### Code
 A very brief orientation:
 - The implementation for SearchBot lives [here](fairdiplomacy/agents/searchbot_agent.py)
 - The supervised learning model architecture lives [here](fairdiplomacy/models/diplomacy_model/diplomacy_model.py), and the bulk of the training logic lives [here](fairdiplomacy/models/diplomacy_model/train_sl.py)
-- The pretrained blueprint model is available for download under this repo's "Releases"
-- The command to play one game with 1 SearchBot vs. 6 Blueprint bots is:
+- RL training - both for policy gradient and deep nash value iteration - lives [here](fairdiplomacy/selfplay)
+
+### Models
+- The pretrained models are available for download under this repo's "Releases".  The easiest way to download them is via `bin/download_dora_models.sh` script. Configurations of agents, i.e., combinations of checkpoints and parameters are stored in [conf/common/agents](conf/common/agents). Below is the list of the most important ones:
+
+  * `model_sampled` is Blueprint from ICLR'21 paper
+  * `searchbot_02_fastbot` is SearchBot from ICLR'21 paper
+  * `searchbot_neurips21_fva_dora` is the FvA DORA agent that played with humans from NeurIPS21 paper.
+  * `searchbot_neurips21_human_dnvi_npu` is HumanDNVI-NPU from NeurIPS21 paper
+  * `searchbot_neurips21_dora` is DORA from NeurIPS21 paper
+  * `searchbot_neurips21_supervised` is SearchBot-Transf from NeurIPS21 paper.
+
+### Evals
+The command to play a couple of agents against each other:
 
 ```
-python run.py --adhoc --cfg c01_ag_cmp/cmp.prototxt \
-    I.agent_one=agents/searchbot.prototxt \
-    I.agent_six=agents/model_sampled \
-    agent_one.model_path=/path/to/model \
-    agent_six.model_path=/path/to/model
+python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt \
+    I.agent_one=agents/CFG_NAME1.prototxt \
+    I.agent_six=agents/CFG_NAME2.prototxt
 ```
 
-- The command to train a blueprint model on the webdiplomacy dataset is:
+Runn an FVA game:
 
 ```
-python run.py --adhoc --cfg conf/c02_sup_train/sl_20200901.prototxt data_cache=/path/to/data_cache.pt
+python run.py --adhoc --cfg conf/c01_ag_cmp/cmp.prototxt \
+    I.agent_one=agents/CFG_NAME1.prototxt \
+    I.agent_six=agents/CFG_NAME2.prototxt \
+    start_game=./fva_starting_position.json
 ```
 
-Instructions to download the `data_cache.pt` object are in the [Dataset](#dataset) section below.
+
+There is also a script that will run sequentially multiple games between all pairings of a set of agents.
+
+```
+python conf/exps/h2h_example.py
+```
+
+It will run a few 1vs6 games of DipNet vs Human-DNVI-NPU and print averate score:
+```
+--> square_score
+agent_six       dipnet
+agent_one
+human_dnvi_npu   0.287
+```
+
+Note that it may take a long time to run many games - if you have multiple GPUs you may prefer your own infrastructure to parallelize things.
 
 For more info about the configuration and command-line args, see the [Running Tasks](#running-tasks) section below.
+
+### Training a supervised model
+
+See `iclr21` branch.
 
 ## Game info
 Diplomacy is a strategic board game set in 1914 Europe.
@@ -66,8 +103,9 @@ wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-4.7.10-Linux-x86_64.
 conda create --yes -n diplomacy python=3.7
 source activate diplomacy
 
-# Install pytorch
+# Install pytorch, pybind11
 conda install --yes pytorch=1.7.1 torchvision cudatoolkit=11.0 -c pytorch
+conda install pybind11
 
 # Install go for boringssl in grpc
 conda install go protobuf --yes
@@ -175,7 +213,7 @@ Circle CI tests check for that.
 
 ### Tests
 
-To run tests locally run `make test`. Or you can wait Circle CI to run the test once you push your changes to any brunch.
+To run tests locally run `make test`. Or you can wait Circle CI to run the test once you push your changes to any branch.
 
 We have 2 level of tests: fast, unit tests (run with `make test_fast`) and slow, integration tests (run with `make test_integration`).
 The latter aim to use the same entry point as users do, i.e., `run.py`
@@ -211,7 +249,7 @@ nosetests integration_tests/integration_test.py  -v --with-id 3
 
 ### Dataset
 
-The diplomacy model was trained via supervised learning on a dataset of 46,148 games provided by [webdiplomacy.net](https://webdiplomacy.net). 
+The diplomacy model was trained via supervised learning on a dataset of 46,148 games provided by [webdiplomacy.net](https://webdiplomacy.net).
 
 The dataset can be downloaded from this repo's "Releases" page. The file has been compressed (via gzip) and encrypted (via gpg) with a password. To obtain the password, please email [admin@webdiplomacy.net](mailto:admin@webdiplomacy.net)
 

@@ -9,7 +9,7 @@ Helpful functions for converting:
 - global idxs to/from local idxs
 """
 import torch
-from typing import List, Sequence
+from typing import List, Sequence, Optional
 
 from fairdiplomacy.models.consts import LOCS
 from fairdiplomacy.models.diplomacy_model.order_vocabulary import (
@@ -21,6 +21,12 @@ from fairdiplomacy.models.diplomacy_model.order_vocabulary import (
 ORDER_VOCABULARY = get_order_vocabulary()
 ORDER_VOCABULARY_TO_IDX = {order: idx for idx, order in enumerate(get_order_vocabulary())}
 MAX_VALID_LEN = get_order_vocabulary_idxs_len()
+
+
+class OrderIdxConversionException(Exception):
+    """May be raised by functions to indicate that no valid conversion can be made"""
+
+    pass
 
 
 ##########################
@@ -43,9 +49,10 @@ def global_order_idxs_to_str(order_idxs) -> List[str]:
 
 
 def action_strs_to_global_idxs(
-    orders: Sequence[str],
+    orders: Sequence[Optional[str]],
     try_strip_coasts: bool = False,
     ignore_missing: bool = False,
+    return_none_for_missing: bool = False,
     sort_by_loc: bool = False,
     sort_by_idx: bool = False,
 ) -> List[int]:
@@ -56,7 +63,9 @@ def action_strs_to_global_idxs(
     - try_strip_coasts: if True and order is not in vocabulary, strip coasts from all
         locs and try again
     - ignore_missing: if True, return idxs only for orders found in vocab. If False and
-        and an order is not found, raise KeyError
+        and an order is not found, raise OrderIdxConversionException
+    - return_none_for_missing: if True and an order conversion is not found, return None
+        for that order and do not raise OrderIdxConversionException
     - sort_by_loc: if True, return order idxs sorted by the actor's location
     - sort_by_idx: if True, return sorted order idxs
 
@@ -68,9 +77,9 @@ def action_strs_to_global_idxs(
         raise ValueError("can't set both sort_by_loc and sort_by_idx")
 
     # combine build orders if necessary
-    if any(x.split()[2] == "B" and ";" not in x for x in orders):
+    if any(x is not None and x.split()[2] == "B" and ";" not in x for x in orders):
         assert all(
-            x.split()[2] == "B" for x in orders
+            x is None or x.split()[2] == "B" for x in orders
         ), "Cannot combine a mix of build and non-build orders"
         orders = [";".join(sorted(orders))]
 
@@ -78,15 +87,18 @@ def action_strs_to_global_idxs(
     order_loc_idxs = []
     for order in orders:
         order_idx = ORDER_VOCABULARY_TO_IDX.get(order, None)
-        if order_idx is None and try_strip_coasts:
+        if order_idx is None and order is not None and try_strip_coasts:
             order_idx = ORDER_VOCABULARY_TO_IDX.get(strip_coasts(order), None)
         if order_idx is None:
-            if ignore_missing:
+            if return_none_for_missing:
+                pass
+            elif ignore_missing:
                 continue
             else:
-                raise KeyError
+                raise OrderIdxConversionException(order)
         order_idxs.append(order_idx)
-        order_loc_idxs.append(LOCS.index(order.split()[1]))
+        if sort_by_loc:
+            order_loc_idxs.append(LOCS.index(order.split()[1]))
 
     if sort_by_loc:
         order_idxs = [idx for loc, idx in sorted(zip(order_loc_idxs, order_idxs))]
@@ -136,7 +148,7 @@ def local_order_idxs_to_global(
 
 
 def global_order_idxs_to_local(
-    global_indices: torch.Tensor, x_possible_actions: torch.Tensor
+    global_indices: torch.Tensor, x_possible_actions: torch.Tensor, *, ignore_missing=False
 ) -> torch.Tensor:
     """Convert global order indices to local order indices.
 
@@ -144,6 +156,8 @@ def global_order_idxs_to_local(
         global_indices: Long tensor [B, 7, S] of indices in ORDER_VOCABULARY
         x_possible_actions: Long tensor [B, 7, S, 469]. Containing indices in
             ORDER_VOCABULARY.
+        ignore_missing: if False and an element of global_indices is not in x_possible_actions,
+            raise OrderIdxConversionException. If True, set return to -1.
 
     Returns:
         local_indices: Long tensor of the same shape as global_indices such that
@@ -152,6 +166,12 @@ def global_order_idxs_to_local(
     onehots = x_possible_actions == global_indices.unsqueeze(-1)
     local_indices = onehots.max(-1).indices
     local_indices[global_indices == EOS_IDX] = EOS_IDX
+    missing = ~onehots.any(dim=-1)
+    if missing.any():
+        if ignore_missing:
+            local_indices[missing] = EOS_IDX
+        else:
+            raise OrderIdxConversionException()
     return local_indices
 
 

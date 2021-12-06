@@ -4,8 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 from typing import Sequence, Optional
-import numpy as np
-import torch
 
 from fairdiplomacy import pydipcc
 from fairdiplomacy.data.data_fields import DataFields
@@ -48,6 +46,9 @@ class FeatureEncoder:
 
     def encode_inputs_state_only(self, games: Sequence[pydipcc.Game]) -> DataFields:
         return DataFields(self.thread_pool.encode_inputs_state_only_multi(games))
+
+    def encode_inputs_all_powers(self, games: Sequence[pydipcc.Game]) -> DataFields:
+        return DataFields(self.thread_pool.encode_inputs_all_powers_multi(games))
 
     def decode_order_idxs(self, order_idxs):
         return self.thread_pool.decode_order_idxs(order_idxs)

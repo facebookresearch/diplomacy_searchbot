@@ -4,4 +4,5 @@ compare_agents {
   power_one: AUSTRIA
   seed: 0
   out: "output.json"
+  draw_on_stalemate_years: 5
 }

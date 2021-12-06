@@ -11,7 +11,7 @@ class BaseAgent:
         """Return a list of orders that should be taken based on the game state
 
         Arguments:
-        - game: a Game object
+        - game: a fairdiplomacy.Game object
         - power: str, one of {'AUSTRIA', 'ENGLAND', 'FRANCE', 'GERMANY',
                               'ITALY', 'RUSSIA', 'TURKEY'}
 
@@ -24,7 +24,7 @@ class BaseAgent:
         """Return a set of orders that should be taken based on the game state per power
 
         Arguments:
-        - game: a Game object
+        - game: a fairdiplomacy.Game object
         - powers: a set of powers that need orders
 
         Returns a dict of orders for each power.

@@ -3,18 +3,14 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Generator, Optional, Tuple, Sequence, List
+from typing import Dict, Generator, Optional, Tuple, Sequence
 import collections
 import itertools
 import json
-import glob
 import logging
-import multiprocessing as mp
-import os
 import pathlib
 import queue as queue_lib
 
-from google.protobuf.json_format import MessageToDict
 import psutil
 import torch
 import torch.utils.tensorboard
@@ -22,9 +18,9 @@ import torch.utils.tensorboard
 
 import fairdiplomacy.selfplay.metrics
 import fairdiplomacy.selfplay.vtrace
-from fairdiplomacy.data.data_fields import DataFields
-from fairdiplomacy.pydipcc import Game
+from fairdiplomacy.data.dataset import DataFields
 from fairdiplomacy.models.consts import POWERS, POWER2IDX
+from fairdiplomacy.selfplay.ckpt_syncer import CkptSyncer
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils import game_scoring
 from fairdiplomacy.selfplay.rollout import (
@@ -35,7 +31,10 @@ from fairdiplomacy.selfplay.rollout import (
     model_output_transform_exploit,
     yield_rollouts,
 )
+from fairdiplomacy.utils.multiprocessing_spawn_context import get_multiprocessing_ctx
 import heyhi
+
+mp = get_multiprocessing_ctx()
 
 QUEUE_PUT_TIMEOUT = 1.0
 
@@ -214,8 +213,8 @@ def rollout_to_batch(
 
 
 def get_default_rollout_scores() -> ScoreDict:
-    scores = {k: 0 for k in fairdiplomacy.utils.game_scoring.GameScores._fields}
-    scores["queue_size"] = 0
+    scores = {k: 0.0 for k in fairdiplomacy.utils.game_scoring.GameScores._fields}
+    scores["queue_size"] = 0.0
     return scores
 
 
@@ -249,7 +248,7 @@ class Evaler:
         blueprint_hostports,
         exploit_hostports,
         temperature,
-        set_affinity,
+        cores: Optional[Tuple[int, ...]],
         game_json_paths: Optional[Sequence[str]],
         max_length=100,
     ):
@@ -257,7 +256,7 @@ class Evaler:
 
         def _build_rollout_kwargs(proc_id):
             return dict(
-                reward_kwargs=MessageToDict(reward_cfg, preserving_proto_field_name=True),
+                reward_kwargs=heyhi.conf_to_dict(reward_cfg),
                 rollout_kwargs=dict(
                     mode=RolloutMode.EVAL,
                     seed=proc_id,
@@ -285,10 +284,10 @@ class Evaler:
         logging.info("Starting eval rollout workers")
         for p in self.procs:
             p.start()
-        if set_affinity:
+        if cores:
             logging.info("Setting affinities")
             for p in self.procs:
-                psutil.Process(p.pid).cpu_affinity(tuple(range(10, 80)))
+                psutil.Process(p.pid).cpu_affinity(cores)
         logging.info("Done")
 
     def extract_scores(self) -> ScoreDict:
@@ -325,11 +324,9 @@ class DataLoader:
     Metrics is a dict of some end-of-rollout metrics summed over all rollouts.
     """
 
-    def __init__(self, model_path, rollout_cfg: "conf.conf_pb2.ExploitTask.Rollout"):
+    def __init__(self, model_path, rollout_cfg: "conf.conf_cfgs.ExploitTask.Rollout"):
         self.model_path = model_path
         self.rollout_cfg = rollout_cfg
-
-        mp.set_start_method("spawn")
 
         if rollout_cfg.initial_games_index_file:
             self._game_json_paths = []
@@ -342,6 +339,15 @@ class DataLoader:
         else:
             self._game_json_paths = None
 
+        self.cores: Optional[Tuple[int, ...]]
+        if rollout_cfg.num_cores_to_reserve:
+            self.cores = tuple(range(80 - rollout_cfg.num_cores_to_reserve, 80))
+        else:
+            self.cores = None
+
+        assert heyhi.get_job_env().num_nodes == 1, "Multinode is not supported"
+        self._ckpt_syncer = CkptSyncer(get_ckpt_sync_dir(), create_dir=True)
+
         self._start_inference_procs()
         self._start_rollout_procs()
         self._maybe_start_eval_procs()
@@ -352,8 +358,6 @@ class DataLoader:
             logging.warning("No GPUs found! Will run postman on CPUs.")
             # Running on CPUs.
             inference_gpus = [None]
-        elif torch.cuda.device_count() == 1:
-            inference_gpus = [0]
         elif torch.cuda.device_count() == 2:
             if self.rollout_cfg.single_rollout_gpu:
                 inference_gpus = [1]
@@ -388,7 +392,7 @@ class DataLoader:
         )
         logging.info("Starting blueprint PostMan servers on gpus: %s", blueprint_gpus)
         blueprint_inference_pool = InferencePool(
-            model_path=self.model_path,
+            model_path=self.rollout_cfg.blueprint_model_path or self.model_path,
             gpu_ids=blueprint_gpus,
             ckpt_sync_path=None,
             max_batch_size=self.rollout_cfg.inference_batch_size,
@@ -413,7 +417,7 @@ class DataLoader:
                 mode = RolloutMode.SELFPLAY
             assert rollout_cfg.blueprint_temperature > 0
             return dict(
-                reward_kwargs=MessageToDict(rollout_cfg.reward, preserving_proto_field_name=True),
+                reward_kwargs=heyhi.conf_to_dict(rollout_cfg.reward),
                 rollout_kwargs=dict(
                     mode=mode,
                     seed=proc_id,
@@ -444,10 +448,10 @@ class DataLoader:
             logging.info("Starting rollout workers")
             for p in procs:
                 p.start()
-            if rollout_cfg.set_affinity:
+            if self.cores:
                 logging.info("Setting affinities")
                 for p in procs:
-                    psutil.Process(p.pid).cpu_affinity(tuple(range(10, 80)))
+                    psutil.Process(p.pid).cpu_affinity(self.cores)
             logging.info("Done")
             rollout_generator = (queue.get() for _ in itertools.count())
             # Keeping track of there to prevent garbage collection.
@@ -465,14 +469,14 @@ class DataLoader:
             self.evaler = None
         else:
             self.evaler = Evaler(
-                model_path=self.model_path,
+                model_path=self.rollout_cfg.blueprint_model_path or self.model_path,
                 reward_cfg=self.rollout_cfg.reward,
                 num_procs=self.rollout_cfg.num_eval_rollout_processes,
                 blueprint_hostports=self.blueprint_hostports,
                 exploit_hostports=self.exploit_hostports,
                 temperature=self.rollout_cfg.blueprint_temperature,
                 game_json_paths=self._game_json_paths,
-                set_affinity=self.rollout_cfg.set_affinity,
+                cores=self.cores,
             )
 
     def extract_eval_scores(self) -> Optional[ScoreDict]:
@@ -508,9 +512,9 @@ class DataLoader:
                 0
             ].item()  # Somewhat a hack - we know all power ids are the same.
             if rollout_cfg.dump_games_every and rollout_id % rollout_cfg.dump_games_every == 0:
-                game_dump_folder = pathlib.Path(f"dumped_games")
+                game_dump_folder = pathlib.Path("dumped_games")
                 game_dump_folder.mkdir(exist_ok=True, parents=True)
-                dump_path = game_dump_folder / f"game.{POWERS[power_id]}.{rollout_id:06d}.json"
+                dump_path = game_dump_folder / f"game.{rollout_id:09d}.{POWERS[power_id]}.json"
                 with (dump_path).open("w") as stream:
                     json.dump(game_json, stream)
 
@@ -549,3 +553,6 @@ class DataLoader:
 
     def get_batch(self) -> Tuple[RolloutBatch, ScoreDict]:
         return next(self._batch_iterator)
+
+    def update_model(self, model, **kwargs):
+        self._ckpt_syncer.save_state_dict(model, **kwargs)

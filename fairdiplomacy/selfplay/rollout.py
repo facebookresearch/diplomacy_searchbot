@@ -11,7 +11,6 @@ import faulthandler
 import functools
 import itertools
 import logging
-import multiprocessing as mp
 import os
 import signal
 
@@ -20,20 +19,20 @@ import torch
 
 import postman
 
-from fairdiplomacy.agents.model_sampled_agent import (
-    decode_order_idxs,
-    resample_duplicate_disbands_inplace,
-)
-from fairdiplomacy.agents.multiproc_search_agent import run_server, cat_pad_inputs
-from fairdiplomacy.pydipcc import Game
-from fairdiplomacy.data.dataset import DataFields
-from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS, N_SCS
-from fairdiplomacy.models.diplomacy_model.load_model import load_diplomacy_model
+from fairdiplomacy.agents.model_wrapper import resample_duplicate_disbands_inplace
+from fairdiplomacy.agents.multiproc_search_agent import run_server
+from fairdiplomacy.data.dataset import DataFields, cat_pad_inputs
+from fairdiplomacy.models.consts import POWERS
+from fairdiplomacy.models.diplomacy_model.load_model import load_diplomacy_model_model
 from fairdiplomacy.models.diplomacy_model.order_vocabulary import EOS_IDX
+from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
+from fairdiplomacy.utils.order_idxs import global_order_idxs_to_str
 from fairdiplomacy.utils.timing_ctx import TimingCtx
 from fairdiplomacy.utils.thread_pool_encoding import FeatureEncoder
+from fairdiplomacy.utils.multiprocessing_spawn_context import get_multiprocessing_ctx
 
+mp = get_multiprocessing_ctx()
 
 DEFAULT_BATCH_SIZE = 128
 
@@ -81,28 +80,36 @@ def _noop_transform(inputs, args):
 
 
 def model_output_transform_exploit(inputs, args):
-    order_idxs, sampled_idxs, logits, final_scores = args
+    global_order_idxs, local_order_idxs, logits, final_scores = args
     resample_duplicate_disbands_inplace(
-        order_idxs, sampled_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
+        global_order_idxs,
+        local_order_idxs,
+        logits,
+        inputs["x_possible_actions"],
+        inputs["x_in_adj_phase"],
     )
     del final_scores  # Not used.
     # Assuming no temperature.
     steps = logits.shape[2]
-    sampled_idxs[order_idxs == EOS_IDX] = EOS_IDX
-    action_logprobs = order_logits_to_action_logprobs(logits, sampled_idxs[..., :steps])
-    # Returning non-truncated version of sampled_idxs to simplify concatenation.
-    return order_idxs, sampled_idxs, action_logprobs
+    local_order_idxs[global_order_idxs == EOS_IDX] = EOS_IDX
+    action_logprobs = order_logits_to_action_logprobs(logits, local_order_idxs[..., :steps])
+    # Returning non-truncated version of local_order_idxs to simplify concatenation.
+    return global_order_idxs, local_order_idxs, action_logprobs
 
 
 def model_output_transform_blueprint(inputs, args):
-    order_idxs, sampled_idxs, logits, final_scores = args
+    global_order_idxs, local_order_idxs, logits, final_scores = args
     resample_duplicate_disbands_inplace(
-        order_idxs, sampled_idxs, logits, inputs["x_possible_actions"], inputs["x_in_adj_phase"]
+        global_order_idxs,
+        local_order_idxs,
+        logits,
+        inputs["x_possible_actions"],
+        inputs["x_in_adj_phase"],
     )
-    del sampled_idxs  # Not used.
+    del local_order_idxs  # Not used.
     del logits  # Not used.
     del final_scores  # Not used.
-    return (order_idxs,)
+    return (global_order_idxs,)
 
 
 class InferencePool:
@@ -133,7 +140,7 @@ class InferencePool:
                         port=0,
                         batch_size=max_batch_size,
                         load_model_fn=functools.partial(
-                            load_diplomacy_model,
+                            load_diplomacy_model_model,
                             model_path,
                             map_location=f"cuda:{gpu_id}" if gpu_id is not None else "cpu",
                             eval=True,
@@ -192,15 +199,15 @@ def do_model_request(
         raise
 
 
-def strigify_orders_idxs(order_idxs: torch.Tensor) -> List[List[Tuple[str]]]:
+def strigify_orders_idxs(global_idxs: torch.Tensor) -> List[List[Tuple[str, ...]]]:
     """Convert a tensor of order indices to string for the environment."""
     assert (
-        len(order_idxs.shape) == 3
-    ), f"Expected tensor of shape (batch, 7, max_orders), got: {order_idxs.shape}"
-    order_idxs = order_idxs.numpy()
+        len(global_idxs.shape) == 3
+    ), f"Expected tensor of shape (batch, 7, max_orders), got: {global_idxs.shape}"
+    global_idxs = global_idxs.numpy()
     string_orders = [
-        [tuple(decode_order_idxs(order_idxs[b, p])) for p in range(len(POWERS))]
-        for b in range(order_idxs.shape[0])
+        [tuple(global_order_idxs_to_str(global_idxs[b, p])) for p in range(len(POWERS))]
+        for b in range(global_idxs.shape[0])
     ]
     return string_orders
 
@@ -239,6 +246,8 @@ def yield_rollouts(
     """
     timings = TimingCtx()
 
+    encoder = FeatureEncoder()
+
     def create_client_selector(hostports):
         clients = []
         for hostport in hostports:
@@ -270,8 +279,7 @@ def yield_rollouts(
                 rng = np.random.RandomState(seed=seed)
                 p = game_json_paths[rng.choice(len(game_json_paths))]
                 with open(p) as stream:
-                    game_serialized = stream.read()
-                yield Game.from_json(game_serialized)
+                    yield Game.from_json(stream.read())
 
     game_selector = yield_game()
 
@@ -285,6 +293,14 @@ def yield_rollouts(
 
         with timings("setup"):
             games = [next(game_selector) for _ in range(batch_size)]
+            assert batch_size == 1
+            if mode != RolloutMode.SELFPLAY:
+                if games[0].get_square_scores()[exploit_power_id] < 1e-3:
+                    continue
+            else:
+                alive_power_ids = [
+                    i for i, score in enumerate(games[0].get_square_scores()) if score > 1e-3
+                ]
             first_phases = [len(game.get_phase_history()) for game in games]
             turn_idx = 0
             observations = {i: [] for i in range(batch_size)}
@@ -306,7 +322,7 @@ def yield_rollouts(
                             if i not in exploit_ids
                         ):
                             continue
-                    inputs = FeatureEncoder().encode_inputs([game])
+                    inputs = encoder.encode_inputs([game])
                     batch_data.append((game, inputs, batch_idx))
 
             if not batch_data:
@@ -376,7 +392,7 @@ def yield_rollouts(
         for i in range(batch_size):
             final_game_json = json.loads(games[i].to_json())
             if mode == RolloutMode.SELFPLAY:
-                for power_id in range(len(POWERS)):
+                for power_id in alive_power_ids:
                     extended_obs = DataFields.stack(observations[i])
                     extended_obs["cand_indices"] = torch.stack(
                         [x[power_id] for x in cand_actions[i]], 0

@@ -29,7 +29,7 @@ def get_timezone_offset_hours():
     return round((datetime.datetime.now() - datetime.datetime.utcnow()).total_seconds() / 3600)
 
 
-def save_pandas_table(dataframes, project_name, table_name, offset=0, start=10):
+def save_pandas_table(dataframes, project_name, table_name, offset=0, start=10, viz_port=None):
     """Saves/updates a sheet with the dataframe."""
     if pygsheets is None:
         warnings.warn("Failed to import 'pygsheets'. save_pandas_table will do nothing")
@@ -63,9 +63,19 @@ def save_pandas_table(dataframes, project_name, table_name, offset=0, start=10):
         if "folder" in dataframe.columns:
             dataframe = dataframe.copy()
             dataframe["logs"] = [
-                f'=HYPERLINK("http://{NOTEBOOK_ADDRESS}/tree/root{folder}", "Open folder")'
+                f'=HYPERLINK("http://{NOTEBOOK_ADDRESS}/tree/root{folder}", "folder")'
                 for folder in dataframe.folder
             ]
+            if "job_id" in dataframe.columns:
+                dataframe["err_logs"] = [
+                    f'=HYPERLINK("http://{NOTEBOOK_ADDRESS}/edit/root{folder}/slurm/{job_id}_0_log.err", "log")'
+                    for folder, job_id in zip(dataframe.folder, dataframe.job_id)
+                ]
+            if viz_port:
+                dataframe["viz"] = [
+                    f'=HYPERLINK("http://localhost:{viz_port}/?game={folder}", "Open Viz")'
+                    for folder in dataframe.folder
+                ]
             dataframe["tb"] = [
                 f'=HYPERLINK("http://{TB_ADDRESS}/?logs={folder}", "Open TB")'
                 for folder in dataframe.folder

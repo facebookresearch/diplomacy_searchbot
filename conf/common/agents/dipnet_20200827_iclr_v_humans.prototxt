@@ -1,4 +1,4 @@
-dipnet {
+model_sampled {
     model_path: "blueprint.pt"
     temperature: 0.5
 }

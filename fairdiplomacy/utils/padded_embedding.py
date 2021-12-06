@@ -20,7 +20,9 @@ class PaddedEmbedding(torch.nn.Module):
 
     def forward(self, indices):
         flat_indices = indices.view(-1)
-        valid = (flat_indices != self.padding_idx).nonzero()  # nonzero() here is optional
+        valid = (flat_indices != self.padding_idx).nonzero(
+            as_tuple=False
+        )  # nonzero() here is optional
         valid_indices = flat_indices[valid]
         valid_embs = self.module(valid_indices)
 

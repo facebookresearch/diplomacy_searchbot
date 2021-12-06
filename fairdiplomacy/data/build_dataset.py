@@ -6,6 +6,7 @@
 from pprint import pformat
 from collections import defaultdict
 import argparse
+import enum
 import logging
 import os
 import sqlite3
@@ -14,6 +15,10 @@ import joblib
 from fairdiplomacy import pydipcc
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s]: %(message)s")
+
+class GameVariant(enum.IntFlag):
+    CLASSIC = 1
+    FVA = 15
 
 TABLE_GAMES = "redacted_games"
 TABLE_MOVES = "redacted_movesarchive"

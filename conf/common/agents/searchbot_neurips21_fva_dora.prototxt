@@ -1,0 +1,37 @@
+searchbot {
+  model_path: "models/neurips21_fva_dora_epoch007000.ckpt"
+  n_rollouts: 1024
+  use_final_iter: false
+  value_model_path: "models/neurips21_fva_dora_value_epoch007000.ckpt"
+  cache_rollout_results: true
+  rollouts_cfg {
+    n_threads: 56
+    temperature: 0.75
+    top_p: 0.949999988079071
+    max_rollout_length: 0
+    average_n_rollouts: 1
+  }
+  order_aug {
+    do {
+      max_iters: 16
+      min_diff: 0.009999999776482582
+      generation {
+        max_actions: 10000
+        local_uniform {
+          num_base_actions: 10
+          use_search_policy: true
+          with_holes: true
+        }
+      }
+      max_op_actions: 20
+      regenerate_every_iter: true
+      min_diff_percentage: 8.0
+    }
+  }
+  plausible_orders_cfg {
+    n_plausible_orders: 50
+    max_actions_units_ratio: 0.0
+    req_size: 1024
+  }
+}
+

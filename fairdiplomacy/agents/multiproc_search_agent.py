@@ -16,103 +16,86 @@ from typing import List, Tuple, Dict, Union, Sequence, Optional
 import numpy as np
 import postman
 import torch
-import torch.multiprocessing as mp
 
 from fairdiplomacy import pydipcc
 from fairdiplomacy.game import sort_phase_key
 from fairdiplomacy.agents.base_search_agent import (
     BaseSearchAgent,
-    model_output_transform,
     average_score_dicts,
-    filter_keys,
-    are_supports_coordinated,
-    safe_idx,
     n_move_phases_later,
     get_square_scores_from_game,
 )
-from fairdiplomacy.data.data_fields import DataFields
+from fairdiplomacy.agents.model_wrapper import model_output_transform
+from fairdiplomacy.data.dataset import DataFields, cat_pad_inputs
 from fairdiplomacy.models.consts import MAX_SEQ_LEN, POWERS
-from fairdiplomacy.models.diplomacy_model.load_model import load_diplomacy_model
+from fairdiplomacy.models.diplomacy_model.load_model import load_diplomacy_model_model
 from fairdiplomacy.models.diplomacy_model.order_vocabulary import EOS_IDX
 from fairdiplomacy.selfplay.ckpt_syncer import CkptSyncer
-from fairdiplomacy.utils.timing_ctx import TimingCtx
-from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils.cat_pad_sequences import cat_pad_sequences
+from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
 from fairdiplomacy.utils.game_scoring import compute_game_scores_from_state
+from fairdiplomacy.utils.order_idxs import global_order_idxs_to_str
 from fairdiplomacy.utils.thread_pool_encoding import FeatureEncoder
+from fairdiplomacy.utils.timing_ctx import TimingCtx
+
+from fairdiplomacy.utils.multiprocessing_spawn_context import get_multiprocessing_ctx
+
+mp = get_multiprocessing_ctx()
 
 
 class MultiprocSearchAgent(BaseSearchAgent):
-    def __init__(
-        self,
-        *,
-        model_path,
-        max_batch_size,
-        max_rollout_length=3,
-        rollout_temperature,
-        rollout_top_p=1.0,
-        n_server_procs=1,
-        n_gpu=1,
-        n_rollout_procs=70,
-        use_predicted_final_scores=True,
-        postman_wait_till_full=False,
-        use_server_addr=None,
-        use_value_server_addr=None,
-        device=None,
-        mix_square_ratio_scoring=0,
-        value_model_path=None,
-        rollout_value_frac=0,
-    ):
-        super().__init__()
-        self.n_rollout_procs = n_rollout_procs
-        self.n_server_procs = n_server_procs
-        self.use_predicted_final_scores = use_predicted_final_scores
-        self.rollout_temperature = rollout_temperature
-        self.rollout_top_p = rollout_top_p
-        self.max_batch_size = max_batch_size
-        self.max_rollout_length = max_rollout_length
-        self.mix_square_ratio_scoring = mix_square_ratio_scoring
-        self.rollout_value_frac = rollout_value_frac
-        device = int(device.lstrip("cuda:")) if type(device) == str else device
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.n_rollout_procs = cfg.n_rollout_procs
+        self.n_server_procs = cfg.n_server_procs
+        self.use_predicted_final_scores = cfg.use_predicted_final_scores
+        self.rollout_temperature = cfg.rollout_temperature
+        self.rollout_top_p = cfg.rollout_top_p
+        self.max_batch_size = cfg.max_batch_size
+        self.max_rollout_length = cfg.max_rollout_length
+        self.mix_square_ratio_scoring = cfg.mix_square_ratio_scoring
+        self.rollout_value_frac = cfg.rollout_value_frac
+        self.input_encoder = FeatureEncoder()
+        device = int(cfg.device.lstrip("cuda:")) if type(cfg.device) == str else cfg.device
 
         logging.info("Launching servers")
-        assert n_gpu <= n_server_procs and n_server_procs % n_gpu == 0
+        assert cfg.n_gpu <= cfg.n_server_procs and cfg.n_server_procs % cfg.n_gpu == 0
         try:
             mp.set_start_method("spawn")
         except RuntimeError:
             logging.warning("Failed mp.set_start_method")
 
-        if use_server_addr is not None:
-            assert value_model_path is None, "Not implemented"
-            if n_server_procs != 1:
+        if cfg.use_server_addr is not None:
+            assert cfg.value_model_path is None, "Not implemented"
+            if cfg.n_server_procs != 1:
                 raise ValueError(
-                    f"Bad args use_server_addr={use_server_addr} n_server_procs={n_server_procs}"
+                    f"Bad args use_server_addr={cfg.use_server_addr} n_server_procs={cfg.n_server_procs}"
                 )
-            self.hostports = [use_server_addr]
-            self.value_hostport = use_value_server_addr
+            self.hostports = [cfg.use_server_addr]
+            self.value_hostport = cfg.use_value_server_addr
         else:
             _servers, _qs, self.hostports = zip(
                 *[
                     make_server_process(
-                        model_path=model_path,
-                        device=i % n_gpu if device is None else device,
-                        max_batch_size=max_batch_size,
-                        wait_till_full=postman_wait_till_full,
+                        model_path=cfg.model_path,
+                        device=i % cfg.n_gpu if device is None else device,
+                        max_batch_size=cfg.max_batch_size,
+                        wait_till_full=cfg.postman_wait_till_full,
                         # if torch's seed is set, then we want the server seed to be a deterministic
                         # function of that. Yet we don't want it to be the same for each agent.
                         # So pick a random number from the torch rng
                         seed=int(torch.randint(1000000000, (1,))),
                     )
-                    for i in range(n_server_procs)
+                    for i in range(cfg.n_server_procs)
                 ]
             )
 
-            if value_model_path is not None:
+            if cfg.value_model_path is not None:
                 _, _, self.value_hostport = make_server_process(
-                    model_path=value_model_path,
-                    device=n_server_procs % n_gpu if device is None else device,
-                    max_batch_size=max_batch_size,
-                    wait_till_full=postman_wait_till_full,
+                    model_path=cfg.value_model_path,
+                    device=cfg.n_server_procs % cfg.n_gpu if device is None else device,
+                    max_batch_size=cfg.max_batch_size,
+                    wait_till_full=cfg.postman_wait_till_full,
                     seed=int(torch.randint(1000000000, (1,))),
                 )
             else:
@@ -123,10 +106,10 @@ class MultiprocSearchAgent(BaseSearchAgent):
         self.client.connect(20)
         logging.info(f"Connected to {self.hostports[0]}")
 
-        if n_rollout_procs > 0:
-            self.proc_pool = mp.Pool(n_rollout_procs)
+        if cfg.n_rollout_procs > 0:
+            self.proc_pool = mp.Pool(cfg.n_rollout_procs)
             logging.info("Warming up pool")
-            self.proc_pool.map(float, range(n_rollout_procs))
+            self.proc_pool.map(float, range(cfg.n_rollout_procs))
             logging.info("Done warming up pool")
         else:
             logging.info("Debug mode: using fake process poll")
@@ -169,7 +152,7 @@ class MultiprocSearchAgent(BaseSearchAgent):
 
         return (
             [
-                [tuple(decode_order_idxs(order_idxs[b, p, :])) for p in range(len(POWERS))]
+                [tuple(global_order_idxs_to_str(order_idxs[b, p, :])) for p in range(len(POWERS))]
                 for b in range(order_idxs.shape[0])
             ],
             order_logprobs,
@@ -182,7 +165,7 @@ class MultiprocSearchAgent(BaseSearchAgent):
         """Run average_n_rollouts x len(set_orders_dicts) rollouts
 
         Arguments:
-        - game: Game
+        - game: fairdiplomacy.Game
         - set_orders_dicts: List[Dict[power, orders]], each dict representing
           the orders to set for the first turn
         - average_n_rollouts: int, # of rollouts to run in parallel for each dict
@@ -193,7 +176,10 @@ class MultiprocSearchAgent(BaseSearchAgent):
             -> final_scores: Dict[power, supply count],
                e.g. {'AUSTRIA': 6, 'ENGLAND': 3, ...}
         """
-        game_json = game.to_json()
+        if type(game) == pydipcc.Game:
+            game_json = game.to_json()
+        else:
+            game_json = json.dumps(game.to_saved_game_format())
 
         # divide up the rollouts among the processes
         all_results, all_timings = zip(
@@ -312,15 +298,13 @@ class MultiprocSearchAgent(BaseSearchAgent):
             batch_data = []
             for game in games:
                 if not game.is_game_done and game.current_short_phase == min_phase:
-                    with timings("encode.all_poss_orders"):
-                        all_possible_orders = game.get_all_possible_orders()
                     with timings("encode.inputs"):
                         inputs = FeatureEncoder().encode_inputs([game])
                     batch_data.append((game, inputs))
 
             with timings("cat_pad"):
                 xs: List[Tuple] = [b[1] for b in batch_data]
-                batch_inputs = cls.cat_pad_inputs(xs)
+                batch_inputs = cat_pad_inputs(xs)
 
             with timings("model"):
                 if client != value_client:
@@ -391,7 +375,7 @@ class MultiprocSearchAgent(BaseSearchAgent):
             if batch_data:
                 with timings("cat_pad"):
                     xs: List[Tuple] = [b[1] for b in batch_data]
-                    batch_inputs = self.cat_pad_inputs(xs)
+                    batch_inputs = cat_pad_inputs(xs)
 
                 with timings("model"):
                     _, _, batch_est_final_scores = self.do_model_request(
@@ -431,10 +415,6 @@ class MultiprocSearchAgent(BaseSearchAgent):
 
         return result, timings
 
-    @classmethod
-    def cat_pad_inputs(cls, xs: List[DataFields]) -> DataFields:
-        return cat_pad_inputs(xs)
-
 
 def make_server_process(*, model_path, device, max_batch_size, wait_till_full, seed):
     q = mp.SimpleQueue()
@@ -444,7 +424,7 @@ def make_server_process(*, model_path, device, max_batch_size, wait_till_full, s
             port=0,
             batch_size=max_batch_size,
             load_model_fn=partial(
-                load_diplomacy_model,
+                load_diplomacy_model_model,
                 model_path,
                 map_location=f"cuda:{device}" if torch.cuda.is_available() else "cpu",
                 eval=True,
@@ -597,20 +577,6 @@ def server_handler(
                 logging.info("TimeoutError: %s", e)
 
     logging.info("SERVER DONE")
-
-
-# imported by RL code
-def cat_pad_inputs(xs: List[DataFields]) -> DataFields:
-    batch = DataFields({k: [x[k] for x in xs] for k in xs[0].keys()})
-    for k, v in batch.items():
-        if k == "x_possible_actions":
-            batch[k] = cat_pad_sequences(v, pad_value=-1, pad_to_len=MAX_SEQ_LEN)
-        elif k == "x_loc_idxs":
-            batch[k] = cat_pad_sequences(v, pad_value=EOS_IDX, pad_to_len=MAX_SEQ_LEN)
-        else:
-            batch[k] = torch.cat(v)
-
-    return batch
 
 
 def call(f):

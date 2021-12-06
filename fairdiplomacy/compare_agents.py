@@ -6,88 +6,80 @@
 import logging
 import multiprocessing as mp
 import os
-from fairdiplomacy import pydipcc
-
-import numpy as np
 import torch
 
+from fairdiplomacy import pydipcc
 from fairdiplomacy.env import Env, OneSixPolicyProfile, SharedPolicyProfile
-from fairdiplomacy.models.consts import POWERS
+
+from conf import conf_cfgs
 
 
 def run_1v6_trial(
-    agent_one,
-    agent_six,
-    agent_one_power,
-    save_path=None,
-    seed=0,
-    cf_agent=None,
-    *,
-    use_shared_agent=False,
-    max_turns=None,
-    max_year=1935,
-    start_game=None,
-    start_phase=None,
+    agent_one, agent_six, agent_one_power: str, cfg: conf_cfgs.CompareAgentsTask, cf_agent=None
 ):
     """Run a trial of 1x agent_one vs. 6x agent_six
 
     Arguments:
     - agent_one/six: fairdiplomacy.agents.BaseAgent inheritor objects
     - agent_one_power: the power to assign agent_one (the other 6 will be agent_six)
-    - save_path: if specified, save game.json to this path
-    - seed: random seed
-    - cf_agent: print out the orders for each power assuming that this agent was in charge
-    - use_shared_agent: ingore agent_six and use agent_one for all
-    - max_turns: finish game early; flag to speed up testing.
-    - max_year: finish game early; flag to speed up testing.
-    - start_game: optional path game.json to start playing from.
-    - start_phase: optional phase in start_game to start with.
+    - cfg: see conf.proto
 
     Returns "one" if agent_one wins, or "six" if one of the agent_six powers wins, or "draw"
     """
     torch.set_num_threads(1)
 
-    if use_shared_agent:
+    if cfg.use_shared_agent:
         del agent_six  # Unused.
         policy_profile = SharedPolicyProfile(agent_one)
     else:
         policy_profile = OneSixPolicyProfile(
-            agent_one=agent_one, agent_six=agent_six, agent_one_power=agent_one_power, seed=seed
+            agent_one=agent_one,
+            agent_six=agent_six,
+            agent_one_power=agent_one_power,
+            seed=cfg.seed,
         )
 
-    if start_game:
-        with open(start_game) as stream:
+    if cfg.start_game:
+        with open(cfg.start_game) as stream:
             game_obj = pydipcc.Game.from_json(stream.read())
-        if start_phase:
-            game_obj.rolled_back_to_phase_start(start_phase)
+        if cfg.start_phase:
+            game_obj = game_obj.rolled_back_to_phase_start(cfg.start_phase)
+
     else:
-        game_obj = None
+        game_obj = pydipcc.Game()
+
+    if cfg.draw_on_stalemate_years > 0:
+        game_obj.set_draw_on_stalemate_years(cfg.draw_on_stalemate_years)
 
     env = Env(
         policy_profile=policy_profile,
-        seed=seed,
+        seed=cfg.seed,
         cf_agent=cf_agent,
-        max_year=max_year,
+        max_year=cfg.max_year,
         game_obj=game_obj,
+        capture_logs=cfg.capture_logs,
     )
 
-    scores = env.process_all_turns(max_turns=max_turns)
+    scores = env.process_all_turns(max_turns=cfg.max_turns)
 
-    if save_path is not None:
-        env.save(save_path)
+    if cfg.out:
+        env.save(cfg.out)
     if all(s < 18 for s in scores.values()):
         if scores[agent_one_power] > 0:
             # agent 1 is still alive and nobody has won
-            return "draw"
+            result = "draw"
         else:
             # agent 1 is dead, one of the agent 6 agents has won
-            return "six"
+            result = "six"
+        winning_power = "NONE"
+    else:
+        winning_power = max(scores, key=scores.get)
+        result = "one" if winning_power == agent_one_power else "six"
 
-    winning_power = max(scores, key=scores.get)
     logging.info(
         f"Scores: {scores} ; Winner: {winning_power} ; agent_one_power= {agent_one_power}"
     )
-    return "one" if winning_power == agent_one_power else "six"
+    return result
 
 
 def call_with_args(args):
@@ -95,24 +87,12 @@ def call_with_args(args):
 
 
 def run_1v6_trial_multiprocess(
-    agent_one,
-    agent_six,
-    agent_one_power,
-    save_path=None,
-    seed=0,
-    cf_agent=None,
-    num_processes=8,
-    num_trials=100,
-    *,
-    start_game=None,
-    start_phase=None,
+    agent_one, agent_six, agent_one_power, cfg: conf_cfgs.CompareAgentsTask, cf_agent=None
 ):
-    assert not start_game, "Not supported"
-    assert not start_phase, "Not supported"
     torch.set_num_threads(1)
-    save_base, save_ext = save_path.rsplit(".", 1)  # sloppy, assuming that there's an extension
+    save_base, save_ext = os.path.splitext(cfg)
     os.makedirs(save_base, exist_ok=True)
-    pool = mp.get_context("spawn").Pool(num_processes)
+    pool = mp.get_context("spawn").Pool(cfg.num_processes)
     BIG_PRIME = 377011
     pool.map(
         call_with_args,
@@ -122,11 +102,11 @@ def run_1v6_trial_multiprocess(
                 agent_one,
                 agent_six,
                 agent_one_power,
-                f"{save_base}/output_{job_id}.{save_ext}",
-                seed + job_id * BIG_PRIME,
+                f"{save_base}/output_{job_id}{save_ext}",
+                cfg.seed + job_id * BIG_PRIME,
                 cf_agent,
             )
-            for job_id in range(num_trials)
+            for job_id in range(cfg.num_trials)
         ],
     )
     logging.info("TERMINATING")

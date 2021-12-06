@@ -3,9 +3,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch.multiprocessing as mp
 import traceback
 import signal
+
+from fairdiplomacy.utils.multiprocessing_spawn_context import get_multiprocessing_ctx
+
+mp = get_multiprocessing_ctx()
 
 # mostly from https://stackoverflow.com/questions/19924104/python-multiprocessing-handling-child-errors-in-parent
 class ExceptionHandlingProcess(mp.Process):

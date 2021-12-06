@@ -42,44 +42,15 @@ def compare_agents(cfg):
     else:
         cf_agent = None
 
-    def _power_to_string(power_id):
-        power_enum = conf.conf_pb2.CompareAgentsTask.Power
-        return dict(zip(power_enum.values(), power_enum.keys()))[power_id]
-
-    power_string = _power_to_string(cfg.power_one)
-
-    kwargs = dict(
-        start_game=cfg.start_game,
-        start_phase=cfg.start_phase,
-        max_turns=cfg.max_turns,
-        max_year=cfg.max_year,
-    )
+    power_string = cfg.power_one
 
     if cfg.num_processes > 0:
         assert cfg.num_trials > 0
         result = run_1v6_trial_multiprocess(
-            agent_one,
-            agent_six,
-            power_string,
-            save_path=cfg.out if cfg.out else None,
-            seed=cfg.seed,
-            cf_agent=cf_agent,
-            num_processes=cfg.num_processes,
-            num_trials=cfg.num_trials,
-            use_shared_agent=cfg.use_shared_agent,
-            **kwargs,
+            agent_one, agent_six, power_string, cfg, cf_agent=cf_agent
         )
     else:
-        result = run_1v6_trial(
-            agent_one,
-            agent_six,
-            power_string,
-            save_path=cfg.out if cfg.out else None,
-            seed=cfg.seed,
-            cf_agent=cf_agent,
-            use_shared_agent=cfg.use_shared_agent,
-            **kwargs,
-        )
+        result = run_1v6_trial(agent_one, agent_six, power_string, cfg, cf_agent=cf_agent)
         logging.warning("Result: {}".format(result))
 
 
@@ -103,81 +74,24 @@ def build_db_cache(cfg):
     build_db_cache_from_cfg(cfg)
 
 
-@_register
-def situation_check(cfg):
-
-    # NEED TO SET THIS BEFORE CREATING THE AGENT!
-    if cfg.seed >= 0:
-        logging.info(f"Set seed to {cfg.seed}")
-        torch.manual_seed(cfg.seed)
-        np.random.seed(cfg.seed)
-
-    agent = build_agent_from_cfg(cfg.agent)
-
-    if cfg.single_game:
-        # Creating fake meta from a single game.
-        meta = {"game": {"game_path": cfg.single_game}}
-        if cfg.single_phase:
-            meta["game"]["phase"] = cfg.single_phase
-        logging.info("Created fake test situation JSON: %s", meta)
-    else:
-        # If not absolute path, assume relative to project root.
-        with open(heyhi.PROJ_ROOT / cfg.situation_json) as f:
-            meta = json.load(f)
-
-        selection = None
-        if cfg.selection != "":
-            selection = cfg.selection.split(",")
-            meta = {k: v for k, v in meta.items() if k in selection}
-
-    run_situation_check(meta, agent, extra_plausible_orders_str=cfg.extra_plausible_orders)
-
-
-@_register
-def benchmark_agent(cfg):
-    import fairdiplomacy.benchmark_agent
-
-    fairdiplomacy.benchmark_agent.run(cfg)
-
-
-@_register
-def compute_xpower_statistics(cfg):
-    from fairdiplomacy.get_xpower_supports import compute_xpower_statistics, get_game_paths
-
-    paths = get_game_paths(
-        cfg.game_dir,
-        metadata_path=cfg.metadata_path,
-        metadata_filter=cfg.metadata_filter,
-        dataset_for_eval=cfg.dataset_for_eval,
-        max_games=cfg.max_games,
-    )
-
-    if cfg.cf_agent.WhichOneof("agent") is not None:
-        cf_agent = build_agent_from_cfg(cfg.cf_agent)
-    else:
-        cf_agent = None
-
-    compute_xpower_statistics(paths, max_year=cfg.max_year, cf_agent=cf_agent)
-
-
-@_register
-def profile_model(cfg):
-    from fairdiplomacy.profile_model import profile_model
-
-    profile_model(cfg.model_path)
-
-
 @heyhi.save_result_in_cwd
-def main(task, cfg):
-    heyhi.setup_logging()
+def main(task, cfg, log_level):
+    if not hasattr(cfg, "heyhi_patched"):
+        raise RuntimeError("Run `make protos`")
+    cfg = cfg.to_frozen()
+    heyhi.setup_logging(console_level=log_level)
     logging.info("Cwd: %s", os.getcwd())
     logging.info("Task: %s", task)
     logging.info("Cfg:\n%s", cfg)
+    logging.debug("Cfg (with defaults):\n%s", cfg.to_str_with_defaults())
     heyhi.log_git_status()
     logging.info("Is on slurm: %s", heyhi.is_on_slurm())
+    logging.info("Job env: %s", heyhi.get_job_env())
     if heyhi.is_on_slurm():
         logging.info("Slurm job id: %s", heyhi.get_slurm_job_id())
     logging.info("Is master: %s", heyhi.is_master())
+    if getattr(cfg, "use_default_requeue", False):
+        heyhi.maybe_init_requeue_handler()
 
     if task not in TASKS:
         raise ValueError("Unknown task: %s. Known tasks: %s" % (task, sorted(TASKS)))

@@ -8,45 +8,22 @@ import numpy as np
 from collections import defaultdict
 from typing import List, Tuple, Dict
 
+from conf import agents_cfgs
 from fairdiplomacy.pydipcc import Game
 from fairdiplomacy.agents.multiproc_search_agent import MultiprocSearchAgent
 from fairdiplomacy.models.consts import POWERS
-
 
 Action = Tuple[str]  # a set of orders
 Power = str
 
 
 class CE1PAgent(MultiprocSearchAgent):
-    """One-ply correlated equilibrium cfr with model-sampled policy rollouts"""
+    """One-ply correlated equilibrium cfr with policy rollouts"""
 
-    def __init__(
-        self,
-        *,
-        model_path,
-        n_rollout_procs=70,
-        n_server_procs=1,
-        n_gpu=1,
-        max_batch_size=1000,
-        n_rollouts=100,
-        max_rollout_length=3,
-        use_predicted_final_scores=True,
-        n_plausible_orders=8,
-        rollout_temperature=0.05,
-    ):
-        super().__init__(
-            model_path=model_path,
-            n_rollout_procs=n_rollout_procs,
-            n_server_procs=n_server_procs,
-            n_gpu=n_gpu,
-            max_batch_size=max_batch_size,
-            use_predicted_final_scores=use_predicted_final_scores,
-            rollout_temperature=rollout_temperature,
-        )
-
-        self.n_rollouts = n_rollouts
-        self.max_rollout_length = max_rollout_length
-        self.n_plausible_orders = n_plausible_orders
+    def __init__(self, cfg: agents_cfgs.CE1PAgent):
+        super().__init__(cfg)
+        self.n_rollouts = cfg.n_rollouts
+        self.max_rollout_length = cfg.max_rollout_length
 
     def get_orders(self, game, power) -> List[str]:
 
@@ -455,8 +432,3 @@ class CE1PAgent(MultiprocSearchAgent):
         else:
             return [s / sum_sigmas for s in sigmas]
 
-
-if __name__ == "__main__":
-    logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
-
-    print(CE1PAgent().get_orders(Game(), "ITALY"))

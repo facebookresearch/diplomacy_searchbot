@@ -219,7 +219,7 @@ class TensorList(object):
 
         res = self.data.new_empty(N, total_length).fill_(padding_value)
 
-        nz_rows = lengths.nonzero()[:, 0]
+        nz_rows = lengths.nonzero(as_tuple=False)[:, 0]
         if len(nz_rows) != len(lengths):
             # operate on the non-empty rows, and insert back in
             res_nz = self[nz_rows].to_padded(padding_value, total_length)

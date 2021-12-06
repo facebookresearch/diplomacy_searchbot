@@ -6,11 +6,7 @@
 from typing import Dict, Optional
 import collections
 import datetime
-import importlib
 import json
-import logging
-import pathlib
-import subprocess
 import time
 
 import heyhi
@@ -93,7 +89,7 @@ class MultiStopWatchTimer:
 
     def start(self, name) -> None:
         now = time.time()
-        if self._name is not None:
+        if self._name is not None and self._start is not None:
             self._timings[self._name] += now - self._start
         self._start = now
         self._name = name
@@ -150,14 +146,23 @@ class MaxCounter:
 
 
 class Logger:
-    def __init__(self, is_master=None):
+    def __init__(self, tag=None, is_master=None):
         if is_master is None:
             self.is_master = heyhi.is_master()
         else:
             self.is_master = is_master
         if self.is_master:
             self.writer = torch.utils.tensorboard.SummaryWriter(log_dir="tb")
-            self.jsonl_writer = open("metrics.jsonl", "a")
+            if tag:
+                fpath = f"metrics.{tag}.jsonl"
+            else:
+                fpath = "metrics.jsonl"
+            self.jsonl_writer = open(fpath, "a")
+
+    def log_config(self, cfg):
+        if not self.is_master:
+            return
+        self.writer.add_text("cfg", str(cfg))
 
     def log_metrics(self, metrics, step, sanitize=False):
         if not self.is_master:
