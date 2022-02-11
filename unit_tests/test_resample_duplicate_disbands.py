@@ -7,7 +7,7 @@ import os
 import unittest
 import torch
 
-from fairdiplomacy.agents.model_sampled_agent import resample_duplicate_disbands_inplace
+from fairdiplomacy.agents.model_wrapper import resample_duplicate_disbands_inplace
 
 UNIT_TEST_DIR = os.path.dirname(__file__)
 

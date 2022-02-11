@@ -23,7 +23,7 @@ from fairdiplomacy.agents import build_agent_from_cfg
 from fairdiplomacy.get_xpower_supports import compute_xpower_supports
 from fairdiplomacy.env import OneSixPolicyProfile
 from fairdiplomacy.models.consts import POWERS
-from fairdiplomacy.selfplay.ckpt_syncer import build_cfr1p_agent_with_syncs
+from fairdiplomacy.selfplay.ckpt_syncer import build_search_agent_with_syncs
 from fairdiplomacy.selfplay.search_rollout import ReSearchRolloutBatch, yield_game
 from fairdiplomacy.selfplay.search_utils import unparse_device
 from fairdiplomacy.utils.exception_handling_process import ExceptionHandlingProcess
@@ -125,9 +125,9 @@ class H2HEvaler:
         heyhi.setup_logging(console_level=None, fpath=log_path, file_level=log_level)
 
         device_id = unparse_device(device)
-        assert agent_one_cfg.cfr1p is not None, "Must be CFR1P agent"
-        agent_one, do_sync_fn = build_cfr1p_agent_with_syncs(
-            agent_one_cfg.cfr1p,
+        assert agent_one_cfg.searchbot is not None, "Must be searchbot agent"
+        agent_one, do_sync_fn = build_search_agent_with_syncs(
+            agent_one_cfg.searchbot,
             ckpt_sync_path=ckpt_sync_path,
             use_trained_policy=use_trained_policy,
             use_trained_value=use_trained_value,

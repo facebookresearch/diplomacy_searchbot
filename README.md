@@ -108,7 +108,9 @@ conda install --yes pytorch=1.7.1 torchvision cudatoolkit=11.0 -c pytorch
 conda install pybind11
 
 # Install go for boringssl in grpc
-conda install go protobuf --yes
+# We have some hacky patching code for protobuf that is not guaranteed
+# to work on versions other than this.
+conda install go protobuf=3.19.1 --yes
 
 # Install python requirements
 pip install -r requirements.txt

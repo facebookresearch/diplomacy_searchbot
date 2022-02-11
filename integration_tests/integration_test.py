@@ -24,14 +24,14 @@ TMP_DIR = integration_tests.heyhi_utils.OUTPUT_ROOT
 
 
 def _load_task_cfg(cfg_path, overides=tuple()):
-    task_name, cfg = heyhi.load_cfg(cfg_path, overides)
+    task_name, cfg = heyhi.conf.load_root_proto_message(cfg_path, overides)
     return getattr(cfg, task_name)
 
 
 def _create_supervised_model(sup_model_path):
     sup_model_path.parent.mkdir(exist_ok=True, parents=True)
     sl_cfg = _load_task_cfg(
-        heyhi.CONF_ROOT / "c02_sup_train" / "sl.prototxt", ["num_encoder_blocks=1"]
+        heyhi.CONF_ROOT / "c02_sup_train" / "sl_20200901.prototxt", ["num_encoder_blocks=1"]
     )
     model = fairdiplomacy.models.diplomacy_model.load_model.new_model(sl_cfg)
     ckpt = {"model": model.state_dict(), "args": sl_cfg}
@@ -62,18 +62,6 @@ def test_rl_configs(cfg_name):
         ],
     )
 
-
-def test_build_cache():
-    out_path = TMP_DIR / "test_build_cache" / "cache.out"
-    overrides = [
-        f"glob={integration_tests.build_test_cache.GAMES_ROOT.absolute()}/*.json",
-        f"out_path={out_path}",
-    ]
-    integration_tests.heyhi_utils.run_config(
-        cfg=integration_tests.build_test_cache.BUILD_DB_CONF, overrides=overrides
-    )
-
-
 def test_compare_agents():
     out_path = TMP_DIR / "c01_ag_cmp" / "model.pth"
     _create_supervised_model(out_path)
@@ -96,14 +84,12 @@ def test_compare_agents_single_cfr():
         cfg=heyhi.CONF_ROOT / "c01_ag_cmp" / "cmp.prototxt",
         overrides=[
             "I.agent_one=agents/searchbot",
-            "I.agent_six=agents/model_sampled",
             f"agent_one.searchbot.model_path={out_path}",
-            f"agent_six.model_sampled.model_path={out_path}",
-            "agent_one.searchbot.n_rollouts=1",
-            "agent_one.searchbot.max_rollout_length=0",
-            "agent_one.searchbot.n_rollout_procs=1",
+            "agent_one.searchbot.n_rollouts=32",
+            "agent_one.searchbot.rollouts_cfg.max_rollout_length=0",
+            "agent_one.searchbot.rollouts_cfg.n_threads=1",
+            "agent_one.searchbot.use_final_iter=false",
             "max_turns=1",
             "use_shared_agent=1",
-            "agent_one.searchbot.share_strategy=1",
         ],
     )

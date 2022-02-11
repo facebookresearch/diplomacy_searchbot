@@ -16,11 +16,15 @@ magicaly_wrapped_proto_builder(). The new builder alters the dics with new
 fields from extra_fields() function.
 """
 
+from collections import defaultdict
+import sys
 from google.protobuf import message as _message
 
 import abc
+import importlib
 import inspect
 import pathlib
+import re
 
 TAG = "## PATCHED WITH HEYHI"
 
@@ -155,6 +159,7 @@ def _extra_fields(msg_name, descriptor):
                     value = getattr(self, chosen_oneof)
             else:
                 value = getattr(self, name)
+
             if isinstance(value, _message.Message):
                 value = maybe_to_dict(value)
             elif field.label == field.LABEL_REPEATED:
@@ -167,8 +172,13 @@ def _extra_fields(msg_name, descriptor):
                 assert (
                     isinstance(value, (float, str, int, bool)) or value is None
                 ), f"Excepted a value for {name} to be a scalar. Got {value}"
-                if field.enum_type is not None:
-                    value = field.enum_type.values_by_number[value].name
+                if field.enum_type is not None and value is not None:
+                    enum_values = field.enum_type.values_by_number
+                    if value not in enum_values:
+                        raise RuntimeError(
+                            f"{name}: {value} not in {[v.name for v in enum_values.values()]}"
+                        )
+                    value = enum_values[value].name
                 if name not in set_fields and not field.has_default_value:
                     value = False if field.type == field.TYPE_BOOL else None
             ret[name] = value
@@ -278,12 +288,11 @@ def patch_pb2(pb2_path):
         return
 
     old_full_classes = []
-    is_msg_descriptor = False
     for line in content.split("\n"):
-        if " = _descriptor." in line:
-            is_msg_descriptor = line.strip().endswith("_descriptor.Descriptor(")
-        if line.startswith("  full_name='") and is_msg_descriptor:
-            old_full_classes.append(line.split("=")[1].strip().strip(",").strip("'"))
+        #Launcher = _reflection.GeneratedProtocolMessageType('Launcher', (_message.Message,), {
+        prefix = "# @@protoc_insertion_point(class_scope:"
+        if prefix in line:
+            old_full_classes.append(line[line.find(prefix)+len(prefix):].strip(")").strip())
 
     # Creating patched version of generated proto file. Will be saved in original files.
     lines = []
@@ -305,7 +314,9 @@ def patch_pb2(pb2_path):
             lines.append(f"{TAG} end\n")
 
     def remove_package_name(full_object_path):
-        return klass.split(".", 1)[1]  # Stripping "fairdiplomacy."
+        if full_object_path.startswith("fairdiplomacy."):
+            return klass.split(".", 1)[1]  # Stripping "fairdiplomacy."
+        return full_object_path
 
     lines.append("if 'FROZEN_SYM_BD' not in globals():")
     lines.append("   globals()['FROZEN_SYM_BD'] = {}")
@@ -321,10 +332,14 @@ def patch_pb2(pb2_path):
     with open(pb2_path, "w") as stream:
         stream.write("\n".join(lines))
 
+    pb2_include_path: str = CONF_INCLUDE_PREFIX + pb2_path.name.rsplit(".", 1)[0]
+    assert pb2_include_path.endswith("_pb2")
+    cfgs_include_path = pb2_include_path[:-4] + "_cfgs"
+
     # Creating a user facing set of classes.
     lines = []
     lines.append(f"{TAG} START")
-    lines.append(f"from {CONF_INCLUDE_PREFIX}%s import *" % pb2_path.name.rsplit(".", 1)[0])
+    lines.append(f"from {pb2_include_path} import *")
     lines.append("# Create new classes and flat names for them.")
 
     for klass in reversed(old_full_classes):
@@ -333,8 +348,264 @@ def patch_pb2(pb2_path):
             lines.append(f"Proto_{short_klass} = {short_klass}")
         lines.append(f"{short_klass} = FROZEN_SYM_BD['{klass}']")
     lines.append(f"{TAG} end\n")
-    with open(str(pb2_path).replace("_pb2", "_cfgs"), "w") as stream:
+
+    cfgs_path = str(pb2_path).replace("_pb2", "_cfgs")
+    print("Generating", str(cfgs_path))
+    with open(cfgs_path, "w") as stream:
         stream.write("\n".join(lines))
+
+    # Patch the pyi file too,if it exists
+    pb2_pyi_path = pathlib.Path(str(pb2_path).replace(".py", ".pyi"))
+    patch_pb2_pyi(pb2_pyi_path, pb2_include_path, cfgs_include_path)
+
+
+def patch_pb2_pyi(pb2_pyi_path, pb2_include_path, cfgs_include_path):
+    if not pb2_pyi_path.exists():
+        return
+
+    # Import the module whose pyi file we are modifying, to check some things
+    try:
+        pb2_module = importlib.import_module(pb2_include_path)
+    except ModuleNotFoundError:
+        # On some circleci jobs, we don't have the full environment to see the
+        # module, just skip this whole bit.
+        print(
+            "WARNING: Skipping patch_pb2_pyi, type checking for proto configs will probably not work."
+        )
+        print(
+            "This is okay if this is running for one of the quick config or game situation checks on circleci."
+        )
+        return
+
+    with open(pb2_pyi_path) as stream:
+        content = stream.read()
+    if TAG in content:
+        return
+
+    lines = []  # This goes into foo_pb2.pyi
+    cfgs_lines = []  # This goes into foo_cfgs.pyi
+
+    lines.append(f"{TAG} THROUGHOUT FILE")
+    cfgs_lines.append(f"{TAG} THROUGHOUT FILE")
+
+    # Avoids circular import issues
+    lines.append("from typing import TYPE_CHECKING")
+    lines.append("if TYPE_CHECKING:")
+    lines.append(f"    import {cfgs_include_path}")
+    cfgs_lines.append("from typing import TYPE_CHECKING")
+    cfgs_lines.append("if TYPE_CHECKING:")
+    cfgs_lines.append(f"    import {pb2_include_path}")
+
+    lines.append("from typing import Any, Dict")
+    cfgs_lines.append("from typing import Any, Dict, Optional, Sequence, Union")
+
+    # [tuple(classes_we_are_inside)][fieldname] gives the type of that field
+    types_to_use_by_classes_by_fieldname = defaultdict(dict)
+
+    classes_we_are_inside = []
+    for line in content.split("\n"):
+        # Check indent level and adjust our record of where in config class hierarchy we are
+        if len(line.strip()) > 0:
+            # Assumes indent level of 4 in pyi files.
+            SPACES_PER_INDENT = 4
+            indentation_level = (len(line) - len(line.lstrip())) // SPACES_PER_INDENT
+            classes_we_are_inside = classes_we_are_inside[:indentation_level]
+
+        # Walk down the class hierarchy of configs
+        def find_class():
+            pb2_class = pb2_module
+            for klass in classes_we_are_inside:
+                if pb2_class:
+                    pb2_class = getattr(pb2_class, klass)
+            return pb2_class
+
+        # Walk down the class hierarchy of configs and try to find a field of a config
+        def find_field(fieldname):
+            pb2_class = find_class()
+            if pb2_class and fieldname in pb2_class.DESCRIPTOR.fields_by_name:
+                return pb2_class.DESCRIPTOR.fields_by_name[fieldname]
+            return None
+
+        # Walk down the class hierarchy of configs and try to find a oneof field of a config
+        def find_oneof(oneofname):
+            pb2_class = find_class()
+            if pb2_class and oneofname in pb2_class.DESCRIPTOR.oneofs_by_name:
+                return pb2_class.DESCRIPTOR.oneofs_by_name[oneofname]
+            return None
+
+        if len(classes_we_are_inside) > 0:
+            # Look for where the pyi tries to define a config field.
+            # When the field itself is repeated, extract out the inner type
+            match = re.match(
+                r"(\s*)def (\w+)\(self\) -> google.protobuf.internal.containers.Repeated\w*Container\[([a-zA-Z\.0-9_]+)\]: ...\s*",
+                line,
+            )
+            is_already_property = True  # Whether this is a raw attr or a @property getter
+            if match is None:
+                match = re.match(r"(\s*)def (\w+)\(self\) -> ([a-zA-Z\.0-9_]+): ...\s*", line,)
+                is_already_property = True
+            if match is None:
+                match = re.match(r"(\s*)(\w+): ([a-zA-Z\.0-9_]+) = ...\s*", line)
+                is_already_property = False
+
+            if match is not None:
+                whitespace = match[1]
+                fieldname = match[2]
+                fieldtype = match[3]
+
+                field = find_field(fieldname)
+                if field:
+                    fieldtype_to_use = fieldtype
+                    # Enum types are always strings in cfgs version
+                    if field.enum_type is not None:
+                        fieldtype_to_use = "str"
+
+                    # Configs should use the cfgs type, not the pb2 type
+                    fieldtype_to_use = fieldtype_to_use.replace("_pb2.", "_cfgs.")
+
+                    # Handle default and repeated fields
+                    if field.label == field.LABEL_REPEATED:
+                        fieldtype_to_use = f"Sequence[{fieldtype_to_use}]"
+                    elif not (
+                        field.has_default_value
+                        or fieldtype == "bool"
+                        or fieldtype == "builtins.bool"
+                        or fieldtype.startswith("conf.")
+                        or fieldtype.startswith("global___")
+                    ):
+                        fieldtype_to_use = f"Optional[{fieldtype_to_use}]"
+
+                    lines.append(line)
+                    # For the _cfgs.pyi version, we make it read only via @property
+                    if not is_already_property:
+                        cfgs_lines.append(f"{whitespace}@property")
+                    cfgs_lines.append(
+                        f"{whitespace}def {fieldname}(self) -> {fieldtype_to_use}: ..."
+                    )
+                    types_to_use_by_classes_by_fieldname[tuple(classes_we_are_inside)][
+                        fieldname
+                    ] = fieldtype_to_use
+                    continue
+
+            # Look for where the pyi tries to define a parameter for init.
+            # When the field itself is repeated, extract out the inner type
+            match = re.match(
+                r"(\s*)(\w+) : typing.Optional\[typing.Iterable\[([a-zA-Z\.0-9_]+)\]\] = ...,\s*",
+                line,
+            )
+            if match is None:
+                match = re.match(
+                    r"(\s*)(\w+) : typing.Optional\[([a-zA-Z\.0-9_]+)\] = ...,\s*", line
+                )
+            if match is not None:
+                whitespace = match[1]
+                fieldname = match[2]
+                fieldtype = match[3]
+                field = find_field(fieldname)
+                if field:
+                    fieldtype_to_use = fieldtype
+                    # Enum types are always strings in cfgs version
+                    if field.enum_type is not None:
+                        fieldtype_to_use = "str"
+
+                    # Configs should use the cfgs type, not the pb2 type
+                    fieldtype_to_use = fieldtype_to_use.replace("_pb2.", "_cfgs.")
+
+                    # Allow dicts for any nested config types
+                    if fieldtype_to_use.startswith("conf.") or fieldtype_to_use.startswith(
+                        "global___"
+                    ):
+                        fieldtype_to_use = f"Union[{fieldtype_to_use},Dict[str,Any]]"
+                    # Handle repeated fields
+                    if field.label == field.LABEL_REPEATED:
+                        fieldtype_to_use = f"typing.Iterable[{fieldtype_to_use}]"
+
+                    lines.append(line)
+                    cfgs_lines.append(
+                        f"{whitespace}{fieldname} : typing.Optional[{fieldtype_to_use}] = ...,"
+                    )
+                    continue
+
+            # Handle oneof fields, convert overloaded oneofs into which_ fields
+            if "@typing.overload" in line:
+                lines.append(line)
+                continue
+            match = re.match(
+                r"(\s*)def WhichOneof\(self, oneof_group: typing_extensions.Literal\[u\"(\w+)\",b\"\w+\"\]\) -> typing.Optional\[typing_extensions.Literal\[([a-zA-Z0-9_\",]+)\]\]: ...\s*",
+                line,
+            )
+            if match is not None:
+                whitespace = match[1]
+                oneofname = match[2]
+                possibilities_list = match[3]
+                oneofinfo = find_oneof(oneofname)
+                if oneofinfo:
+                    lines.append(line)
+                    cfgs_lines.append(f"{whitespace}@property")
+                    cfgs_lines.append(
+                        f"{whitespace}def which_{oneofname}(self) -> typing.Optional[typing_extensions.Literal[{possibilities_list}]]: ..."
+                    )
+                    types_list = []
+                    types_to_use_by_fieldname = types_to_use_by_classes_by_fieldname[
+                        tuple(classes_we_are_inside)
+                    ]
+                    for field in oneofinfo.fields:
+                        if field.name in types_to_use_by_fieldname:
+                            type_to_use = types_to_use_by_fieldname[field.name]
+                            if type_to_use.startswith("Optional[") and type_to_use.endswith("]"):
+                                type_to_use = type_to_use[len("Optional[") : -len("]")]
+                            types_list.append(type_to_use)
+                    types_list = ",".join(set(types_list))
+                    cfgs_lines.append(f"{whitespace}@property")
+                    cfgs_lines.append(
+                        f"{whitespace}def {oneofname}(self) -> typing.Optional[typing_extensions.Union[{types_list}]]: ..."
+                    )
+                    continue
+
+        # Configs should use the cfgs type, not the pb2 type
+        if line.startswith("import") or (line.startswith("from") and "import" in line):
+            lines.append(line)
+            cfgs_lines.append(line.replace("_pb2", "_cfgs"))
+            continue
+
+        lines.append(line)
+        cfgs_lines.append(line)
+
+        # Look for where a new class starts
+        match = re.match(r"(\s*)class (\w+)\(google.protobuf.message.Message\):\s*", line)
+        if match is not None:
+            whitespace = match[1]
+            klass = match[2]
+            classes_we_are_inside.append(klass)
+
+            # Add the standard functions that we need to each class
+            classpath = ".".join(classes_we_are_inside)
+            lines.append(f"{whitespace}    def is_frozen(self) -> builtins.bool: ...")
+            lines.append(f"{whitespace}    def to_editable(self) -> {classpath}: ...")
+            lines.append(
+                f"{whitespace}    def to_frozen(self) -> '{cfgs_include_path}.{classpath}': ..."
+            )
+            lines.append(
+                f"{whitespace}    def to_dict(self, *, with_defaults: builtins.bool = False, with_all: builtins.bool = False) -> Dict[str,Any]: ..."
+            )
+            lines.append(f"{whitespace}    def to_str_with_defaults(self) -> str: ...")
+            cfgs_lines.append(f"{whitespace}    def is_frozen(self) -> builtins.bool: ...")
+            cfgs_lines.append(
+                f"{whitespace}    def to_editable(self) -> '{pb2_include_path}.{classpath}': ..."
+            )
+            cfgs_lines.append(f"{whitespace}    def to_frozen(self) -> {classpath}: ...")
+            cfgs_lines.append(
+                f"{whitespace}    def to_dict(self, *, with_defaults: builtins.bool = False, with_all: builtins.bool = False) -> Dict[str,Any]: ..."
+            )
+            cfgs_lines.append(f"{whitespace}    def to_str_with_defaults(self) -> str: ...")
+
+    print("Also patching", str(pb2_pyi_path))
+    with open(pb2_pyi_path, "w") as stream:
+        stream.write("\n".join(lines))
+    cfgs_pyi_path = str(pb2_pyi_path).replace("_pb2", "_cfgs")
+    print("Generating", str(cfgs_pyi_path))
+    with open(cfgs_pyi_path, "w") as stream:
+        stream.write("\n".join(cfgs_lines))
 
 
 if __name__ == "__main__":

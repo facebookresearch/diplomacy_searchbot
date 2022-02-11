@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """Tools to load a config with overrides and includes."""
-from typing import Any, Dict, List, Sequence, Tuple, Union
+from typing import Any, Dict, List, Sequence, Tuple, TypeVar, Union
 import logging
 import pathlib
 import re
@@ -206,13 +206,8 @@ def _apply_scalar_override(cfg: ProtoMessage, mount: str, value: str) -> None:
     elif attr_type is int and not value.isdigit():
         # If enum is redefined we have to search in the parrent object
         # for all enums.
-        for maybe_enum_object in type(subcfg).__dict__.values():
-            if isinstance(
-                maybe_enum_object, google.protobuf.internal.enum_type_wrapper.EnumTypeWrapper
-            ):
-                if value in maybe_enum_object.keys():
-                    value = dict(maybe_enum_object.items())[value]
-                    break
+        if field.enum_type is not None:
+            value = field.enum_type.values_by_name[value].number
     try:
         value = attr_type(value)
     except ValueError:
@@ -244,14 +239,21 @@ def _guess_message_type(path):
     with path.open() as stream:
         proto_text = stream.read()
     proto_text = re.sub(r"\{\{ *ROOT_DIR *\}\}", str(PROJ_ROOT), proto_text)
+    msg_types_and_errors = []
     for msg_type in reversed(google.protobuf.message.Message.__subclasses__()):
         try:
             google.protobuf.text_format.Merge(proto_text, msg_type())
-        except google.protobuf.text_format.ParseError:
+        except google.protobuf.text_format.ParseError as e:
+            msg_types_and_errors.append((msg_type, e))
             continue
         logging.info("Guessed type: %s", msg_type)
         return msg_type
-    raise ValueError(f"Failed to guess message type for {path}")
+    msg_types_and_errors_formatted = "\n".join(
+        f"{msg_type}: {e}" for msg_type, e in msg_types_and_errors
+    )
+    raise ValueError(
+        f"Failed to guess message type for {path}. Please check the type you think it should be and see what the error is: {msg_types_and_errors_formatted}"
+    )
 
 
 def _apply_include(msg, mount, include_msg_path, include_dirs):
@@ -460,3 +462,16 @@ def conf_to_dict(cfg, include_defaults=False):
     return google.protobuf.json_format.MessageToDict(
         cfg, preserving_proto_field_name=True, including_default_value_fields=include_defaults
     )
+
+
+T = TypeVar("T", bound=ProtoMessage)
+
+
+def conf_with_overrides(cfg: T, overrides: List[str]) -> T:
+    assert cfg.is_frozen()  # Would edit in place if the config was editable!
+    cfg = cfg.to_editable()
+    for override in overrides:
+        key, value = override.split("=", 1)
+        assert not key.startswith("I"), f"Got include overrides that is not supported: {key}"
+        conf_set(cfg, key, value)
+    return cfg.to_frozen()

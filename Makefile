@@ -19,6 +19,7 @@ selfplay:
 protos:
 	protoc conf/*.proto --python_out ./
 	python heyhi/bin/patch_protos.py conf/*pb2.py
+	realpath fva_starting_position.json > fva_starting_position.index
 
 deps:
 	bin/install_deps.sh
