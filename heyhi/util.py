@@ -245,7 +245,7 @@ def log_git_status(base_path_for_logging=None):
 
 
 def _get_all_runing_job_ids(user_only: bool = False) -> FrozenSet[str]:
-    if "CIRCLECI" in os.environ:
+    if "CIRCLECI" in os.environ or shutil.which("squeue") is None:
         return frozenset([])
     cmd = ["squeue", "-r", "-h", "-o", "%i"]
     if user_only:
