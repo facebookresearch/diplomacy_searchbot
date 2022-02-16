@@ -32,8 +32,10 @@ struct EncodingArrayPointers {
   float *x_prev_state;
   long *x_prev_orders;
   float *x_season;
+  float *x_year_encoded;
   float *x_in_adj_phase;
   float *x_build_numbers;
+  float *x_scoring_system;
   int8_t *x_loc_idxs;
   int32_t *x_possible_actions;
   int64_t *x_power;
@@ -42,11 +44,13 @@ struct EncodingArrayPointers {
 // Struct for all job types
 struct ThreadPoolJob {
   ThreadPoolJobType job_type;
+  int input_version;
   std::vector<Game *> games;
   std::vector<EncodingArrayPointers> encoding_array_pointers;
 
   ThreadPoolJob() {}
-  ThreadPoolJob(ThreadPoolJobType type) : job_type(type) {}
+  ThreadPoolJob(ThreadPoolJobType type, int iv)
+      : job_type(type), input_version(iv) {}
 };
 
 class ThreadPool {
@@ -56,7 +60,7 @@ public:
              int max_order_cands);
   ~ThreadPool();
 
-  const OrdersEncoder &get_orders_encoder() const { return orders_encoder_; }
+  const OrdersDecoder &get_orders_decoder() const { return orders_decoder_; }
 
   // Call game.process() on each of the games. Blocks until all process()
   // functions have exited.
@@ -64,15 +68,17 @@ public:
 
   // Fill a list of pre-allocated DataFields objects with the games' input
   // encodings
-  TensorDict encode_inputs_multi(std::vector<Game *> &games);
+  TensorDict encode_inputs_multi(std::vector<Game *> &games, int input_version);
 
   // Fill a list of pre-allocated DataFields objects with the games' input
   // encodings
-  TensorDict encode_inputs_state_only_multi(std::vector<Game *> &games);
+  TensorDict encode_inputs_state_only_multi(std::vector<Game *> &games,
+                                            int input_version);
 
   // Fill a list of pre-allocated DataFields objects with the games' input
   // encodings
-  TensorDict encode_inputs_all_powers_multi(std::vector<Game *> &games);
+  TensorDict encode_inputs_all_powers_multi(std::vector<Game *> &games,
+                                            int input_version);
 
 private:
   /////////////
@@ -92,11 +98,15 @@ private:
   void do_job_encode_all_powers(ThreadPoolJob &);
 
   // Job handler boilerplate
-  void boilerplate_job_prep(ThreadPoolJobType, std::vector<Game *> &);
+  void boilerplate_job_prep(ThreadPoolJobType, std::vector<Game *> &,
+                            int input_version);
   void boilerplate_job_handle(std::unique_lock<std::mutex> &);
 
   // Helpers
-  void encode_state_for_game(Game *, EncodingArrayPointers &);
+  void encode_state_for_game(Game *, int input_version,
+                             EncodingArrayPointers &);
+
+  const OrdersEncoder &get_orders_encoder(int input_version);
 
   //////////
   // Data //
@@ -110,7 +120,9 @@ private:
   bool time_to_die_ = false;
 
   std::vector<std::thread> threads_;
-  const OrdersEncoder orders_encoder_;
+  const OrdersEncoder orders_encoder_nonbuggy_;
+  const OrdersEncoder orders_encoder_buggy_;
+  const OrdersDecoder orders_decoder_;
 };
 
 } // namespace dipcc

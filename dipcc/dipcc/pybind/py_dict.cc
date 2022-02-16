@@ -23,7 +23,9 @@ py::dict py_orders_to_dict(unordered_map<Power, vector<Order>> &orders) {
   for (auto &it : orders) {
     auto py_power = py::cast<string>(power_str(it.first));
     auto list = py::list();
-    for (Order &order : it.second) {
+    vector<Order> action(it.second);
+    std::sort(action.begin(), action.end(), loc_order_cmp);
+    for (Order &order : action) {
       list.append(py::cast<string>(order.to_string()));
     }
     d[py_power] = list;
@@ -131,6 +133,16 @@ py::dict py_state_to_dict(GameState &state) {
         d["units"][py::cast<std::string>(power_str(unit.power))])
         .append("*" + unit.unowned().to_string());
   }
+
+  // influence
+  std::map<std::string, std::vector<std::string>> influence;
+  for (Power power : POWERS) {
+    influence[power_str(power)];
+  }
+  for (const auto &[loc, power] : state.get_influence()) {
+    influence[power_str(power)].push_back(loc_str(loc));
+  }
+  d["influence"] = py::cast(influence);
 
   return d;
 }

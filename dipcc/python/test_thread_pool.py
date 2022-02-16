@@ -3,10 +3,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import pydipcc
+from fairdiplomacy import pydipcc
 import time
 import numpy as np
-from fairdiplomacy.models.dipnet.order_vocabulary import (
+from fairdiplomacy.models.diplomacy_model.order_vocabulary import (
     get_order_vocabulary,
     get_order_vocabulary_idxs_len,
 )

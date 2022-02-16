@@ -280,4 +280,27 @@ const std::vector<Loc> &home_centers_fleet(Power power) {
   return HOME_SCS_FLEET.at(static_cast<int>(power) - 1); // -1 for NONE
 }
 
+const std::unordered_map<Loc, size_t> LOC_IDX{
+    {Loc::YOR, 0},     {Loc::EDI, 1},  {Loc::LON, 2},     {Loc::LVP, 3},
+    {Loc::NTH, 4},     {Loc::WAL, 5},  {Loc::CLY, 6},     {Loc::NWG, 7},
+    {Loc::ENG, 8},     {Loc::IRI, 9},  {Loc::NAO, 10},    {Loc::BEL, 11},
+    {Loc::DEN, 12},    {Loc::HEL, 13}, {Loc::HOL, 14},    {Loc::NWY, 15},
+    {Loc::SKA, 16},    {Loc::BAR, 17}, {Loc::BRE, 18},    {Loc::MAO, 19},
+    {Loc::PIC, 20},    {Loc::BUR, 21}, {Loc::RUH, 22},    {Loc::BAL, 23},
+    {Loc::KIE, 24},    {Loc::SWE, 25}, {Loc::FIN, 26},    {Loc::STP, 27},
+    {Loc::STP_NC, 28}, {Loc::GAS, 29}, {Loc::PAR, 30},    {Loc::NAF, 31},
+    {Loc::POR, 32},    {Loc::SPA, 33}, {Loc::SPA_NC, 34}, {Loc::SPA_SC, 35},
+    {Loc::WES, 36},    {Loc::MAR, 37}, {Loc::MUN, 38},    {Loc::BER, 39},
+    {Loc::BOT, 40},    {Loc::LVN, 41}, {Loc::PRU, 42},    {Loc::STP_SC, 43},
+    {Loc::MOS, 44},    {Loc::TUN, 45}, {Loc::LYO, 46},    {Loc::TYS, 47},
+    {Loc::PIE, 48},    {Loc::BOH, 49}, {Loc::SIL, 50},    {Loc::TYR, 51},
+    {Loc::WAR, 52},    {Loc::SEV, 53}, {Loc::UKR, 54},    {Loc::ION, 55},
+    {Loc::TUS, 56},    {Loc::NAP, 57}, {Loc::ROM, 58},    {Loc::VEN, 59},
+    {Loc::GAL, 60},    {Loc::VIE, 61}, {Loc::TRI, 62},    {Loc::ARM, 63},
+    {Loc::BLA, 64},    {Loc::RUM, 65}, {Loc::ADR, 66},    {Loc::AEG, 67},
+    {Loc::ALB, 68},    {Loc::APU, 69}, {Loc::EAS, 70},    {Loc::GRE, 71},
+    {Loc::BUD, 72},    {Loc::SER, 73}, {Loc::ANK, 74},    {Loc::SMY, 75},
+    {Loc::SYR, 76},    {Loc::BUL, 77}, {Loc::BUL_EC, 78}, {Loc::CON, 79},
+    {Loc::BUL_SC, 80}};
+
 } // namespace dipcc

@@ -37,7 +37,7 @@ public:
 
   PhaseData(const GameState &state,
             const std::unordered_map<Power, std::vector<Order>> &orders,
-            std::map<uint64_t, Message> &messages) {
+            const std::map<uint64_t, Message> &messages) {
     name_ = state.get_phase().to_string();
     state_ = state;
     orders_ = orders;
@@ -63,6 +63,10 @@ public:
   GameState &get_state() { return state_; }
   const std::unordered_map<Power, std::vector<Order>> &get_orders() const {
     return orders_;
+  }
+
+  std::vector<float> get_scores(Scoring scoring_system) const {
+    return state_.get_scores(scoring_system);
   }
 
 private:

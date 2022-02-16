@@ -15,7 +15,7 @@ namespace dipcc {
 void JCHECK(bool b, const std::string &msg);
 void JCHECK(bool b);
 
-[[ noreturn ]] void JFAIL(const std::string &msg);
-[[ noreturn ]] void JFAIL();
+[[noreturn]] void JFAIL(const std::string &msg);
+[[noreturn]] void JFAIL();
 
 } // namespace dipcc

@@ -242,10 +242,10 @@ TEST_F(GameTest, TestGameNextPhase) {
 TEST_F(GameTest, TestGameRollbackMessages) {
   Game game;
   game.process();
-  game.add_message(Power::RUSSIA, Power::TURKEY, "hi Turkey, it's F1901M");
+  game.add_message(Power::RUSSIA, PowerOrAll::TURKEY, "hi Turkey, it's F1901M", 1111);
   EXPECT_EQ(game.get_state().get_phase().to_string(), "F1901M");
   game.process();
-  game.add_message(Power::TURKEY, Power::RUSSIA, "hi Russia, it's S1902M");
+  game.add_message(Power::TURKEY, PowerOrAll::RUSSIA, "hi Russia, it's S1902M", 2222);
   EXPECT_EQ(game.get_state().get_phase().to_string(), "S1902M");
   game.process();
   game.process();
@@ -263,7 +263,7 @@ TEST_F(GameTest, TestGameRollbackMessages) {
 
   // check same phase
   EXPECT_EQ(game.get_state().get_phase().to_string(), "F1903M");
-  game.add_message(Power::AUSTRIA, Power::ENGLAND, "hi England, it's F1903M");
+  game.add_message(Power::AUSTRIA, PowerOrAll::ENGLAND, "hi England, it's F1903M", 9999);
 
   Game game_same_end = game.rolled_back_to_phase_end("F1903M");
   EXPECT_EQ(game_same_end.get_message_history()[Phase("F1903M")].size(), 1);

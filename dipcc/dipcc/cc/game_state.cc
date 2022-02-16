@@ -43,6 +43,7 @@ void GameState::remove_unit_rooted(Loc root) {
 
 void GameState::set_unit(Power power, UnitType type, Loc loc) {
   units_[loc] = {power, type, loc};
+  influence_[loc] = power;
 }
 
 void GameState::add_dislodged_unit(OwnedUnit unit, Loc dislodged_by) {
@@ -273,11 +274,11 @@ void GameState::load_all_possible_orders_r() {
     OwnedUnit unit = p.first;
     Loc dislodger_root = root_loc(p.second);
     set<Order> &retreats = all_possible_orders_[unit.loc];
+    retreats.insert(Order(unit.unowned(), OrderType::D));
+    orderable_locations[unit.power].insert(unit.loc);
     const auto &adj_locs =
         (unit.type == UnitType::ARMY ? ADJ_A
                                      : ADJ_F)[static_cast<int>(unit.loc)];
-    bool pushed = false;
-
     for (Loc adj : adj_locs) {
       if (root_loc(adj) == dislodger_root) {
         // can't retreat to dislodger src
@@ -293,11 +294,6 @@ void GameState::load_all_possible_orders_r() {
       }
 
       retreats.insert(Order(unit.unowned(), OrderType::R, adj));
-      if (!pushed) {
-        orderable_locations[unit.power].insert(unit.loc);
-        retreats.insert(Order(unit.unowned(), OrderType::D));
-      }
-      pushed = true;
     }
   }
 
@@ -385,7 +381,7 @@ void GameState::clear_all_possible_orders() {
 void GameState::copy_sorted_root_locs(
     const unordered_map<Power, set<Loc>> &from,
     unordered_map<Power, vector<Loc>> &to) {
-  for (auto & [ power, locs_set ] : from) {
+  for (auto &[power, locs_set] : from) {
     auto &output = to[power];
     output.reserve(locs_set.size());
     for (Loc loc : locs_set) {
@@ -417,7 +413,7 @@ GameState GameState::process(const unordered_map<Power, vector<Order>> &orders,
   } else if (phase_.phase_type == 'A') {
     return process_a(orders);
   } else {
-    JFAIL("Invalid phase type: " + phase_.phase_type);
+    JFAIL("Cannot process phase: " + phase_.to_string());
   }
 }
 
@@ -690,6 +686,7 @@ json GameState::to_json() {
       JCHECK(orders_it != all_possible_orders.end(),
              "Dislodged unit has no retreat orders in to_json: " +
                  loc_str(unit.loc));
+      j["retreats"][power_str(unit.power)][key] = vector<string>();
       for (auto &order : orders_it->second) {
         if (order.get_type() == OrderType::R) {
           j["retreats"][power_str(unit.power)][key].push_back(
@@ -769,6 +766,7 @@ GameState::GameState(const json &j) {
       }
       Unit unit(unit_s);
       units_[unit.loc] = unit.owned_by(power);
+      influence_[unit.loc] = power;
     }
   }
 }
@@ -790,7 +788,7 @@ void GameState::debug_log_all_possible_orders() {
   }
 }
 
-std::vector<float> GameState::get_square_scores() const {
+std::vector<float> GameState::get_scores(Scoring scoring_system) const {
   std::vector<float> scores(7, 0);
 
   // get SC counts
@@ -809,16 +807,22 @@ std::vector<float> GameState::get_square_scores() const {
     }
   }
 
-  // no winner: square scores
-  float sumsq = 0;
+  // no winner: score based on scoring system
+  float total = 0;
   for (int i = 0; i < 7; ++i) {
-    scores[i] = scores[i] * scores[i];
-    sumsq += scores[i];
+    if (scoring_system == Scoring::SOS) {
+      scores[i] = scores[i] * scores[i];
+    } else if (scoring_system == Scoring::DSS) {
+      scores[i] = scores[i] > 0 ? 1 : 0;
+    } else {
+      JFAIL("Unknown scoring method");
+    }
+    total += scores[i];
   }
 
-  // divide by sumsq
+  // normalize
   for (int i = 0; i < 7; ++i) {
-    scores[i] /= sumsq;
+    scores[i] /= total;
   }
 
   return scores;
@@ -829,7 +833,7 @@ namespace {
 // underlying objects to std::unordered_set in the future.
 template <typename K, typename V>
 inline void hash_combine_map(std::size_t &seed, const std::map<K, V> &map) {
-  for (const auto & [ k, v ] : map) {
+  for (const auto &[k, v] : map) {
     hash_combine(seed, k);
     hash_combine(seed, v);
   }

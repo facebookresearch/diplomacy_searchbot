@@ -16,4 +16,4 @@ namespace py = pybind11;
 namespace dipcc {
 
 py::dict py_game_get_units(Game *game) { return game->py_get_state()["units"]; }
-};
+}; // namespace dipcc
