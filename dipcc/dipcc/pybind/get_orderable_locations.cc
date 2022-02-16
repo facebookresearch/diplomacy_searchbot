@@ -23,7 +23,7 @@ py::dict Game::py_get_orderable_locations() {
     d[py::cast<string>(power_str(power))] = py::list();
   }
 
-  for (auto & [ power, locs ] : this->get_orderable_locations()) {
+  for (auto &[power, locs] : this->get_orderable_locations()) {
     auto power_s = py::cast<string>(power_str(power));
     py::list list;
     for (Loc loc : locs) {

@@ -15,7 +15,7 @@ namespace dipcc {
 
 struct Message {
   Power sender;
-  Power recipient;
+  PowerOrAll recipient;
   Phase phase;
   std::string message;
   uint64_t time_sent;

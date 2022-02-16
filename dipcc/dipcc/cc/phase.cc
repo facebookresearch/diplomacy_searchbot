@@ -129,17 +129,9 @@ bool Phase::operator==(const Phase &other) const {
          (this->phase_type == other.phase_type);
 }
 
-bool Phase::operator!=(const Phase &other) const {
-  return !(*this == other);
-}
-bool Phase::operator>(const Phase &other) const {
-  return other < *this;
-}
-bool Phase::operator<=(const Phase &other) const {
-  return !(*this > other);
-}
-bool Phase::operator>=(const Phase &other) const {
-  return !(*this < other);
-}
+bool Phase::operator!=(const Phase &other) const { return !(*this == other); }
+bool Phase::operator>(const Phase &other) const { return other < *this; }
+bool Phase::operator<=(const Phase &other) const { return !(*this > other); }
+bool Phase::operator>=(const Phase &other) const { return !(*this < other); }
 
 } // namespace dipcc

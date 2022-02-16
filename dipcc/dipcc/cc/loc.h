@@ -16,6 +16,8 @@ LICENSE file in the root directory of this source tree.
 
 namespace dipcc {
 
+constexpr int NUM_LOCS = 81;
+
 enum class Loc {
   NONE,
   YOR,
@@ -106,6 +108,8 @@ extern const std::vector<Loc> LOCS;
 extern const std::vector<std::string> LOC_STRS;
 
 extern const std::unordered_map<std::string, Loc> LOC_FROM_STR;
+
+extern const std::unordered_map<Loc, size_t> LOC_IDX;
 
 extern const std::vector<Loc> ONLY_COAST_LOCS;
 

@@ -18,7 +18,9 @@ ThreadPool::ThreadPool(
     size_t n_threads,
     std::unordered_map<std::string, int> order_vocabulary_to_idx,
     int max_order_cands)
-    : orders_encoder_(order_vocabulary_to_idx, max_order_cands) {
+    : orders_encoder_nonbuggy_(order_vocabulary_to_idx, max_order_cands, false),
+      orders_encoder_buggy_(order_vocabulary_to_idx, max_order_cands, true),
+      orders_decoder_(order_vocabulary_to_idx) {
 
   jobs_.reserve(n_threads);
   threads_.reserve(n_threads);
@@ -39,13 +41,14 @@ ThreadPool::~ThreadPool() {
 }
 
 void ThreadPool::boilerplate_job_prep(ThreadPoolJobType job_type,
-                                      vector<Game *> &games) {
+                                      vector<Game *> &games,
+                                      int input_version) {
   JCHECK(jobs_.size() == 0, "ThreadPool called with non-empty jobs_");
 
   // Pack games into n_threads jobs
   size_t n_threads = threads_.size() > 0 ? threads_.size() : 1;
   for (int i = 0; i < n_threads; ++i) {
-    jobs_.push_back(ThreadPoolJob(job_type));
+    jobs_.push_back(ThreadPoolJob(job_type, input_version));
   }
   for (int i = 0; i < games.size(); ++i) {
     jobs_[i % n_threads].games.push_back(games[i]);
@@ -76,17 +79,21 @@ void ThreadPool::boilerplate_job_handle(unique_lock<mutex> &my_lock) {
 void ThreadPool::process_multi(vector<Game *> &games) {
   unique_lock<mutex> my_lock(mutex_);
 
-  boilerplate_job_prep(ThreadPoolJobType::STEP, games);
+  int input_version = MAX_INPUT_VERSION; // unused, dummy value
+
+  boilerplate_job_prep(ThreadPoolJobType::STEP, games, input_version);
   boilerplate_job_handle(my_lock);
 }
 
-TensorDict ThreadPool::encode_inputs_state_only_multi(vector<Game *> &games) {
+TensorDict ThreadPool::encode_inputs_state_only_multi(vector<Game *> &games,
+                                                      int input_version) {
   unique_lock<mutex> my_lock(mutex_);
 
-  boilerplate_job_prep(ThreadPoolJobType::ENCODE_STATE_ONLY, games);
+  boilerplate_job_prep(ThreadPoolJobType::ENCODE_STATE_ONLY, games,
+                       input_version);
 
   // Job-specific prep
-  TensorDict fields(new_data_fields_state_only(games.size()));
+  TensorDict fields(new_data_fields_state_only(games.size(), input_version));
   size_t n_threads = threads_.size() > 0 ? threads_.size() : 1;
   for (int i = 0; i < games.size(); ++i) {
     jobs_[i % n_threads].encoding_array_pointers.push_back(
@@ -95,8 +102,10 @@ TensorDict ThreadPool::encode_inputs_state_only_multi(vector<Game *> &games) {
             fields["x_prev_state"].index({i}).data_ptr<float>(),
             fields["x_prev_orders"].index({i}).data_ptr<long>(),
             fields["x_season"].index({i}).data_ptr<float>(),
+            fields["x_year_encoded"].index({i}).data_ptr<float>(),
             fields["x_in_adj_phase"].index({i}).data_ptr<float>(),
             fields["x_build_numbers"].index({i}).data_ptr<float>(),
+            fields["x_scoring_system"].index({i}).data_ptr<float>(),
             nullptr, // x_loc_idxs
             nullptr, // x_possible_actions
             nullptr, // x_max_seq_len
@@ -108,13 +117,15 @@ TensorDict ThreadPool::encode_inputs_state_only_multi(vector<Game *> &games) {
   return fields;
 }
 
-TensorDict ThreadPool::encode_inputs_all_powers_multi(vector<Game *> &games) {
+TensorDict ThreadPool::encode_inputs_all_powers_multi(vector<Game *> &games,
+                                                      int input_version) {
   unique_lock<mutex> my_lock(mutex_);
 
-  boilerplate_job_prep(ThreadPoolJobType::ENCODE_ALL_POWERS, games);
+  boilerplate_job_prep(ThreadPoolJobType::ENCODE_ALL_POWERS, games,
+                       input_version);
 
   // Job-specific prep
-  TensorDict fields(new_data_fields(games.size(), N_SCS, true));
+  TensorDict fields(new_data_fields(games.size(), input_version, N_SCS, true));
   size_t n_threads = threads_.size() > 0 ? threads_.size() : 1;
   for (int i = 0; i < games.size(); ++i) {
     jobs_[i % n_threads].encoding_array_pointers.push_back(
@@ -123,8 +134,10 @@ TensorDict ThreadPool::encode_inputs_all_powers_multi(vector<Game *> &games) {
             fields["x_prev_state"].index({i}).data_ptr<float>(),
             fields["x_prev_orders"].index({i}).data_ptr<long>(),
             fields["x_season"].index({i}).data_ptr<float>(),
+            fields["x_year_encoded"].index({i}).data_ptr<float>(),
             fields["x_in_adj_phase"].index({i}).data_ptr<float>(),
             fields["x_build_numbers"].index({i}).data_ptr<float>(),
+            fields["x_scoring_system"].index({i}).data_ptr<float>(),
             fields["x_loc_idxs"].index({i}).data_ptr<int8_t>(),
             fields["x_possible_actions"].index({i}).data_ptr<int32_t>(),
             fields["x_power"].index({i}).data_ptr<int64_t>(),
@@ -136,13 +149,14 @@ TensorDict ThreadPool::encode_inputs_all_powers_multi(vector<Game *> &games) {
   return fields;
 }
 
-TensorDict ThreadPool::encode_inputs_multi(vector<Game *> &games) {
+TensorDict ThreadPool::encode_inputs_multi(vector<Game *> &games,
+                                           int input_version) {
   unique_lock<mutex> my_lock(mutex_);
 
-  boilerplate_job_prep(ThreadPoolJobType::ENCODE, games);
+  boilerplate_job_prep(ThreadPoolJobType::ENCODE, games, input_version);
 
   // Job-specific prep
-  TensorDict fields(new_data_fields(games.size()));
+  TensorDict fields(new_data_fields(games.size(), input_version));
   size_t n_threads = threads_.size() > 0 ? threads_.size() : 1;
   for (int i = 0; i < games.size(); ++i) {
     jobs_[i % n_threads].encoding_array_pointers.push_back(
@@ -151,8 +165,10 @@ TensorDict ThreadPool::encode_inputs_multi(vector<Game *> &games) {
             fields["x_prev_state"].index({i}).data_ptr<float>(),
             fields["x_prev_orders"].index({i}).data_ptr<long>(),
             fields["x_season"].index({i}).data_ptr<float>(),
+            fields["x_year_encoded"].index({i}).data_ptr<float>(),
             fields["x_in_adj_phase"].index({i}).data_ptr<float>(),
             fields["x_build_numbers"].index({i}).data_ptr<float>(),
+            fields["x_scoring_system"].index({i}).data_ptr<float>(),
             fields["x_loc_idxs"].index({i}).data_ptr<int8_t>(),
             fields["x_possible_actions"].index({i}).data_ptr<int32_t>(),
             nullptr, // x_max_seq_len
@@ -228,9 +244,9 @@ void ThreadPool::do_job_encode_state_only(ThreadPoolJob &job) {
 
   for (int i = 0; i < job.games.size(); ++i) {
     Game *game = job.games[i];
+    int input_version = job.input_version;
     EncodingArrayPointers &pointers = job.encoding_array_pointers[i];
-
-    encode_state_for_game(game, pointers);
+    encode_state_for_game(game, input_version, pointers);
   }
 }
 
@@ -242,9 +258,11 @@ void ThreadPool::do_job_encode_all_powers(ThreadPoolJob &job) {
 
   for (int i = 0; i < job.games.size(); ++i) {
     Game *game = job.games[i];
+    int input_version = job.input_version;
     EncodingArrayPointers &pointers = job.encoding_array_pointers[i];
 
-    encode_state_for_game(game, pointers);
+    encode_state_for_game(game, input_version, pointers);
+    const OrdersEncoder &orders_encoder_ = get_orders_encoder(input_version);
     orders_encoder_.encode_valid_orders_all_powers(
         game->get_state(), pointers.x_possible_actions, pointers.x_loc_idxs,
         pointers.x_power);
@@ -259,12 +277,14 @@ void ThreadPool::do_job_encode(ThreadPoolJob &job) {
 
   for (int i = 0; i < job.games.size(); ++i) {
     Game *game = job.games[i];
+    int input_version = job.input_version;
     EncodingArrayPointers &pointers = job.encoding_array_pointers[i];
 
     // encode all inputs except actions
-    encode_state_for_game(game, pointers);
+    encode_state_for_game(game, input_version, pointers);
 
     // encode x_possible_actions, x_loc_idxs
+    const OrdersEncoder &orders_encoder_ = get_orders_encoder(input_version);
     for (int power_i = 0; power_i < 7; ++power_i) {
       orders_encoder_.encode_valid_orders(
           POWERS[power_i], game->get_state(),
@@ -275,19 +295,30 @@ void ThreadPool::do_job_encode(ThreadPoolJob &job) {
   }
 }
 
-void ThreadPool::encode_state_for_game(Game *game,
+const OrdersEncoder &ThreadPool::get_orders_encoder(int input_version) {
+  static_assert(MAX_INPUT_VERSION <= 3,
+                "Don't forget to update code here if necessary when changing "
+                "MAX_INPUT_VERSION");
+  if (input_version >= 3) {
+    return orders_encoder_nonbuggy_;
+  }
+  return orders_encoder_buggy_;
+}
+
+void ThreadPool::encode_state_for_game(Game *game, int input_version,
                                        EncodingArrayPointers &pointers) {
   // encode x_board_state
-  encode_board_state(game->get_state(), pointers.x_board_state);
+  encode_board_state(game->get_state(), input_version, pointers.x_board_state);
 
   // encode x_prev_state, x_prev_orders
   GameState *prev_move_state = game->get_last_movement_phase();
   if (prev_move_state != nullptr) {
-    encode_board_state(*prev_move_state, pointers.x_prev_state);
+    encode_board_state(*prev_move_state, input_version, pointers.x_prev_state);
+    const OrdersEncoder &orders_encoder_ = get_orders_encoder(input_version);
     orders_encoder_.encode_prev_orders_deepmind(game, pointers.x_prev_orders);
   } else {
     memset(pointers.x_prev_state, 0,
-           81 * BOARD_STATE_ENC_WIDTH * sizeof(float));
+           81 * board_state_enc_width(input_version) * sizeof(float));
     memset(pointers.x_prev_orders, 0, 2 * PREV_ORDERS_CAPACITY * sizeof(long));
   }
 
@@ -302,18 +333,31 @@ void ThreadPool::encode_state_for_game(Game *game,
     pointers.x_season[2] = 1;
   }
 
+  // encode x_year
+  // Encoded as number of years after 1901, divided by 10.
+  // Clamp after 1951 just in case to limit overly large values
+  memset(pointers.x_year_encoded, 0, 1 * sizeof(float));
+  pointers.x_year_encoded[0] =
+      std::clamp(0.1 * (current_phase.year - 1901), 0.0, 5.0);
+
   // encode x_in_adj_phase, x_build_numbers
   if (current_phase.phase_type == 'A') {
     *pointers.x_in_adj_phase = 1;
     float *p = pointers.x_build_numbers;
-    for (Power power : POWERS) {
-      *p = game->get_state().get_n_builds(power);
-      ++p;
+
+    for (int i = 0; i < 7; ++i) {
+      Power power = POWERS[i];
+      int power_i = static_cast<int>(power) - 1;
+      p[power_i] = game->get_state().get_n_builds(power);
     }
   } else {
     *pointers.x_in_adj_phase = 0;
     memset(pointers.x_build_numbers, 0, 7 * sizeof(float));
   }
+
+  memset(pointers.x_scoring_system, 0, NUM_SCORING_SYSTEMS * sizeof(float));
+  pointers.x_scoring_system[static_cast<int>(game->get_scoring_system())] =
+      (float)1.0;
 }
 
 } // namespace dipcc

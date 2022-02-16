@@ -13,9 +13,9 @@ namespace dipcc {
 
 using TensorDict = std::unordered_map<std::string, torch::Tensor>;
 
-TensorDict new_data_fields_state_only(long B);
+TensorDict new_data_fields_state_only(long B, int input_version);
 
-TensorDict new_data_fields(long B, long max_seq_len = 17,
+TensorDict new_data_fields(long B, int input_version, long max_seq_len = 17,
                            bool include_power = false);
 
 } // namespace dipcc

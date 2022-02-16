@@ -45,7 +45,8 @@ The main methods are:
 
 `pydipcc.ThreadPool.process_multi(List[Game])`: calls `game.process()` on each of the games passed to it
 
-`pydipcc.ThreadPool.encode_inputs_multi(List[Game], <data buffers>)`: more easily called from `FeatureEncoder` in [thread_pool_encoding.py](fairdiplomacy/utils/thread_pool_encoding.py), this produces the tensors that are provided to the pytorch model.
+`pydipcc.ThreadPool.encode_inputs_multi(List[Game], <data buffers>)`: more easily called from `encode_batch_inputs(ThreadPool, List[Game]) -> List[DataFields]` in `model_sampled_agent.py`,
+this produces the tensors that are provided to the no-text pytorch model.
 
 `pydipcc.ThreadPool.decode_order_idxs(order_idxs)`: converts a `LongTensor` of order vocabulary idxs to their corresponding order strings.
 

@@ -10,6 +10,7 @@ LICENSE file in the root directory of this source tree.
 #include <glog/logging.h>
 #include <tuple>
 
+#include "checks.h"
 #include "enums.h"
 #include "loc.h"
 #include "owned_unit.h"
@@ -44,6 +45,9 @@ public:
   // Return a copy of this order with via set explicitly
   Order with_via(bool via) const;
 
+  // Return a copy with vague coastal variants where possible
+  Order as_normalized() const;
+
   // Comparator (to enable use as set/map key)
   std::tuple<UnitType, Loc, OrderType, UnitType, Loc, Loc, bool>
   to_tuple() const;
@@ -65,5 +69,8 @@ private:
   Loc dest_ = Loc::NONE;                      // Used for M, SM, C
   bool via_ = false;                          // Used for M
 };
+
+// Comparator function implemening LOCS-ordering
+bool loc_order_cmp(const Order &a, const Order &b);
 
 } // namespace dipcc

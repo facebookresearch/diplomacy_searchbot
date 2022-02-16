@@ -21,26 +21,25 @@ namespace py = pybind11;
 
 namespace dipcc {
 
-TensorDict
-py_thread_pool_encode_inputs_state_only_multi(ThreadPool *thread_pool,
-                                              std::vector<Game *> &games) {
-  return thread_pool->encode_inputs_state_only_multi(games);
+TensorDict py_thread_pool_encode_inputs_state_only_multi(
+    ThreadPool *thread_pool, std::vector<Game *> &games, int input_version) {
+  return thread_pool->encode_inputs_state_only_multi(games, input_version);
 }
 
 TensorDict py_thread_pool_encode_inputs_multi(ThreadPool *thread_pool,
-                                              std::vector<Game *> &games) {
-  return thread_pool->encode_inputs_multi(games);
+                                              std::vector<Game *> &games,
+                                              int input_version) {
+  return thread_pool->encode_inputs_multi(games, input_version);
 }
 
-TensorDict
-py_thread_pool_encode_inputs_all_powers_multi(ThreadPool *thread_pool,
-                                              std::vector<Game *> &games) {
-  return thread_pool->encode_inputs_all_powers_multi(games);
+TensorDict py_thread_pool_encode_inputs_all_powers_multi(
+    ThreadPool *thread_pool, std::vector<Game *> &games, int input_version) {
+  return thread_pool->encode_inputs_all_powers_multi(games, input_version);
 }
 
 std::vector<std::vector<std::vector<std::string>>>
 py_decode_order_idxs(ThreadPool *thread_pool, torch::Tensor *order_idxs) {
-  return thread_pool->get_orders_encoder().decode_order_idxs(order_idxs);
+  return thread_pool->get_orders_decoder().decode_order_idxs(order_idxs);
 }
 
 } // namespace dipcc

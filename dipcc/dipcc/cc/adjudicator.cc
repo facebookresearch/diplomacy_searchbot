@@ -274,6 +274,12 @@ public:
                    << jt.second.dislodge_self_support;
       }
     }
+    DLOG(INFO) << "Unresolved supports:";
+    for (auto &it : unresolved_supports_) {
+      DLOG(INFO) << " " << it.first << ": " << it.second.order << " "
+                 << power_str(it.second.supporter_power) << " pending dislodge "
+                 << it.second.pending_dislodge;
+    }
     DLOG(INFO) << "Unconfirmed convoy fleets:";
     for (auto &it : maybe_convoy_orders_by_fleet_) {
       DLOG(INFO) << " " << it.first << ": " << it.second.to_string();
@@ -927,9 +933,10 @@ public:
         cands_[src][src].max = 1;
         // Even if unit at dest already won their loc, they may have had an
         // unresolved support which could now be confirmed.
-        if (maybe_convoy_orders_by_dest_[dest].size() == 0 &&
-            map_contains(r.winners, dest) &&
-            root_loc(r.winners.at(dest).src) == dest) {
+        if (map_contains(r.winners, dest) &&
+            root_loc(r.winners.at(dest).src) == dest &&
+            _is_unresolved_supporter_and_all_remaining_convoys_do_not_cut(
+                dest)) {
           _resolve_support_if_exists(r, dest);
         }
       }
@@ -1016,25 +1023,10 @@ public:
     if (unresolved_support_it == unresolved_supports_.end()) {
       return;
     }
-    set<Order> &maybe_inbound_convoys = maybe_convoy_orders_by_dest_[loc];
-    if (maybe_inbound_convoys.size() == 0) {
-      // support is not cut
+    if (_is_unresolved_supporter_and_all_remaining_convoys_do_not_cut(loc)) {
       _resolve_support_if_exists(r, loc);
     } else {
-      // At this point, support may still be cut by convoyed army, and we can't
-      // confirm it yet. The only exception is if all inbound convoys are
-      // ferrying an army on which we are supporting an attack. Check for this
-      // case.
-      Order &support_order = unresolved_support_it->second.order;
-      if (support_order.get_type() == OrderType::SM &&
-          _all_convoys_src_eq(maybe_inbound_convoys,
-                              root_loc(support_order.get_dest()))) {
-        // confirm support-attack on army which attacks us via convoy
-        _resolve_support_if_exists(r, loc);
-      } else {
-        // support may still be cut by convoyed army, so don't confirm it yet
-        unresolved_support_it->second.pending_dislodge = false;
-      }
+      unresolved_support_it->second.pending_dislodge = false;
     }
   }
 
@@ -1048,6 +1040,33 @@ public:
       }
     }
     return true;
+  }
+
+  // Called to check when the only convoys that are unresolved at a location
+  // should fail to cut support at that location. In particular, when all
+  // convoys are of an army on which we are supporting an attack.
+  bool _is_unresolved_supporter_and_all_remaining_convoys_do_not_cut(Loc loc) {
+    auto unresolved_support_it = unresolved_supports_.find(loc);
+    if (unresolved_support_it == unresolved_supports_.end()) {
+      return false;
+    }
+    set<Order> &maybe_inbound_convoys = maybe_convoy_orders_by_dest_[loc];
+    // Vacuously true if there are no convoys at all coming in
+    if (maybe_inbound_convoys.size() == 0) {
+      return true;
+    }
+    // Support may still be cut by convoyed army.
+    // The only exception is if all inbound convoys are
+    // ferrying an army on which we are supporting an attack. Check for this
+    // case.
+    Order &support_order = unresolved_support_it->second.order;
+    if (support_order.get_type() == OrderType::SM &&
+        _all_convoys_src_eq(maybe_inbound_convoys,
+                            root_loc(support_order.get_dest()))) {
+      return true;
+    }
+
+    return false;
   }
 
   // Called when a move candidate would win only with self-dislodge support.
@@ -1287,7 +1306,7 @@ GameState GameState::process_m(
 
   // Organize orders by src loc
   unordered_map<Loc, Order> orders_by_src;
-  for (auto & [ power, porders ] : orders) {
+  for (auto &[power, porders] : orders) {
     for (const Order order : porders) {
       Loc loc = order.get_unit().loc;
       // check if correct power ordering unit
@@ -1301,7 +1320,7 @@ GameState GameState::process_m(
   }
 
   // Loop through all orders and build up data structures
-  for (auto & [ rloc, order ] : orders_by_src) {
+  for (auto &[rloc, order] : orders_by_src) {
     // check if order is possible
     auto loc_possible_orders_it =
         all_possible_orders.find(order.get_unit().loc);
@@ -1362,7 +1381,7 @@ GameState GameState::process_m(
 
   // Check for valid convoy path before adding move via order. Move may still
   // fail if a convoying fleet is dislodged
-  for (auto & [ order, via_adj ] : move_via_orders) {
+  for (auto &[order, via_adj] : move_via_orders) {
     if (loc_candidates.is_convoy_possible(root_loc(order.get_unit().loc),
                                           root_loc(order.get_dest()))) {
       loc_candidates.add_candidate(order.get_dest(),
@@ -1399,7 +1418,9 @@ GameState GameState::process_m(
                 target->second.get_type() != OrderType::M ||
                 // allow SM to specify exact dest or root dest
                 (order.get_dest() != target->second.get_dest() &&
-                 order.get_dest() != root_loc(target->second.get_dest())))) {
+                 order.get_dest() != root_loc(target->second.get_dest())) ||
+                set_contains(illegal_orderers,
+                             root_loc(target->second.get_unit().loc)))) {
       DLOG(WARNING) << "Uncoordinated support-move: " << order.to_string();
       continue;
     } else if (order.get_type() == OrderType::SH &&
@@ -1479,6 +1500,7 @@ GameState GameState::build_next_state(const Resolution &r) const {
 
   GameState next;
   next.set_centers(this->get_centers());
+  next.set_influence(this->get_influence());
 
   // Set units
   for (auto &it : r.winners) {
@@ -1508,32 +1530,8 @@ GameState GameState::build_next_state(const Resolution &r) const {
       next.add_contested_loc(contested);
     }
 
-    // Remove disbanded units who have no retreat options
-    bool any_disbands = false;
-    bool any_retreats = false;
-    const unordered_map<Loc, set<Order>> &all_possible_orders(
-        next.get_all_possible_orders());
-    for (const auto &unit : next.get_dislodged_units()) {
-      auto it = all_possible_orders.find(unit.loc);
-      if (it == all_possible_orders.end() || it->second.size() == 0) {
-        DLOG(INFO) << "Disbanded unit with no retreats: " << unit.loc;
-        next.remove_dislodged_unit(unit);
-        any_disbands = true;
-      } else {
-        any_retreats = true;
-      }
-    }
-
-    if (any_disbands) {
-      // Units previously thought to need a retreat are now disbanded, so
-      // recalculate possible orders
-      next.clear_all_possible_orders();
-    }
-
-    if (any_retreats) {
-      // Some units still need to retreat, so progress to retreat phase
-      return next;
-    }
+    // Some units need to retreat, so progress to retreat phase
+    return next;
   }
 
   // No dislodged units: move to next M/A phase

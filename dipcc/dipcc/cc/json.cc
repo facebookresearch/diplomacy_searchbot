@@ -40,7 +40,7 @@ void to_json(json &j, const GameState &x) {
 
 void to_json(json &j, const Message &x) {
   j["sender"] = power_str(x.sender);
-  j["recipient"] = power_str(x.recipient);
+  j["recipient"] = power_or_all_str(x.recipient);
   j["phase"] = x.phase.to_string();
   j["message"] = x.message;
   j["time_sent"] = x.time_sent;
@@ -48,7 +48,7 @@ void to_json(json &j, const Message &x) {
 
 void from_json(const json &j, Message &x) {
   x.sender = power_from_str(j["sender"]);
-  x.recipient = power_from_str(j["recipient"]);
+  x.recipient = power_or_all_from_str(j["recipient"]);
   x.phase = Phase(j["phase"].get<std::string>());
   x.message = j["message"].get<std::string>();
   x.time_sent = j["time_sent"];

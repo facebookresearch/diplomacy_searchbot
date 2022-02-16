@@ -9,9 +9,9 @@ LICENSE file in the root directory of this source tree.
 
 #include "enums.h"
 #include "loc.h"
-#include "phase.h"
 #include "order.h"
 #include "owned_unit.h"
+#include "phase.h"
 #include "unit.h"
 
 namespace std {
@@ -39,24 +39,21 @@ template <class T> inline void hash_combine(std::size_t &s, const T &v) {
   s ^= h(v) + 0x9e3779b9 + (s << 6) + (s >> 2);
 }
 
-template<>
-inline void hash_combine(std::size_t &seed, const Unit &unit) {
-    hash_combine(seed, unit.type);
-    hash_combine(seed, unit.loc);
+template <> inline void hash_combine(std::size_t &seed, const Unit &unit) {
+  hash_combine(seed, unit.type);
+  hash_combine(seed, unit.loc);
 }
 
-template<>
-inline void hash_combine(std::size_t &seed, const OwnedUnit &unit) {
-    hash_combine(seed, unit.power);
-    hash_combine(seed, unit.type);
-    hash_combine(seed, unit.loc);
+template <> inline void hash_combine(std::size_t &seed, const OwnedUnit &unit) {
+  hash_combine(seed, unit.power);
+  hash_combine(seed, unit.type);
+  hash_combine(seed, unit.loc);
 }
 
-template<>
-inline void hash_combine(std::size_t &seed, const Phase &phase) {
-    hash_combine(seed, phase.season);
-    hash_combine(seed, phase.phase_type);
-    hash_combine(seed, phase.year);
+template <> inline void hash_combine(std::size_t &seed, const Phase &phase) {
+  hash_combine(seed, phase.season);
+  hash_combine(seed, phase.phase_type);
+  hash_combine(seed, phase.year);
 }
 
 struct HashOrder {

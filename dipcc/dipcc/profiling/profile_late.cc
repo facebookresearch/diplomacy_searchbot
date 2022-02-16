@@ -15,6 +15,7 @@ LICENSE file in the root directory of this source tree.
 
 #include "../cc/game.h"
 #include "../cc/game_state.h"
+#include "../cc/encoding.h"
 #include "../cc/order.h"
 #include "../cc/power.h"
 #include "../cc/thread_pool.h"
@@ -201,6 +202,7 @@ int main(int argc, char *argv[]) {
   init_game = init_game.rolled_back_to_phase_start(kPhase);
   init_game.get_all_possible_orders();
 
+  int input_version = dipcc::MAX_INPUT_VERSION;
   ThreadPool pool(pool_size, get_order_vocab(), kOrderVocabIdxs);
 
   struct T {
@@ -229,11 +231,11 @@ int main(int argc, char *argv[]) {
     clone_time += timer.tick();
 
     // Encode
-    pool.encode_inputs_multi(game_ptrs);
+    pool.encode_inputs_multi(game_ptrs, input_version);
     encode_time += timer.tick();
 
     // Encode State Only
-    pool.encode_inputs_state_only_multi(game_ptrs);
+    pool.encode_inputs_state_only_multi(game_ptrs, input_version);
     encode_state_only_time += timer.tick();
 
     // Set Orders

@@ -21,10 +21,10 @@ namespace dipcc {
 
 py::dict Game::py_get_logs() {
   py::dict d;
-  for (auto & [ phase, datas ] : logs_) {
+  for (auto &[phase, datas] : logs_) {
     py::list l;
-    for (const std::string &data : datas) {
-      l.append(data);
+    for (const std::shared_ptr<const std::string> &data : datas) {
+      l.append(*data);
     }
     d[py::cast<std::string>(phase.to_string())] = l;
   }

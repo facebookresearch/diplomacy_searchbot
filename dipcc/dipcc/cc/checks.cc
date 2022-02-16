@@ -25,12 +25,10 @@ void JCHECK(bool b) {
   }
 }
 
-[[ noreturn ]] void JFAIL(const std::string &msg) {
+[[noreturn]] void JFAIL(const std::string &msg) {
   throw std::runtime_error(msg);
 }
 
-[[ noreturn ]] void JFAIL() {
-  throw std::runtime_error("JCHECK failed");
-}
+[[noreturn]] void JFAIL() { throw std::runtime_error("JCHECK failed"); }
 
 } // namespace dipcc

@@ -14,6 +14,7 @@ LICENSE file in the root directory of this source tree.
 #include "exceptions.h"
 #include "game.h"
 #include "game_id.h"
+#include "hash.h"
 #include "json.h"
 #include "thirdparty/nlohmann/json.hpp"
 #include "util.h"
@@ -33,6 +34,13 @@ void Game::set_orders(const std::string &power_str,
       continue;
     }
     Order order(order_str);
+
+    // Check that order is legal for this power
+    if (!safe_contains(state_->get_orderable_locations(), power,
+                       root_loc(order.get_unit().loc))) {
+      continue;
+    }
+
     bool overwritten = false;
     for (int i = 0; i < staged_orders.size(); ++i) {
       if (staged_orders[i].get_unit().loc == order.get_unit().loc) {
@@ -48,9 +56,20 @@ void Game::set_orders(const std::string &power_str,
   }
 }
 
+void Game::set_all_orders(
+    const std::map<std::string, std::vector<std::string>> &orders_by_power) {
+  staged_orders_.clear();
+  for (auto iter = orders_by_power.begin(); iter != orders_by_power.end();
+       ++iter) {
+    set_orders(iter->first, iter->second);
+  }
+}
+
 void Game::process() {
   state_history_[state_->get_phase()] = state_;
-  order_history_[state_->get_phase()] = staged_orders_;
+  order_history_[state_->get_phase()] =
+      std::make_shared<const std::unordered_map<Power, std::vector<Order>>>(
+          staged_orders_);
 
   try {
     state_ = std::make_shared<GameState>(
@@ -81,10 +100,10 @@ Game::get_all_possible_orders() {
   return state_->get_all_possible_orders();
 }
 
-Game::Game(int draw_on_stalemate_years)
+Game::Game(int draw_on_stalemate_years, bool is_full_press)
     : state_(std::make_shared<GameState>()),
-      draw_on_stalemate_years_(draw_on_stalemate_years) {
-
+      draw_on_stalemate_years_(draw_on_stalemate_years),
+      is_full_press_(is_full_press) {
   // game id
   this->game_id = gen_game_id();
 
@@ -168,12 +187,11 @@ bool Game::is_game_done() const {
 string Game::to_json() {
   json j;
 
+  j["version"] = "1.0";
   j["id"] = this->game_id;
-  j["map"] = "standard";
-
-  for (auto &rule : rules_) {
-    j["rules"].push_back(rule);
-  }
+  j["map"] = this->map_name_;
+  j["scoring_system"] = SCORING_STRINGS[static_cast<int>(scoring_system_)];
+  j["is_full_press"] = is_full_press_;
 
   for (auto &q : state_history_) {
     GameState &state = *q.second;
@@ -184,14 +202,16 @@ string Game::to_json() {
     for (auto &p : POWERS) {
       phase["orders"][power_str(p)] = vector<string>();
     }
-    for (auto &p : order_history_[state.get_phase()]) {
+    for (auto &p : *order_history_[state.get_phase()]) {
       string power = power_str(p.first);
-      for (Order &order : p.second) {
+      vector<Order> action(p.second);
+      std::sort(action.begin(), action.end(), loc_order_cmp);
+      for (Order &order : action) {
         phase["orders"][power].push_back(order.to_string());
       }
     }
     phase["messages"] = json::value_type::array(); // mila compat
-    for (auto & [ time_sent, msg ] : message_history_[state.get_phase()]) {
+    for (auto &[time_sent, msg] : message_history_[state.get_phase()]) {
       phase["messages"].push_back(msg);
     }
 
@@ -199,7 +219,7 @@ string Game::to_json() {
 
     phase["logs"] = json::value_type::array();
     for (auto &data : logs_[state.get_phase()]) {
-      phase["logs"].push_back(data);
+      phase["logs"].push_back(*data);
     }
 
     j["phases"].push_back(phase);
@@ -212,19 +232,23 @@ string Game::to_json() {
   current["orders"] = json::value_type::object();  // mila compat
   current["results"] = json::value_type::object(); // mila compat
   current["messages"] = json::value_type::array(); // mila compat
-  for (auto & [ time_sent, msg ] : message_history_[state_->get_phase()]) {
+  for (auto &[time_sent, msg] : message_history_[state_->get_phase()]) {
     current["messages"].push_back(msg);
   }
   current["logs"] = json::value_type::array();
   for (auto &data : logs_[state_->get_phase()]) {
-    current["logs"].push_back(data);
+    current["logs"].push_back(*data);
   }
-  for (auto & [ power, orders ] : staged_orders_) {
+  for (auto &[power, orders] : staged_orders_) {
     for (auto &order : orders) {
       current["orders"][power_str(power)].push_back(order.to_string());
     }
   }
   j["phases"].push_back(current);
+
+  for (auto &kv : metadata_) {
+    j["metadata"][kv.first] = kv.second;
+  }
 
   return j.dump();
 }
@@ -239,12 +263,37 @@ Game::Game(const string &json_str) {
   } else {
     this->game_id = gen_game_id();
   }
-
-  if (!j["rules"].empty()) {
-    this->rules_.clear();
-    for (string rule : j["rules"]) {
-      this->rules_.push_back(rule);
+  if (j.find("scoring_system") != j.end() && !j["scoring_system"].is_null()) {
+    if (j["scoring_system"].is_string()) {
+      std::optional<Scoring> scoring_system =
+          scoring_from_string(j["scoring_system"].get<string>());
+      if (scoring_system) {
+        this->scoring_system_ = scoring_system.value();
+      } else {
+        JFAIL("invalid scoring_system string: " +
+              j["scoring_system"].get<string>());
+      }
+    } else if (j["scoring_system"].is_number_integer()) {
+      this->scoring_system_ =
+          static_cast<Scoring>(j["scoring_system"].get<int>());
+    } else {
+      JFAIL("invalid scoring method data type in json");
     }
+
+    JCHECK(this->scoring_system_ == Scoring::SOS ||
+               this->scoring_system_ == Scoring::DSS,
+           "Unknown scoring method from json");
+  }
+
+  if (j.find("map") != j.end() && !j["map"].is_null()) {
+    JCHECK(j["map"].is_string(), "invalid maptype in json");
+    this->map_name_ = j["map"].get<string>();
+  }
+
+  if (j.find("is_full_press") != j.end() && !j["is_full_press"].is_null()) {
+    JCHECK(j["is_full_press"].is_boolean(),
+           "invalid is_full_press type in json");
+    this->is_full_press_ = j["is_full_press"].get<bool>();
   }
 
   if (j.find("phases") != j.end()) {
@@ -253,12 +302,16 @@ Game::Game(const string &json_str) {
       phase_str = j_phase["name"];
       state_history_[phase_str] = std::make_shared<GameState>(j_phase["state"]);
 
+      std::unordered_map<Power, std::vector<Order>> orders_this_phase;
       for (auto &it : j_phase["orders"].items()) {
         Power power = power_from_str(it.key());
         for (auto &j_order : it.value()) {
-          order_history_[phase_str][power].push_back(Order(j_order));
+          orders_this_phase[power].push_back(Order(j_order));
         }
       }
+      order_history_[phase_str] =
+          std::make_shared<const std::unordered_map<Power, std::vector<Order>>>(
+              orders_this_phase);
 
       if (j_phase.find("messages") != j_phase.end()) {
         for (auto &j_msg : j_phase["messages"]) {
@@ -270,7 +323,7 @@ Game::Game(const string &json_str) {
       }
       if (j_phase.find("logs") != j_phase.end()) {
         for (auto &data : j_phase["logs"]) {
-          logs_[phase_str].push_back(data);
+          logs_[phase_str].push_back(std::make_shared<const std::string>(data));
         }
       }
     }
@@ -280,14 +333,18 @@ Game::Game(const string &json_str) {
       phase_str = j_state.key();
       state_history_[phase_str] = std::make_shared<GameState>(j_state.value());
 
+      std::unordered_map<Power, std::vector<Order>> orders_this_phase;
       if (j["order_history"].find(phase_str) != j["order_history"].end()) {
         for (auto &it : j["order_history"][phase_str].items()) {
           Power power = power_from_str(it.key());
           for (auto &j_order : it.value()) {
-            order_history_[phase_str][power].push_back(Order(j_order));
+            orders_this_phase[power].push_back(Order(j_order));
           }
         }
       }
+      order_history_[phase_str] =
+          std::make_shared<const std::unordered_map<Power, std::vector<Order>>>(
+              orders_this_phase);
 
       if (j.find("message_history") == j.end() ||
           j["message_history"].find(phase_str) == j["message_history"].end()) {
@@ -308,8 +365,15 @@ Game::Game(const string &json_str) {
   state_ = it->second;
   state_history_.erase(current_phase);
   if (order_history_.find(current_phase) != order_history_.end()) {
-    staged_orders_ = order_history_[current_phase];
+    staged_orders_ = *order_history_[current_phase];
     order_history_.erase(current_phase);
+  }
+
+  // metadata
+  if (j.find("metadata") != j.end()) {
+    for (auto &kv : j["metadata"].items()) {
+      metadata_[kv.key()] = kv.value();
+    }
   }
 }
 
@@ -329,22 +393,56 @@ void Game::crash_dump() {
 
 Game Game::rolled_back_to_phase_start(const std::string &phase_s) {
   Game new_game(*this);
-  new_game.rollback_to_phase(phase_s, false, false, false);
+  Phase phase(phase_s);
+  new_game.rollback_to_phase(phase, false, false, false);
   return new_game;
 }
 
 Game Game::rolled_back_to_phase_end(const std::string &phase_s) {
   Game new_game(*this);
-  new_game.rollback_to_phase(phase_s, true, true, true);
+  Phase phase(phase_s);
+  new_game.rollback_to_phase(phase, true, true, true);
   return new_game;
 }
 
-void Game::rollback_to_phase(const std::string &phase_s,
-                             bool preserve_phase_messages,
+Phase Game::phase_of_last_message_at_or_before(const uint64_t timestamp) const {
+  // Linear search. Theoretically, we could do some sort of binary search if
+  // this becomes important for performance.
+  for (auto it = message_history_.rbegin(); it != message_history_.rend();
+       ++it) {
+    const auto &messages = it->second;
+    if (messages.size() > 0 && messages.begin()->first <= timestamp)
+      return it->first;
+  }
+  if (state_history_.size() > 0)
+    return state_history_.begin()->first;
+  return state_->get_phase();
+}
+
+std::string
+Game::py_phase_of_last_message_at_or_before(const uint64_t timestamp) const {
+  return phase_of_last_message_at_or_before(timestamp).to_string();
+}
+
+Game Game::rolled_back_to_timestamp_start(const uint64_t timestamp) {
+  Game new_game(*this);
+  Phase phase = phase_of_last_message_at_or_before(timestamp);
+  new_game.rollback_to_phase(phase, true, false, false);
+  new_game.rollback_messages_to_timestamp(timestamp - 1);
+  return new_game;
+}
+
+Game Game::rolled_back_to_timestamp_end(const uint64_t timestamp) {
+  Game new_game(*this);
+  Phase phase = phase_of_last_message_at_or_before(timestamp);
+  new_game.rollback_to_phase(phase, true, false, false);
+  new_game.rollback_messages_to_timestamp(timestamp);
+  return new_game;
+}
+
+void Game::rollback_to_phase(Phase phase, bool preserve_phase_messages,
                              bool preserve_phase_orders,
                              bool preserve_phase_logs) {
-  Phase phase(phase_s);
-
   // delete message_history_ including (?) and after phase
   auto m_it = message_history_.find(phase);
   if (preserve_phase_messages && m_it != message_history_.end()) {
@@ -382,7 +480,7 @@ void Game::rollback_to_phase(const std::string &phase_s,
   // delete order_history_ including and after phase
   auto o_it = order_history_.find(phase);
   if (preserve_phase_orders) {
-    staged_orders_ = o_it->second;
+    staged_orders_ = *(o_it->second);
   }
   while (o_it != order_history_.end()) {
     o_it = order_history_.erase(o_it);
@@ -390,7 +488,7 @@ void Game::rollback_to_phase(const std::string &phase_s,
 }
 
 void Game::rollback_messages_to_timestamp(const uint64_t timestamp) {
-  for (auto & [ phase, messages ] : message_history_) {
+  for (auto &[phase, messages] : message_history_) {
     (void)phase;
     for (auto it = messages.begin(); it != messages.end(); ++it) {
       if (it->first > timestamp) {
@@ -442,24 +540,31 @@ void Game::maybe_early_exit() {
   state_->set_phase(phase.completed());
 }
 
-void Game::add_message(Power sender, Power recipient, const std::string &body,
-                       uint64_t time_sent) {
-  if (time_sent == 0) {
-    time_sent = std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::system_clock::now().time_since_epoch())
-                    .count();
-  }
+void Game::add_message(Power sender, PowerOrAll recipient,
+                       const std::string &body, uint64_t time_sent,
+                       bool increment_on_collision) {
   auto &phase_messages = message_history_[state_->get_phase()];
   if (phase_messages.find(time_sent) != phase_messages.end()) {
-    JFAIL("add_message duplicate timestamps not currently allowed");
+    if (increment_on_collision) {
+      while (phase_messages.find(++time_sent) !=
+             phase_messages.end()) { /* increment */
+      }
+    } else {
+      JFAIL("add_message duplicate timestamps not currently allowed");
+    }
   }
   phase_messages[time_sent] =
       Message{sender, recipient, state_->get_phase(), body, time_sent};
 }
 
 void Game::add_log(const std::string &data) {
-  logs_[state_->get_phase()].push_back(data);
+  logs_[state_->get_phase()].push_back(
+      std::make_shared<const std::string>(data));
 }
+
+Scoring Game::get_scoring_system() const { return scoring_system_; }
+
+void Game::set_scoring_system(Scoring scoring) { scoring_system_ = scoring; }
 
 std::optional<Phase> Game::get_next_phase(Phase from) {
   if (from == state_->get_phase()) {
@@ -490,4 +595,31 @@ std::optional<Phase> Game::get_prev_phase(Phase from) {
   return std::prev(it, 1)->first;
 }
 
+size_t Game::compute_order_history_hash() const {
+  std::set<size_t> order_hashes;
+  for (const auto [phase, phase_orders] : order_history_) {
+    if (phase.phase_type != 'M')
+      continue;
+    const auto state = state_history_.at(phase);
+    for (const auto [power, orders] : *phase_orders) {
+      for (const auto order : orders) {
+        if (!safe_contains(state->get_orderable_locations(), power,
+                           root_loc(order.get_unit().loc))) {
+          continue;
+        }
+        size_t order_hash = 0;
+        hash_combine(order_hash, phase.to_string());
+        hash_combine(order_hash, power);
+        hash_combine(order_hash, order.as_normalized().to_string());
+        order_hashes.insert(order_hash);
+      }
+    }
+  }
+
+  size_t ret = 0;
+  for (const size_t h : order_hashes) {
+    hash_combine(ret, h);
+  }
+  return ret;
+}
 } // namespace dipcc

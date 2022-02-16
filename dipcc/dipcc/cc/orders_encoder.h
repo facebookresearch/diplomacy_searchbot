@@ -29,8 +29,9 @@ public:
   const static int MAX_SEQ_LEN = 17;
   const static int EOS_IDX = -1;
 
-  OrdersEncoder(std::unordered_map<std::string, int> order_vocabulary_to_idx,
-                int max_cands);
+  OrdersEncoder(
+      const std::unordered_map<std::string, int> &order_vocabulary_to_idx,
+      int max_cands, bool allow_buggy_duplicates);
 
   // Encode x_valid_orders and x_loc_idxs into pre-allocated memory pointed to
   // by r_order_idxs and r_loc_idxs. Return the sequence length.
@@ -45,11 +46,6 @@ public:
 
   // Encode x_prev_orders into pre-allocated memory pointed to by r.
   void encode_prev_orders_deepmind(Game *game, long *r) const;
-
-  // Decode a [B, 7, S]-shape tensor of EOS_IDX-padded order idxs.
-  // Returns a 3d vector of string (batch, power, orders)
-  std::vector<std::vector<std::vector<std::string>>>
-  decode_order_idxs(torch::Tensor *order_idxs) const;
 
   int get_max_cands() const { return max_cands_; }
 
@@ -67,8 +63,25 @@ private:
 
   // Data
   std::unordered_map<std::string, int> order_vocabulary_to_idx_;
-  std::vector<std::string> order_vocabulary_;
   int max_cands_;
+  // If true, behave in a buggy fashion that sometimes outputs duplicate coastal
+  // orders, preserving old behavior pre-mid-November 2021.
+  bool allow_buggy_duplicates_;
+};
+
+class OrdersDecoder {
+public:
+  OrdersDecoder(
+      const std::unordered_map<std::string, int> &order_vocabulary_to_idx);
+
+  // Decode a [B, 7, S]-shape tensor of EOS_IDX-padded order idxs.
+  // Returns a 3d vector of string (batch, power, orders)
+  std::vector<std::vector<std::vector<std::string>>>
+  decode_order_idxs(torch::Tensor *order_idxs) const;
+
+private:
+  // Data
+  std::vector<std::string> order_vocabulary_;
 };
 
 } // namespace dipcc

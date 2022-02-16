@@ -26,22 +26,27 @@ vector<string> get_compound_build_orders(
     vector<Loc> orderable_locs, int n_builds);
 
 // Constructor
-OrdersEncoder::OrdersEncoder(
-    std::unordered_map<std::string, int> order_vocabulary_to_idx, int max_cands)
-    : order_vocabulary_to_idx_(order_vocabulary_to_idx), max_cands_(max_cands) {
-
+OrdersDecoder::OrdersDecoder(
+    const std::unordered_map<std::string, int> &order_vocabulary_to_idx) {
   // init order_vocabulary_
   int max_idx = 0;
-  for (auto &p : order_vocabulary_to_idx_) {
+  for (auto &p : order_vocabulary_to_idx) {
     if (p.second > max_idx) {
       max_idx = p.second;
     }
   }
   order_vocabulary_.resize(max_idx + 1);
-  for (auto &p : order_vocabulary_to_idx_) {
+  for (auto &p : order_vocabulary_to_idx) {
     order_vocabulary_[p.second] = p.first;
   }
 }
+
+// Constructor
+OrdersEncoder::OrdersEncoder(
+    const std::unordered_map<std::string, int> &order_vocabulary_to_idx,
+    int max_cands, bool allow_buggy_duplicates)
+    : order_vocabulary_to_idx_(order_vocabulary_to_idx), max_cands_(max_cands),
+      allow_buggy_duplicates_(allow_buggy_duplicates) {}
 
 void OrdersEncoder::encode_prev_orders_deepmind(Game *game, long *r) const {
   memset(r, 0, 2 * PREV_ORDERS_WIDTH * sizeof(long));
@@ -52,7 +57,7 @@ void OrdersEncoder::encode_prev_orders_deepmind(Game *game, long *r) const {
   for (auto it = game->get_order_history().rbegin();
        it != game->get_order_history().rend(); ++it) {
 
-    for (auto jt : it->second) {
+    for (auto &jt : *(it->second)) {
       for (const Order &order : jt.second) {
         auto x = order_vocabulary_to_idx_.find(order.to_string());
         if (x != order_vocabulary_to_idx_.end()) {
@@ -88,6 +93,28 @@ void OrdersEncoder::encode_valid_orders_all_powers(GameState &state,
                                                    int32_t *r_order_idxs,
                                                    int8_t *r_loc_idxs,
                                                    int64_t *r_powers) const {
+  // r_order_idxs[batch,i,j,k]
+  // On moves and retreat phases, only i=0 is used.
+  // j indexes the jth orderable location in order, and k indexes the kth
+  // possible global order idx at that location. On adjustment phases, i indexes
+  // the ith power. For builds, only j = 0 is used, k indexes the kth possible
+  // global order idx for combined builds. For disbands, j indexes the jth
+  // disband, k indexes the kth possible global order idx for a one-unit
+  // disband.
+  //
+  // r_loc_idxs[batch,loc]
+  // loc indexes locations.
+  // On moves and retreat phases, the value at loc is j if loc s the jtth
+  // orderable location. On adjustment phases, loc is -2 on locations that can
+  // build (for builds) or on units to disband (for disbanding)
+  //
+  // r_powers[batch,i,j]
+  // On moves and retreat phases, only i=0 is used.and j indexes the jth
+  // orderable location in order, and the value is the power that is acting. On
+  // adjustment phases, i indexes the ith power, and j indexes the jth orderable
+  // location in order, and the value is the power that is acting, which is
+  // always i.
+
   // Init return values
   memset(r_order_idxs, EOS_IDX,
          7 * N_SCS * max_cands_ * sizeof(int32_t));       // [1, 7, 34, 469]
@@ -111,7 +138,7 @@ void OrdersEncoder::encode_valid_orders_all_powers(GameState &state,
     // Get all orderable locs by all powers
     vector<int8_t> loc_powers(81, EOS_IDX);
     unordered_set<Loc> all_orderable_locs;
-    for (auto & [ power, locs ] : state.get_orderable_locations()) {
+    for (auto &[power, locs] : state.get_orderable_locations()) {
       for (Loc loc : locs) {
         loc_powers[static_cast<int>(loc) - 1] = static_cast<int8_t>(power) - 1;
         all_orderable_locs.insert(loc);
@@ -205,6 +232,22 @@ void OrdersEncoder::encode_adj_phase(Power power, GameState &state,
 void OrdersEncoder::encode_valid_orders(Power power, GameState &state,
                                         int32_t *r_order_idxs,
                                         int8_t *r_loc_idxs) const {
+  // r_order_idxs[batch,i,j,k]
+  // i indexes the ith power (each call to this function only handles one i),
+  // On moves and retreat phases, j indexes the jth orderable location in order
+  // for that power, k indexes the kth possible global order idx at that
+  // location. On adjustment phases, For builds, only j = 0 is used, k indexes
+  // the kth possible global order idx for combined builds. For disbands, j
+  // indexes the jth disband, k indexes the kth possible global order idx for a
+  // one-unit disband.
+  //
+  // r_loc_idxs[batch,loc]
+  // loc indexes locations.
+  // On moves and retreat phases, the value at loc is j if loc is the jth
+  // orderable location for that power. On adjustment phases, loc is -2 on
+  // locations that can build (for builds) or on units to disband (for
+  // disbanding)
+
   // Init return value: all_order_idxs
   // py::array_t<int32_t> all_order_idxs({1, MAX_SEQ_LEN, max_cands_});
   memset(r_order_idxs, EOS_IDX, MAX_SEQ_LEN * max_cands_ * sizeof(int32_t));
@@ -247,7 +290,7 @@ void OrdersEncoder::encode_valid_orders(Power power, GameState &state,
 // Decode a [B, 7, S]-shape tensor of EOS_IDX-padded order idxs.
 // Returns a 3d vector of string (batch, power, orders)
 vector<vector<vector<string>>>
-OrdersEncoder::decode_order_idxs(torch::Tensor *order_idxs) const {
+OrdersDecoder::decode_order_idxs(torch::Tensor *order_idxs) const {
   auto accessor = order_idxs->accessor<long, 3>();
   long batch_size = accessor.size(0);
   long max_seq_len = accessor.size(2);
@@ -263,7 +306,7 @@ OrdersEncoder::decode_order_idxs(torch::Tensor *order_idxs) const {
 
       for (int i = 0; i < max_seq_len; ++i) {
         long order_idx = accessor[b][p][i];
-        if (order_idx == EOS_IDX) {
+        if (order_idx == OrdersEncoder::EOS_IDX) {
           continue;
         }
         string order = order_vocabulary_[order_idx];
@@ -272,6 +315,7 @@ OrdersEncoder::decode_order_idxs(torch::Tensor *order_idxs) const {
           rbp.push_back(order.substr(start, end - start));
         }
       }
+      std::sort(rbp.begin(), rbp.end(), loc_order_cmp);
     }
   }
 
@@ -282,14 +326,25 @@ vector<int>
 OrdersEncoder::filter_orders_in_vocab(const set<Order> &orders) const {
   vector<int> idxs;
   idxs.reserve(orders.size());
-
-  for (const Order &order : orders) {
-    int idx = smarter_order_index(order);
-    if (idx != -1) {
-      idxs.push_back(idx);
+  if (allow_buggy_duplicates_) {
+    for (const Order &order : orders) {
+      int idx = smarter_order_index(order);
+      if (idx != -1) {
+        idxs.push_back(idx);
+      }
+    }
+  } else {
+    // Order-preserving dedup
+    std::unordered_set<int> idxs_used;
+    idxs_used.reserve(orders.size());
+    for (const Order &order : orders) {
+      int idx = smarter_order_index(order);
+      if (idx != -1 && idxs_used.find(idx) == idxs_used.end()) {
+        idxs.push_back(idx);
+        idxs_used.insert(idx);
+      }
     }
   }
-
   return idxs;
 }
 

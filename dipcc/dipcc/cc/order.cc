@@ -234,4 +234,19 @@ Order Order::with_via(bool via) const {
                this->get_dest(), via);
 }
 
+// Comparator function implemening LOCS-ordering
+bool loc_order_cmp(const Order &a, const Order &b) {
+  Loc loc_a = a.get_unit().loc;
+  Loc loc_b = b.get_unit().loc;
+  JCHECK(loc_a != Loc::NONE, "loc_order_cmp called with Loc::NONE");
+  JCHECK(loc_b != Loc::NONE, "loc_order_cmp called with Loc::NONE");
+  return LOC_IDX.at(loc_a) < LOC_IDX.at(loc_b);
+}
+
+Order Order::as_normalized() const {
+  Order order(*this);
+  order.target_.loc = root_loc(order.target_.loc);
+  return order;
+}
+
 } // namespace dipcc
