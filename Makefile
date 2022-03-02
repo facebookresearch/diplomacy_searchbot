@@ -1,6 +1,6 @@
 POSTMAN_DIR=$(realpath thirdparty/github/fairinternal/postman/)
 
-.PHONY: all compile clean dipcc protos deps
+.PHONY: all compile clean dipcc protos
 
 all: compile
 
@@ -20,9 +20,6 @@ protos:
 	protoc conf/*.proto --python_out ./
 	python heyhi/bin/patch_protos.py conf/*pb2.py
 	realpath fva_starting_position.json > fva_starting_position.index
-
-deps:
-	bin/install_deps.sh
 
 test: | test_fast test_integration
 

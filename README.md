@@ -127,7 +127,7 @@ make
 make test_fast
 ```
 
-After each pull it's recommended to run `make` to re-compile internal C++ and protobuf code. In case of missing dependencies, run `make deps` to install all dependencies.
+After each pull it's recommended to run `make` to re-compile internal C++ and protobuf code.
 
 ### Running tasks
 
