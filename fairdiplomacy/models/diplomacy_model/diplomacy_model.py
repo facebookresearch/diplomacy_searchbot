@@ -191,6 +191,8 @@ class DiplomacyModel(nn.Module):
         need_policy=True,
         need_value=True,
         pad_to_max=False,
+        x_scoring_system=None,
+        x_year_encoded=None,
     ) -> Tuple[
         Optional[torch.Tensor],
         Optional[torch.Tensor],
@@ -242,6 +244,9 @@ class DiplomacyModel(nn.Module):
             candidate order, 0 < S <= 17, 0 < C <= 469
           - final_sos [B, 7]: estimated sum of squares share for each power
         """
+
+        del x_scoring_system  # Not used.
+        del x_year_encoded  # Not used.
 
         # following https://arxiv.org/pdf/2006.04635.pdf , Appendix C
         B, NUM_LOCS, _ = x_board_state.shape
@@ -395,15 +400,7 @@ class DiplomacyModel(nn.Module):
                 temperature,
                 top_p,
             ) = apply_batch_repeat_interleave(
-                (
-                    enc,
-                    in_adj_phase,
-                    loc_idxs,
-                    cand_idxs,
-                    power,
-                    temperature,
-                    top_p,
-                ),
+                (enc, in_adj_phase, loc_idxs, cand_idxs, power, temperature, top_p,),
                 batch_repeat_interleave,
             )
 
@@ -458,15 +455,7 @@ class DiplomacyModel(nn.Module):
                     temperature,
                     top_p,
                 ) = apply_batch_repeat_interleave(
-                    (
-                        enc,
-                        in_adj_phase,
-                        loc_idxs,
-                        cand_idxs,
-                        power,
-                        temperature,
-                        top_p,
-                    ),
+                    (enc, in_adj_phase, loc_idxs, cand_idxs, power, temperature, top_p,),
                     batch_repeat_interleave,
                 )
 
@@ -613,9 +602,7 @@ class LSTMDiplomacyModelDecoder(nn.Module):
         self.power_lin = nn.Linear(len(POWERS), power_emb_size)
 
         self.lstm = nn.LSTM(
-            2 * inter_emb_size
-            + order_emb_size
-            + power_emb_size,
+            2 * inter_emb_size + order_emb_size + power_emb_size,
             lstm_size,
             batch_first=True,
             num_layers=self.lstm_layers,
@@ -730,11 +717,7 @@ class LSTMDiplomacyModelDecoder(nn.Module):
             # reuse same dropout weights for all steps
             dropout_in = (
                 enc.new_zeros(
-                    enc.shape[0],
-                    1,
-                    enc.shape[2]
-                    + self.order_emb_size
-                    + self.power_emb_size,
+                    enc.shape[0], 1, enc.shape[2] + self.order_emb_size + self.power_emb_size,
                 )
                 .bernoulli_(1 - self.lstm_dropout)
                 .div_(1 - self.lstm_dropout)
@@ -1251,13 +1234,7 @@ class GraphConv(nn.Module):
 
 class ValueDecoder(nn.Module):
     def __init__(
-        self,
-        *,
-        inter_emb_size,
-        spatial_size,
-        dropout,
-        init_scale=1.0,
-        softmax=False,
+        self, *, inter_emb_size, spatial_size, dropout, init_scale=1.0, softmax=False,
     ):
         super().__init__()
         emb_flat_size = spatial_size * inter_emb_size * 2

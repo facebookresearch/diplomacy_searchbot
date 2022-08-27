@@ -9,6 +9,8 @@ from fairdiplomacy import pydipcc
 from fairdiplomacy.data.data_fields import DataFields
 from fairdiplomacy.utils.order_idxs import ORDER_VOCABULARY_TO_IDX, MAX_VALID_LEN
 
+DEFAULT_VERSION = 1
+
 KEYS_STATE_ONLY = [
     "x_board_state",
     "x_prev_state",
@@ -42,13 +44,13 @@ class FeatureEncoder:
         return cls.nothread_pool_singleton
 
     def encode_inputs(self, games: Sequence[pydipcc.Game]) -> DataFields:
-        return DataFields(self.thread_pool.encode_inputs_multi(games))
+        return DataFields(self.thread_pool.encode_inputs_multi(games, DEFAULT_VERSION))
 
     def encode_inputs_state_only(self, games: Sequence[pydipcc.Game]) -> DataFields:
-        return DataFields(self.thread_pool.encode_inputs_state_only_multi(games))
+        return DataFields(self.thread_pool.encode_inputs_state_only_multi(games, DEFAULT_VERSION))
 
     def encode_inputs_all_powers(self, games: Sequence[pydipcc.Game]) -> DataFields:
-        return DataFields(self.thread_pool.encode_inputs_all_powers_multi(games))
+        return DataFields(self.thread_pool.encode_inputs_all_powers_multi(games, DEFAULT_VERSION))
 
     def decode_order_idxs(self, order_idxs):
         return self.thread_pool.decode_order_idxs(order_idxs)
